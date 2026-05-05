@@ -5055,4 +5055,22 @@ function PageRouter() {
     if (page === "school") return /*#__PURE__*/React.createElement(SchoolDetail, null);
   }
   if (role === "Site Engineer") {
-    if (page === "dash
+    if (page === "dashboard") return /*#__PURE__*/React.createElement(SiteEngineerDashboard, null);
+  }
+  return /*#__PURE__*/React.createElement("div", {
+    className: "p-6"
+  }, "Page not found.");
+}
+function App() {
+  return /*#__PURE__*/React.createElement(StoreProvider, null, /*#__PURE__*/React.createElement("div", {
+    className: "min-h-screen bg-slate-50"
+  }, /*#__PURE__*/React.createElement(Header, null), /*#__PURE__*/React.createElement("div", {
+    className: "flex"
+  }, /*#__PURE__*/React.createElement(Sidebar, null), /*#__PURE__*/React.createElement("main", {
+    className: "flex-1 min-w-0"
+  }, /*#__PURE__*/React.createElement(PageRouter, null))), /*#__PURE__*/React.createElement(Toasts, null)));
+}
+ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
+</script>
+</body>
+</html>
