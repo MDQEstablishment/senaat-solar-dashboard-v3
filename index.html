@@ -1110,7 +1110,8 @@ const FINANCIAL_ENTRIES_DEFAULT = (() => {
   return out;
 })();
 
-// Escalations — 5 sample cases
+// Escalations — sample cases (updated to follow strict hierarchy chain)
+// Site/Project Engineer → PM → Program Manager → VP
 const ESCALATIONS_DEFAULT = [
   {
     id: 'esc1', title: 'SEC approval delays blocking 32 schools in Jazan',
@@ -1119,8 +1120,13 @@ const ESCALATIONS_DEFAULT = [
     reason: 'SEC has held our submission for 6 weeks. Need executive intervention to unblock the regional director.',
     urgency: 'High', status: 'Open', currentlyWith: 'u13',
     opened: '2026-04-22', daysOpen: 12,
+    chain: [
+      { fromUserId: 'u3',  toUserId: 'u1',  toRole: 'Program Manager', when: '2026-04-22', action: 'Escalated' },
+      { fromUserId: 'u1',  toUserId: 'u13', toRole: 'VP / Executive',  when: '2026-04-23', action: 'Forwarded' },
+    ],
     history: [
-      { who: 'u3',  when: '2026-04-22', action: 'Created', note: 'Escalating to VP — SEC stuck.' },
+      { who: 'u3',  when: '2026-04-22', action: 'Created', note: 'Escalating to PM — SEC stuck.' },
+      { who: 'u1',  when: '2026-04-23', action: 'Forwarded', note: 'Forwarded to VP — needs executive intervention with SEC.' },
       { who: 'u13', when: '2026-04-25', action: 'Acknowledged', note: 'Reaching out to SEC director.' },
       { who: 'u13', when: '2026-05-01', action: 'Comment', note: 'Meeting scheduled for 06-May.' },
     ],
@@ -1132,6 +1138,9 @@ const ESCALATIONS_DEFAULT = [
     reason: 'Client has not released 3rd payment. Subcontractor threatening to pull resources.',
     urgency: 'High', status: 'Open', currentlyWith: 'u13',
     opened: '2026-04-28', daysOpen: 6,
+    chain: [
+      { fromUserId: 'u1', toUserId: 'u13', toRole: 'VP / Executive', when: '2026-04-28', action: 'Escalated' },
+    ],
     history: [
       { who: 'u1',  when: '2026-04-28', action: 'Created', note: 'Cash flow blocker.' },
       { who: 'u13', when: '2026-04-30', action: 'Acknowledged', note: 'Coordinating with finance.' },
@@ -1139,11 +1148,14 @@ const ESCALATIONS_DEFAULT = [
   },
   {
     id: 'esc3', title: 'Contractor performance — Jazan Power Solutions trending red',
-    fromUserId: 'u3', toRole: 'VP / Executive', toUserId: 'u13',
+    fromUserId: 'u3', toRole: 'Program Manager', toUserId: 'u1',
     projectId: 'p4', schoolId: null, taskId: null,
     reason: 'Schedule and quality scores have dropped below 70 for 3 consecutive weeks.',
-    urgency: 'Medium', status: 'Open', currentlyWith: 'u13',
+    urgency: 'Medium', status: 'Open', currentlyWith: 'u1',
     opened: '2026-04-18', daysOpen: 16,
+    chain: [
+      { fromUserId: 'u3', toUserId: 'u1', toRole: 'Program Manager', when: '2026-04-18', action: 'Escalated' },
+    ],
     history: [
       { who: 'u3', when: '2026-04-18', action: 'Created', note: 'Need authorization to switch contractor scope.' },
     ],
@@ -1155,6 +1167,9 @@ const ESCALATIONS_DEFAULT = [
     reason: 'Original spec cable unavailable. Vendor proposes equivalent KSA-made cable. Need executive approval.',
     urgency: 'Medium', status: 'Open', currentlyWith: 'u13',
     opened: '2026-04-30', daysOpen: 4,
+    chain: [
+      { fromUserId: 'u1', toUserId: 'u13', toRole: 'VP / Executive', when: '2026-04-30', action: 'Escalated' },
+    ],
     history: [
       { who: 'u1', when: '2026-04-30', action: 'Created', note: 'Substitution dossier attached.' },
     ],
@@ -1166,8 +1181,27 @@ const ESCALATIONS_DEFAULT = [
     reason: 'Local directorate denying our work crews access during exam season.',
     urgency: 'Low', status: 'Open', currentlyWith: 'u13',
     opened: '2026-05-01', daysOpen: 3,
+    chain: [
+      { fromUserId: 'u4', toUserId: 'u1',  toRole: 'Program Manager', when: '2026-05-01', action: 'Escalated' },
+      { fromUserId: 'u1', toUserId: 'u13', toRole: 'VP / Executive',  when: '2026-05-02', action: 'Forwarded' },
+    ],
     history: [
-      { who: 'u4', when: '2026-05-01', action: 'Created', note: 'Need MoE-level escalation.' },
+      { who: 'u4',  when: '2026-05-01', action: 'Created', note: 'Need PM-level escalation.' },
+      { who: 'u1',  when: '2026-05-02', action: 'Forwarded', note: 'Forwarded to VP — requires MoE-level intervention.' },
+    ],
+  },
+  {
+    id: 'esc7', title: 'Roof access blocked — site engineer needs PM intervention',
+    fromUserId: 'u8', toRole: 'Project Manager', toUserId: 'u2',
+    projectId: 'p2', schoolId: null, taskId: null,
+    reason: 'School caretaker repeatedly denying roof access. Need PM to coordinate with school principal.',
+    urgency: 'Medium', status: 'Open', currentlyWith: 'u2',
+    opened: '2026-05-02', daysOpen: 2,
+    chain: [
+      { fromUserId: 'u8', toUserId: 'u2', toRole: 'Project Manager', when: '2026-05-02', action: 'Escalated' },
+    ],
+    history: [
+      { who: 'u8', when: '2026-05-02', action: 'Created', note: 'Tried 3 times this week — blocked at gate.' },
     ],
   },
   {
@@ -1177,8 +1211,13 @@ const ESCALATIONS_DEFAULT = [
     reason: 'QA/QC team disputing our remedial action. Need executive arbitration.',
     urgency: 'Low', status: 'Resolved', currentlyWith: null, resolvedDate: '2026-04-20',
     opened: '2026-04-12', daysOpen: 8,
+    chain: [
+      { fromUserId: 'u2', toUserId: 'u1',  toRole: 'Program Manager', when: '2026-04-12', action: 'Escalated' },
+      { fromUserId: 'u1', toUserId: 'u13', toRole: 'VP / Executive',  when: '2026-04-13', action: 'Forwarded' },
+    ],
     history: [
       { who: 'u2',  when: '2026-04-12', action: 'Created', note: 'QA/QC blocking closeout.' },
+      { who: 'u1',  when: '2026-04-13', action: 'Forwarded', note: 'Forwarded to VP — need arbitration.' },
       { who: 'u13', when: '2026-04-15', action: 'Comment', note: 'Reviewed both positions.' },
       { who: 'u13', when: '2026-04-20', action: 'Resolved', note: 'Approved remediation as acceptable. Close NCR.' },
     ],
@@ -1247,6 +1286,11 @@ const ICON_PATHS = {
   'trending-up': '<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>',
   'trending-down': '<polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/>',
   'sun': '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>',
+  'pencil': '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  'trash-2': '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+  'info': '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  'chevron-up': '<polyline points="18 15 12 9 6 15"/>',
+  'arrow-up-circle': '<circle cx="12" cy="12" r="10"/><polyline points="16 12 12 8 8 12"/><line x1="12" y1="16" x2="12" y2="8"/>',
 };
 
 const Icon = ({ name, size = 16, className = '', strokeWidth = 1.75, style }) => {
@@ -1467,6 +1511,10 @@ function useStoreR2(base) {
   const [escalations, setEscalations]       = React.useState(() => ESCALATIONS_DEFAULT);
   const [stageStatuses, setStageStatuses]   = React.useState(() => STAGE_STATUSES_DEFAULT);
   const [lifecycleStages, setLifecycleStages] = React.useState(() => LIFECYCLE_STAGES_DEFAULT);
+  const [schoolStagesList, setSchoolStagesList] = React.useState(() => SCHOOL_STAGES.map((name, i) => ({
+    id: `ss${i + 1}`, name, order: i, archived: false,
+    color: i < 4 ? '#13315C' : i < 8 ? '#2A5A9A' : i < 11 ? '#B8860B' : '#C8102E',
+  })));
   const [customFields, setCustomFields]     = React.useState(() => CUSTOM_FIELDS_DEFAULT);
   const [milestoneTemplates, setMTemplates] = React.useState(() => MILESTONE_TEMPLATES_DEFAULT);
   const [milestoneEntries, setMEntries]     = React.useState(() => MILESTONE_ENTRIES_DEFAULT);
@@ -1479,11 +1527,24 @@ function useStoreR2(base) {
   // ---- Escalations ----
   const addEscalation = (data) => {
     const id = `esc${Date.now()}`;
+    const target = data.target || { toUserId: 'u13', toRole: 'VP / Executive' };
+    const today = new Date().toISOString().slice(0, 10);
     const e = {
-      id, status: 'Open', currentlyWith: 'u13', toUserId: 'u13', toRole: 'VP / Executive',
-      opened: new Date().toISOString().slice(0, 10), daysOpen: 0,
-      history: [{ who: data.fromUserId, when: new Date().toISOString().slice(0, 10), action: 'Created', note: data.reason }],
-      ...data,
+      id,
+      title: data.title,
+      reason: data.reason,
+      urgency: data.urgency,
+      projectId: data.projectId,
+      schoolId: data.schoolId || null,
+      taskId: data.taskId || null,
+      fromUserId: data.fromUserId,
+      status: 'Open',
+      currentlyWith: target.toUserId,
+      toUserId: target.toUserId,
+      toRole: target.toRole,
+      opened: today, daysOpen: 0,
+      chain: [{ fromUserId: data.fromUserId, toUserId: target.toUserId, toRole: target.toRole, when: today, action: 'Escalated' }],
+      history: [{ who: data.fromUserId, when: today, action: 'Created', note: data.reason || `Escalated to ${target.toRole}` }],
     };
     setEscalations(es => [e, ...es]);
     base.pushNotif({ kind: 'overdue', text: `New escalation: ${data.title}`, target: { kind: 'escalation', id } });
@@ -1499,6 +1560,18 @@ function useStoreR2(base) {
       ? { ...e, status: 'Resolved', currentlyWith: null, resolvedDate: new Date().toISOString().slice(0, 10),
           history: [...e.history, { who, when: new Date().toISOString().slice(0, 10), action: 'Resolved', note }] }
       : e));
+  };
+  // Forward an existing escalation to the next level up
+  const escalateFurther = (id, fromUserId, target, note) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setEscalations(es => es.map(e => e.id === id ? {
+      ...e,
+      currentlyWith: target.toUserId,
+      toUserId: target.toUserId,
+      toRole: target.toRole,
+      chain: [...(e.chain || []), { fromUserId, toUserId: target.toUserId, toRole: target.toRole, when: today, action: 'Forwarded' }],
+      history: [...e.history, { who: fromUserId, when: today, action: 'Forwarded', note: `Forwarded to ${target.toRole}` + (note ? ': ' + note : '') }],
+    } : e));
   };
 
   // ---- Stage flexible status ----
@@ -1530,6 +1603,24 @@ function useStoreR2(base) {
     setRecycleBin(rb => [{ id: `rb${Date.now()}`, kind: 'lifecycle', label: stage.name, deletedAt: new Date().toISOString(), payload: stage }, ...rb]);
   };
   const reorderLifecycleStage = (id, dir) => setLifecycleStages(ls => {
+    const sorted = [...ls].sort((a, b) => a.order - b.order);
+    const i = sorted.findIndex(s => s.id === id);
+    const j = i + dir;
+    if (j < 0 || j >= sorted.length) return ls;
+    [sorted[i].order, sorted[j].order] = [sorted[j].order, sorted[i].order];
+    return [...sorted];
+  });
+
+  // ---- School Stages CRUD (editable client-side) ----
+  const addSchoolStage = (s) => setSchoolStagesList(ls => [...ls, { id: `ss${Date.now()}`, order: ls.length, archived: false, color: '#13315C', ...s }]);
+  const updateSchoolStage_ = (id, patch) => setSchoolStagesList(ls => ls.map(s => s.id === id ? { ...s, ...patch } : s));
+  const deleteSchoolStage = (id) => {
+    const stage = schoolStagesList.find(s => s.id === id);
+    if (!stage) return;
+    setSchoolStagesList(ls => ls.filter(s => s.id !== id));
+    setRecycleBin(rb => [{ id: `rb${Date.now()}`, kind: 'schoolStage', label: stage.name, deletedAt: new Date().toISOString(), payload: stage }, ...rb]);
+  };
+  const reorderSchoolStage = (id, dir) => setSchoolStagesList(ls => {
     const sorted = [...ls].sort((a, b) => a.order - b.order);
     const i = sorted.findIndex(s => s.id === id);
     const j = i + dir;
@@ -1629,6 +1720,7 @@ function useStoreR2(base) {
     const item = recycleBin.find(r => r.id === id);
     if (!item) return;
     if (item.kind === 'lifecycle') setLifecycleStages(ls => [...ls, item.payload]);
+    if (item.kind === 'schoolStage') setSchoolStagesList(ls => [...ls, item.payload]);
     if (item.kind === 'school')    base._setSchools(ss => [item.payload, ...ss]);
     if (item.kind === 'material')  setMaterials(ms => [item.payload, ...ms]);
     if (item.kind === 'finEntry')  setFinancialEntries(fe => [item.payload, ...fe]);
@@ -1637,9 +1729,10 @@ function useStoreR2(base) {
   const purgeFromBin = (id) => setRecycleBin(rb => rb.filter(r => r.id !== id));
 
   return {
-    escalations, addEscalation, addEscalationComment, resolveEscalation,
+    escalations, addEscalation, addEscalationComment, resolveEscalation, escalateFurther,
     stageStatuses, setSchoolStageStatus, addStageStatus, updateStageStatus, deleteStageStatus, stageHistory,
     lifecycleStages, addLifecycleStage, updateLifecycleStage, deleteLifecycleStage, reorderLifecycleStage,
+    schoolStagesList, addSchoolStage, updateSchoolStage_, deleteSchoolStage, reorderSchoolStage,
     customFields, addCustomField, updateCustomField, deleteCustomField,
     milestoneTemplates, milestoneEntries, addMilestoneTemplate, updateMilestoneTemplate, deleteMilestoneTemplate, setMilestoneEntry, contractorScore,
     financialEntries, addFinancialEntry, updateFinancialEntry, deleteFinancialEntry, finRollup,
@@ -1650,7 +1743,55 @@ function useStoreR2(base) {
   };
 }
 
-Object.assign(window, { useStoreR2 });
+// ── Escalation hierarchy helper ─────────────────────────────────────────────
+// Strict chain (per org spec):
+//   Site Engineer / Project Engineer  →  Project Manager (of their project)
+//   Project Manager                   →  Program Manager
+//   Procurement / QA/QC / Financials  →  Program Manager
+//   Program Manager                   →  VP / Executive
+//   VP / Executive                    →  (cannot escalate further)
+function getEscalationTarget(currentUser, projectId) {
+  if (!currentUser) return null;
+  const role = currentUser.role;
+  if (role === 'VP / Executive') return null;
+
+  // Site Engineer or Project Engineer → their project's PM
+  if (role === 'Site Engineer' || role === 'Project Engineer') {
+    const pid = projectId || currentUser.projectId;
+    const proj = pid ? PROJECTS.find(p => p.id === pid) : null;
+    let toUserId = proj?.pmId;
+    // fallback: if no project context, route to Program Manager
+    if (!toUserId) {
+      const pm = PEOPLE.find(p => p.role === 'Program Manager');
+      return pm ? { toUserId: pm.id, toRole: 'Program Manager', label: 'Escalate to Program Manager' } : null;
+    }
+    return { toUserId, toRole: 'Project Manager', label: 'Escalate to PM' };
+  }
+
+  // Project Manager → Program Manager
+  if (role === 'Project Manager') {
+    const pm = PEOPLE.find(p => p.role === 'Program Manager');
+    return pm ? { toUserId: pm.id, toRole: 'Program Manager', label: 'Escalate to Program Manager' } : null;
+  }
+
+  // Support roles (report to Program Manager, NOT to Project Manager)
+  if (['Procurement', 'QA/QC', 'Financials/Accounts', 'Financials'].includes(role)) {
+    const pm = PEOPLE.find(p => p.role === 'Program Manager');
+    return pm ? { toUserId: pm.id, toRole: 'Program Manager', label: 'Escalate to Program Manager' } : null;
+  }
+
+  // Program Manager → VP
+  if (role === 'Program Manager') {
+    const vp = PEOPLE.find(p => p.role === 'VP / Executive');
+    return vp ? { toUserId: vp.id, toRole: 'VP / Executive', label: 'Escalate to VP' } : null;
+  }
+
+  // Default: route to Program Manager
+  const pm = PEOPLE.find(p => p.role === 'Program Manager');
+  return pm ? { toUserId: pm.id, toRole: 'Program Manager', label: 'Escalate to Program Manager' } : null;
+}
+
+Object.assign(window, { useStoreR2, getEscalationTarget });
 
 </script>
 <script type="text/babel">
@@ -2545,11 +2686,15 @@ function StageDetailPanel({ stage, stageIdx, project, onClose }) {
   );
 }
 
-function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, onEscalate }) {
+function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, onEscalate, currentUser }) {
   const [openStage, setOpenStage] = React.useState(null);
   const [tab, setTab] = React.useState('Overview');
   const store = (typeof useStore === 'function') ? useStore() : null;
-  const projTasks = store ? store.tasks.filter(t => t.projectId === project.id) : [];
+  const allProjTasks = store ? store.tasks.filter(t => t.projectId === project.id) : [];
+  // Apply role-based visibility scope inside the project tab
+  const projTasks = (currentUser && typeof tasksVisibleToRole === 'function')
+    ? tasksVisibleToRole(allProjTasks, currentUser)
+    : allProjTasks;
   const pm = PEOPLE.find(u => u.id === project.pmId);
   const TABS = ['Overview', project.schoolDist ? 'Schools' : 'Sites', 'Tasks', 'Materials', 'Financials', 'Contractors'];
 
@@ -2561,7 +2706,10 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
         </button>
         <div className="flex gap-2">
           {project.schoolDist && <Button variant="outline" icon="school" onClick={() => onOpenSchools && onOpenSchools(project.id)}>View all 200 schools</Button>}
-          {onEscalate && <Button variant="outline" icon="alert-circle" onClick={onEscalate}>Escalate to VP</Button>}
+          {onEscalate && (() => {
+            const t = (currentUser && typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, project.id) : null;
+            return t ? <Button variant="outline" icon="alert-circle" onClick={onEscalate}>{t.label}</Button> : null;
+          })()}
           <Button variant="accent" icon="plus" onClick={() => onAddTask && onAddTask({ projectId: project.id })}>Add task</Button>
         </div>
       </div>
@@ -3073,7 +3221,10 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
             <div className="text-xs text-ink-500">{project?.name}</div>
             <h1 className="text-lg font-semibold">{school.code} · {school.name}</h1>
           </div>
-          {onEscalate && <Button variant="outline" icon="alert-circle" onClick={() => onEscalate(school)}>Escalate to VP</Button>}
+          {onEscalate && (() => {
+            const t = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, school.projectId) : null;
+            return t ? <Button variant="outline" icon="alert-circle" onClick={() => onEscalate(school)}>{t.label}</Button> : null;
+          })()}
           <Button variant="outline" icon="plus" onClick={() => onAddTask({ projectId: school.projectId, schoolId: school.id })}>Add task</Button>
         </div>
 
@@ -3518,21 +3669,78 @@ Object.assign(window, { PageSiteEngineer });
 </script>
 <script type="text/babel">
 // My Tasks queue — replaces Employees list per spec
+// Visibility scope per role:
+//   Site Engineer    → only tasks assigned to them
+//   Project Manager  → own tasks + tasks for Site Engineers under their project
+//   Program Manager  → all tasks across all projects
+//   VP / Executive   → no tasks list (uses escalations queue instead)
+
+function tasksVisibleToRole(allTasks, currentUser) {
+  if (!currentUser) return [];
+  const role = currentUser.role;
+  if (role === 'VP / Executive') return [];
+
+  if (role === 'Site Engineer' || role === 'Project Engineer') {
+    // Only my own tasks
+    return allTasks.filter(t => t.assigneeId === currentUser.id);
+  }
+
+  if (role === 'Project Manager') {
+    // My own + tasks for Site Engineers in my project
+    const siteEngineerIds = PEOPLE
+      .filter(p => p.role === 'Site Engineer' && p.projectId === currentUser.projectId)
+      .map(p => p.id);
+    return allTasks.filter(t => {
+      if (t.assigneeId === currentUser.id) return true;
+      if (t.projectId !== currentUser.projectId) return false;
+      return siteEngineerIds.includes(t.assigneeId);
+    });
+  }
+
+  if (role === 'Program Manager') {
+    // All tasks
+    return allTasks;
+  }
+
+  // Other support roles: only their own tasks
+  return allTasks.filter(t => t.assigneeId === currentUser.id);
+}
+
 function PageMyTasks({ currentUser, onAddTask, onOpenTask, onJump }) {
   const { tasks, projects } = useStore();
-  const [filter, setFilter] = React.useState('mine'); // mine | all
+  const visible = React.useMemo(() => tasksVisibleToRole(tasks, currentUser), [tasks, currentUser]);
+
+  const role = currentUser.role;
+  const isManager = role === 'Project Manager' || role === 'Program Manager';
+
+  // For managers, "mine" = assigned to me; "team" = the rest of visible scope
+  // For ICs, only "mine" makes sense (and equals visible).
+  const [filter, setFilter] = React.useState(isManager ? 'team' : 'mine');
   const [statusFilter, setStatusFilter] = React.useState('open');
 
-  const filtered = tasks.filter(t => {
+  const filtered = visible.filter(t => {
     if (filter === 'mine' && t.assigneeId !== currentUser.id) return false;
-    if (statusFilter === 'open'     && t.status === 'Done') return false;
-    if (statusFilter === 'overdue'  && (!isOverdue(t.due) || t.status === 'Done')) return false;
-    if (statusFilter === 'done'     && t.status !== 'Done') return false;
+    if (filter === 'team' && t.assigneeId === currentUser.id) return false;
+    if (statusFilter === 'open'    && t.status === 'Done') return false;
+    if (statusFilter === 'overdue' && (!isOverdue(t.due) || t.status === 'Done')) return false;
+    if (statusFilter === 'done'    && t.status !== 'Done') return false;
     return true;
   });
 
-  const myCount = tasks.filter(t => t.assigneeId === currentUser.id).length;
-  const myOverdue = tasks.filter(t => t.assigneeId === currentUser.id && isOverdue(t.due) && t.status !== 'Done').length;
+  const myCount   = visible.filter(t => t.assigneeId === currentUser.id).length;
+  const myOverdue = visible.filter(t => t.assigneeId === currentUser.id && isOverdue(t.due) && t.status !== 'Done').length;
+  const teamCount = visible.filter(t => t.assigneeId !== currentUser.id).length;
+
+  // Build tab options based on role
+  const tabOptions = isManager ? ['mine', 'team', 'all'] : ['mine'];
+
+  // Scope label for the user
+  const scopeLabel = (() => {
+    if (role === 'Program Manager') return 'All tasks across all projects';
+    if (role === 'Project Manager') return 'My tasks + Site Engineers in my project';
+    if (role === 'VP / Executive')  return 'Tasks not visible to VP — use Escalations queue';
+    return 'Tasks assigned to me';
+  })();
 
   return (
     <div className="p-6 space-y-4">
@@ -3540,20 +3748,23 @@ function PageMyTasks({ currentUser, onAddTask, onOpenTask, onJump }) {
         <div>
           <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">My queue</div>
           <h1 className="text-2xl font-semibold">Tasks for {currentUser.name}</h1>
+          <div className="text-[11px] text-ink-500 mt-0.5">{scopeLabel}</div>
         </div>
         <Button variant="accent" icon="plus" onClick={() => onAddTask({})}>New task</Button>
       </div>
 
       <div className="grid grid-cols-4 gap-3">
         <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Assigned to me</div><div className="text-3xl font-bold num mt-1">{myCount}</div></Card>
-        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Overdue</div><div className="text-3xl font-bold num mt-1 text-red-600">{myOverdue}</div></Card>
-        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">In progress</div><div className="text-3xl font-bold num mt-1">{tasks.filter(t => t.assigneeId === currentUser.id && t.status === 'In Progress').length}</div></Card>
-        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Completed</div><div className="text-3xl font-bold num mt-1 text-emerald-600">{tasks.filter(t => t.assigneeId === currentUser.id && t.status === 'Done').length}</div></Card>
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">My overdue</div><div className="text-3xl font-bold num mt-1 text-red-600">{myOverdue}</div></Card>
+        {isManager
+          ? <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Team tasks</div><div className="text-3xl font-bold num mt-1">{teamCount}</div></Card>
+          : <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">In progress</div><div className="text-3xl font-bold num mt-1">{visible.filter(t => t.assigneeId === currentUser.id && t.status === 'In Progress').length}</div></Card>}
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Completed</div><div className="text-3xl font-bold num mt-1 text-emerald-600">{visible.filter(t => t.assigneeId === currentUser.id && t.status === 'Done').length}</div></Card>
       </div>
 
       <Card padding="p-3">
         <div className="flex gap-2 items-center flex-wrap">
-          <Tabs tabs={['mine', 'all']} active={filter} onChange={setFilter} />
+          <Tabs tabs={tabOptions} active={filter} onChange={setFilter} />
           <div className="flex-1" />
           <Select value={statusFilter} onChange={setStatusFilter}
             options={[{ value: 'open', label: 'Open + In Progress' }, { value: 'overdue', label: 'Overdue' }, { value: 'done', label: 'Done' }, { value: 'all', label: 'All statuses' }]} />
@@ -3602,7 +3813,7 @@ function PageMyTasks({ currentUser, onAddTask, onOpenTask, onJump }) {
   );
 }
 
-Object.assign(window, { PageMyTasks });
+Object.assign(window, { PageMyTasks, tasksVisibleToRole });
 
 </script>
 <script type="text/babel">
@@ -4658,19 +4869,72 @@ function LifecycleStageRow({ stage, onSave, onCancel, isNew }) {
   );
 }
 
-// ── School Stages (static — displayed but linked to school data) ──────────────
+// ── School Stages (editable: rename / reorder / color / add / delete) ────────
 function SchoolStagesTab() {
+  const { schoolStagesList, addSchoolStage, updateSchoolStage_, deleteSchoolStage, reorderSchoolStage } = useStore();
+  const [editId, setEditId] = React.useState(null);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const sorted = [...(schoolStagesList || [])].sort((a, b) => a.order - b.order);
+
   return (
     <div className="space-y-3">
-      <SectionTitle title="School Execution Stages" subtitle="12 fixed stages tracked per school" />
+      <div className="flex items-center justify-between">
+        <SectionTitle title="School Execution Stages" subtitle="Editable per-school stage list — rename, reorder, change color, add or delete" className="!mb-0" />
+        <Button size="sm" icon="plus" variant="accent" onClick={() => setAddOpen(true)}>Add Stage</Button>
+      </div>
+      <div className="text-[11px] text-ink-500 bg-amber-50 border border-amber-200 rounded-md p-2.5">
+        ↕ Use arrows to reorder. Edit name and color per stage. Deleting moves stage to Recycle Bin and can be restored.
+      </div>
       <div className="space-y-1">
-        {SCHOOL_STAGES.map((s, i) => (
-          <div key={s} className="flex items-center gap-2 border border-soft rounded-md p-2.5">
-            <span className="w-6 h-6 rounded-full bg-navy-900 text-white text-[11px] font-bold flex items-center justify-center shrink-0">{i + 1}</span>
-            <span className="text-sm flex-1">{s}</span>
-            <Pill tone="soft">Stage {i + 1}</Pill>
-          </div>
+        {sorted.map((s, i) => (
+          editId === s.id
+            ? <SchoolStageRow key={s.id} stage={s} onSave={p => { updateSchoolStage_(s.id, p); setEditId(null); }} onCancel={() => setEditId(null)} />
+            : (
+              <div key={s.id} className="flex items-center gap-2 border border-soft rounded-md p-2.5">
+                <div className="flex flex-col gap-0.5">
+                  <button onClick={() => reorderSchoolStage(s.id, -1)} disabled={i === 0} className="p-0.5 hover:bg-ink-100 rounded disabled:opacity-30"><Icon name="chevron-up" size={12} /></button>
+                  <button onClick={() => reorderSchoolStage(s.id, 1)} disabled={i === sorted.length - 1} className="p-0.5 hover:bg-ink-100 rounded disabled:opacity-30"><Icon name="chevron-down" size={12} /></button>
+                </div>
+                <div className="w-3 h-3 rounded-full shrink-0" style={{ background: s.color }} />
+                <span className="text-xs text-ink-500 tnum w-6">{i + 1}</span>
+                <span className="text-sm flex-1 font-medium">{s.name}</span>
+                <div className="flex gap-1">
+                  <button onClick={() => setEditId(s.id)} className="p-1 rounded hover:bg-ink-100 text-ink-500" title="Edit"><Icon name="pencil" size={13} /></button>
+                  <button onClick={() => deleteSchoolStage(s.id)} className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600" title="Delete"><Icon name="trash-2" size={13} /></button>
+                </div>
+              </div>
+            )
         ))}
+      </div>
+      {addOpen && (
+        <SchoolStageRow stage={{ name: '', color: '#13315C' }}
+          onSave={p => { addSchoolStage(p); setAddOpen(false); }}
+          onCancel={() => setAddOpen(false)} isNew />
+      )}
+    </div>
+  );
+}
+
+function SchoolStageRow({ stage, onSave, onCancel, isNew }) {
+  const [name, setName] = React.useState(stage.name);
+  const [color, setColor] = React.useState(stage.color || '#13315C');
+  return (
+    <div className="border border-accent rounded-md p-3 space-y-2 bg-accent-soft">
+      <div className="grid grid-cols-3 gap-2">
+        <div className="col-span-2">
+          <label className="text-[11px] font-medium text-ink-700 mb-1 block">Stage name</label>
+          <TextField value={name} onChange={setName} placeholder="Stage name" />
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-ink-700 mb-1 block">Color</label>
+          <input type="color" value={color} onChange={e => setColor(e.target.value)} className="w-full h-9 border border-ink-200 rounded-md cursor-pointer" />
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" variant="accent" icon="check" onClick={() => { if (name.trim()) onSave({ name, color }); }}>
+          {isNew ? 'Add stage' : 'Save'}
+        </Button>
       </div>
     </div>
   );
@@ -5143,17 +5407,34 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
     }
   }, [open]);
   if (!open) return null;
+
+  // Compute the target dynamically from the chosen project + current user
+  const target = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, projectId) : null;
+  const targetUser = target ? PEOPLE.find(p => p.id === target.toUserId) : null;
+  const modalTitle = target ? target.label : 'Escalate';
+
   return (
-    <Modal open={open} onClose={onClose} title="Escalate to executive" wide
+    <Modal open={open} onClose={onClose} title={modalTitle} wide
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="accent" icon="alert-circle" onClick={() => {
-          if (!title.trim()) return;
-          onCreate({ title, reason, urgency, projectId, fromUserId: currentUser.id, schoolId: defaults.schoolId || null, taskId: defaults.taskId || null });
+        <Button variant="accent" icon="alert-circle" disabled={!target} onClick={() => {
+          if (!title.trim() || !target) return;
+          onCreate({ title, reason, urgency, projectId, fromUserId: currentUser.id, schoolId: defaults.schoolId || null, taskId: defaults.taskId || null, target });
           onClose();
         }}>Submit escalation</Button>
       </>}>
       <div className="space-y-3">
+        {target && targetUser && (
+          <div className="bg-accent-soft border border-accent rounded-md p-2.5 flex items-center gap-2 text-xs">
+            <Icon name="alert-circle" size={14} />
+            <span>Routes to <strong>{targetUser.name}</strong> ({target.toRole}) — your next level in the escalation chain.</span>
+          </div>
+        )}
+        {!target && (
+          <div className="bg-ink-50 border border-soft rounded-md p-2.5 text-xs text-ink-700">
+            Your role cannot escalate further — VP is the top of the chain.
+          </div>
+        )}
         <div>
           <label className="text-[11px] font-medium text-ink-700 mb-1 block">Title</label>
           <TextField value={title} onChange={setTitle} placeholder="Short summary of the escalation" />
@@ -5171,23 +5452,33 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
         <div>
           <label className="text-[11px] font-medium text-ink-700 mb-1 block">Reason / context</label>
           <textarea value={reason} onChange={e => setReason(e.target.value)} rows={4}
-            placeholder="What's blocked, what you've tried, what you need from the executive…"
+            placeholder="What's blocked, what you've tried, what you need…"
             className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white focus:outline-none focus:ring-2 ring-accent" />
         </div>
-        <div className="text-[11px] text-ink-500">Submitting routes this to the VP / Executive's "Escalations Awaiting My Support" panel.</div>
       </div>
     </Modal>
   );
 }
 
 function PageEscalationDetail({ id, onBack, currentUser }) {
-  const { escalations, addEscalationComment, resolveEscalation } = useStore();
+  const { escalations, addEscalationComment, resolveEscalation, escalateFurther } = useStore();
   const e = escalations.find(x => x.id === id);
   const [comment, setComment] = React.useState('');
   if (!e) return <div className="p-6">Escalation not found.</div>;
   const from = getPerson(e.fromUserId);
   const to = getPerson(e.toUserId);
   const project = getProject(e.projectId);
+
+  // Determine if current user can forward this escalation further up
+  const isCurrentlyWithMe = e.currentlyWith === currentUser.id;
+  const forwardTarget = isCurrentlyWithMe ? (typeof getEscalationTarget === 'function' ? getEscalationTarget(currentUser, e.projectId) : null) : null;
+  const forwardUser = forwardTarget ? PEOPLE.find(p => p.id === forwardTarget.toUserId) : null;
+
+  // Build chain entries: prefer e.chain, fallback to derived from history
+  const chain = e.chain && e.chain.length > 0
+    ? e.chain
+    : [{ fromUserId: e.fromUserId, toUserId: e.toUserId, toRole: e.toRole, when: e.opened, action: 'Escalated' }];
+
   return (
     <div className="p-6 max-w-3xl space-y-4">
       <Button variant="ghost" icon="arrow-left" onClick={onBack}>Back</Button>
@@ -5201,8 +5492,8 @@ function PageEscalationDetail({ id, onBack, currentUser }) {
       </div>
       <Card padding="p-4">
         <div className="grid grid-cols-3 gap-3 text-xs">
-          <div><div className="text-[10px] uppercase tracking-wider text-ink-500">From</div><div className="flex items-center gap-1.5 mt-1"><Avatar initials={from?.initials} size={20} />{from?.name}</div></div>
-          <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Currently with</div><div className="flex items-center gap-1.5 mt-1"><Avatar initials={to?.initials} size={20} />{to?.name}</div></div>
+          <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Originated by</div><div className="flex items-center gap-1.5 mt-1"><Avatar initials={from?.initials} size={20} />{from?.name}</div><div className="text-[10px] text-ink-500 mt-0.5">{from?.role}</div></div>
+          <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Currently with</div><div className="flex items-center gap-1.5 mt-1"><Avatar initials={to?.initials} size={20} />{to?.name || '—'}</div><div className="text-[10px] text-ink-500 mt-0.5">{e.toRole}</div></div>
           <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Project</div><div className="font-medium mt-1">{project?.name}</div></div>
         </div>
         <div className="mt-3 text-xs">
@@ -5210,6 +5501,39 @@ function PageEscalationDetail({ id, onBack, currentUser }) {
           <p className="text-ink-700">{e.reason}</p>
         </div>
       </Card>
+
+      {/* Escalation chain — who escalated to whom */}
+      <Card padding="p-4">
+        <SectionTitle icon="arrow-up" title="Escalation chain" subtitle={`${chain.length} step${chain.length > 1 ? 's' : ''} in the chain`} />
+        <div className="space-y-2">
+          {chain.map((c, i) => {
+            const fromU = getPerson(c.fromUserId);
+            const toU = getPerson(c.toUserId);
+            return (
+              <div key={i} className="flex items-center gap-2 text-xs p-2 border border-soft rounded-md surface-2">
+                <span className="text-[10px] text-ink-500 tnum w-5">#{i + 1}</span>
+                <div className="flex items-center gap-1.5">
+                  <Avatar initials={fromU?.initials} size={20} />
+                  <div>
+                    <div className="font-semibold">{fromU?.name}</div>
+                    <div className="text-[10px] text-ink-500">{fromU?.role}</div>
+                  </div>
+                </div>
+                <Icon name="arrow-up-right" size={14} className="text-ink-500 mx-2" />
+                <div className="flex items-center gap-1.5">
+                  <Avatar initials={toU?.initials} size={20} />
+                  <div>
+                    <div className="font-semibold">{toU?.name}</div>
+                    <div className="text-[10px] text-ink-500">{c.toRole}</div>
+                  </div>
+                </div>
+                <span className="ml-auto text-[10px] text-ink-500">{c.action} · {c.when}</span>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
       <Card padding="p-4">
         <SectionTitle icon="git-branch" title="Activity & comments" />
         <div className="space-y-3">
@@ -5231,8 +5555,13 @@ function PageEscalationDetail({ id, onBack, currentUser }) {
             <textarea value={comment} onChange={ev => setComment(ev.target.value)} rows={2}
               placeholder="Add a comment or resolution note…"
               className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white focus:outline-none focus:ring-2 ring-accent" />
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" icon="mail" onClick={() => { if (comment.trim()) { addEscalationComment(e.id, currentUser.id, comment); setComment(''); } }}>Add comment</Button>
+              {isCurrentlyWithMe && forwardTarget && escalateFurther && (
+                <Button variant="outline" icon="arrow-up-right" onClick={() => { escalateFurther(e.id, currentUser.id, forwardTarget, comment); setComment(''); }}>
+                  Forward to {forwardTarget.toRole} ({forwardUser?.name})
+                </Button>
+              )}
               <Button variant="accent" icon="check" onClick={() => { resolveEscalation(e.id, currentUser.id, comment || 'Resolved.'); setComment(''); }}>Resolve</Button>
             </div>
           </div>
@@ -5391,6 +5720,7 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
   const open = mine.filter(e => e.status !== 'Resolved');
   const roll = finRollup ? finRollup() : { receipts: 0, receivables: 0, payments: 0, payables: 0 };
   const contractorRows = CONTRACTORS.map(c => ({ ...c, score: contractorScore ? contractorScore(c.id) : c.schedule }));
+  const escTarget = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, null) : null;
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-end justify-between">
@@ -5398,7 +5728,7 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
           <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">Program Manager</div>
           <h1 className="text-2xl font-semibold">Portfolio dashboard</h1>
         </div>
-        <Button variant="accent" icon="alert-circle" onClick={onNewEscalation}>Escalate to VP</Button>
+        {escTarget && <Button variant="accent" icon="alert-circle" onClick={onNewEscalation}>{escTarget.label}</Button>}
       </div>
       <div className="grid grid-cols-4 gap-3">
         <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Programs</div><div className="text-2xl font-bold num mt-1">{projects.length}</div></Card>
@@ -5555,7 +5885,7 @@ function AppInner() {
     if (page === 'project-detail' && activeProjectId) {
       const p = projects.find(x => x.id === activeProjectId);
       return <PageProject project={p} onBack={() => setPage('home')}
-        onOpenSchools={openSchoolsList}
+        onOpenSchools={openSchoolsList} currentUser={currentUser}
         onAddTask={onAddTask} onOpenTask={onOpenTask} onEscalate={() => onNewEscalation({ projectId: p.id, title: `${p.name} — ` })} />;
     }
     if (page === 'schools-list' && activeProjectId) {
@@ -5585,21 +5915,21 @@ function AppInner() {
       if (page === 'tasks')    return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'projects') {
         const p = projects.find(x => x.id === currentUser.projectId);
-        return <PageProject project={p} onBack={() => setPage('home')} onOpenSchools={openSchoolsList} onAddTask={onAddTask} onOpenTask={onOpenTask} onEscalate={() => onNewEscalation({ projectId: p.id, title: `${p.name} — ` })} />;
+        return <PageProject project={p} onBack={() => setPage('home')} onOpenSchools={openSchoolsList} currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} onEscalate={() => onNewEscalation({ projectId: p.id, title: `${p.name} — ` })} />;
       }
       return <PageSiteEngineer currentUser={currentUser} onOpenSchool={openSchool} onAddTask={onAddTask} />;
     }
 
     if (role === 'Project Manager') {
       const myProject = projects.find(x => x.id === currentUser.projectId);
-      if (page === 'home') return <PageProject project={myProject} onBack={() => {}} onOpenSchools={openSchoolsList} onAddTask={onAddTask} onOpenTask={onOpenTask} onEscalate={() => onNewEscalation({ projectId: myProject.id, title: `${myProject.name} — ` })} />;
+      if (page === 'home') return <PageProject project={myProject} onBack={() => {}} onOpenSchools={openSchoolsList} currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} onEscalate={() => onNewEscalation({ projectId: myProject.id, title: `${myProject.name} — ` })} />;
       if (page === 'schools' && myProject)  return <PageSchoolsList project={myProject} onBack={() => setPage('home')} onOpenSchool={openSchool} onAddTask={onAddTask} />;
       if (page === 'tasks')      return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({ projectId: myProject?.id })} />;
       if (page === 'materials')  return <PageMaterials projects={projects.filter(p => p.id === currentUser.projectId)} />;
       if (page === 'financials') return <PageFinancials projects={projects.filter(p => p.id === currentUser.projectId)} fin={FIN.filter(f => f.projectId === currentUser.projectId)} />;
       if (page === 'reports')    return <PageReports projects={projects.filter(p => p.id === currentUser.projectId)} />;
-      return <PageProject project={myProject} onBack={() => {}} onOpenSchools={openSchoolsList} onAddTask={onAddTask} onOpenTask={onOpenTask} onEscalate={() => onNewEscalation({ projectId: myProject.id })} />;
+      return <PageProject project={myProject} onBack={() => {}} onOpenSchools={openSchoolsList} currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} onEscalate={() => onNewEscalation({ projectId: myProject.id })} />;
     }
 
     // Program Manager — distinct dashboard from Projects
