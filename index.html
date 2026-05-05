@@ -7,7 +7,7 @@
 <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin></script>
+<script src="https://cdn.jsdelivr.net/npm/recharts@2.10.4/umd/Recharts.min.js"></script>
 <style>
   body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background:#f4f6f9; }
   .navy { background-color:#0f1e3d; }
@@ -51,7 +51,23 @@ var _React = React,
   useMemo = _React.useMemo,
   useRef = _React.useRef,
   useCallback = _React.useCallback;
-var _Recharts = Recharts,
+var _Recharts = (typeof Recharts !== 'undefined' && Recharts) ? Recharts : (function() {
+  var stub = function(name) {
+    return function ChartStub(props) {
+      return React.createElement('div', { className: 'p-3 text-xs text-slate-400 italic', style: { minHeight: 200 } }, '[' + name + ' chart - library unavailable]');
+    };
+  };
+  var nul = function() { return null; };
+  return {
+    LineChart: stub('Line'), Line: nul,
+    BarChart: stub('Bar'), Bar: nul,
+    XAxis: nul, YAxis: nul,
+    Tooltip: nul, Legend: nul, CartesianGrid: nul,
+    ResponsiveContainer: function(props) { return React.createElement('div', { style: { width:'100%', minHeight:200 } }, props.children); },
+    PieChart: stub('Pie'), Pie: nul, Cell: nul,
+    AreaChart: stub('Area'), Area: nul
+  };
+})(),
   LineChart = _Recharts.LineChart,
   Line = _Recharts.Line,
   BarChart = _Recharts.BarChart,
@@ -5038,22 +5054,4 @@ function PageRouter() {
     if (page === "school") return /*#__PURE__*/React.createElement(SchoolDetail, null);
   }
   if (role === "Site Engineer") {
-    if (page === "dashboard") return /*#__PURE__*/React.createElement(SiteEngineerDashboard, null);
-  }
-  return /*#__PURE__*/React.createElement("div", {
-    className: "p-6"
-  }, "Page not found.");
-}
-function App() {
-  return /*#__PURE__*/React.createElement(StoreProvider, null, /*#__PURE__*/React.createElement("div", {
-    className: "min-h-screen bg-slate-50"
-  }, /*#__PURE__*/React.createElement(Header, null), /*#__PURE__*/React.createElement("div", {
-    className: "flex"
-  }, /*#__PURE__*/React.createElement(Sidebar, null), /*#__PURE__*/React.createElement("main", {
-    className: "flex-1 min-w-0"
-  }, /*#__PURE__*/React.createElement(PageRouter, null))), /*#__PURE__*/React.createElement(Toasts, null)));
-}
-ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.createElement(App, null));
-</script>
-</body>
-</html>
+    if (page === "dashboard") return /*#__PURE__*/React.createElement(SiteEngineerDashboard, nul
