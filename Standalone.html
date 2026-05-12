@@ -2992,7 +2992,7 @@ function PageDashboard({ projects, onOpenProject, currentUser }) {
   );
 }
 
-Object.assign(window, { PageDashboard });
+Object.assign(window, { PageDashboard, NewProjectModal });
 
 </script>
 <script type="text/babel">
@@ -4072,6 +4072,7 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
                   <StageRow key={i} index={i} stageName={stageName} school={school}
                     stageStatuses={stageStatuses || []}
                     stageHistory={stageHistory}
+                    completionCriteria={`Verify the ${stageName.toLowerCase()} work is complete, photo evidence is uploaded, and the responsible engineer has signed off.`}
                     onChangeStatus={(statusId, reason) => changeStatus(i, statusId, reason)}
                     onUploadPhoto={() => uploadPhoto(i)}
                     onAddTask={() => onAddTask({ projectId: school.projectId, schoolId: school.id, stageIndex: i })} />
@@ -4197,7 +4198,7 @@ function FieldRow({ label, value, editMode, onChange, type, options, dir, placeh
 }
 
 // Stage row with flexible status picker (Round 4 preserved)
-function StageRow({ index, stageName, school, stageStatuses, stageHistory, onChangeStatus, onUploadPhoto, onAddTask }) {
+function StageRow({ index, stageName, school, stageStatuses, stageHistory, onChangeStatus, onUploadPhoto, onAddTask, completionCriteria }) {
   const st = school.stages[index];
   const photos = school.photos[index] || [];
   const histKey = `${school.id}-${index}`;
@@ -4206,6 +4207,9 @@ function StageRow({ index, stageName, school, stageStatuses, stageHistory, onCha
   const [pendingStatus, setPendingStatus] = React.useState(null);
   const [reason, setReason] = React.useState('');
   const [showHistory, setShowHistory] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [editingDate, setEditingDate] = React.useState(false);
+  const [draftDate, setDraftDate] = React.useState(st.date ? st.date.slice(0, 10) : '');
 
   const currentStatusId = st.statusId || (st.done ? 'done' : 'not-started');
   const currentStatus   = stageStatuses.find(s => s.id === currentStatusId) || { label: st.done ? 'Done' : 'Not Started', color: st.done ? '#16A34A' : '#94A3B8' };
@@ -4214,14 +4218,21 @@ function StageRow({ index, stageName, school, stageStatuses, stageHistory, onCha
   const rowBg = isDone ? 'border-emerald-200 bg-emerald-50/30' : 'border-soft surface-2';
 
   const handleStatusChange = (statusId) => {
+    setMenuOpen(false);
     const status = stageStatuses.find(s => s.id === statusId);
-    if (status && !status.builtin && !status.terminal) {
+    if (statusId === currentStatusId) return;
+    // Always prompt for reason on Reopen / Block / Skip — terminal transitions go through directly.
+    if (status && (statusId === 'in-progress' || statusId === 'blocked' || statusId === 'skipped' || (!status.builtin && !status.terminal))) {
       setPendingStatus(statusId); setShowReason(true);
     } else { onChangeStatus(statusId, ''); }
   };
   const confirmWithReason = () => {
     if (pendingStatus) onChangeStatus(pendingStatus, reason);
     setShowReason(false); setReason(''); setPendingStatus(null);
+  };
+  const saveDate = () => {
+    if (draftDate) onChangeStatus(currentStatusId, `Edited completion date to ${draftDate}`);
+    setEditingDate(false);
   };
 
   return (
@@ -4275,15 +4286,65 @@ function StageRow({ index, stageName, school, stageStatuses, stageHistory, onCha
             </div>
           )}
         </div>
-        <div className="flex flex-col gap-1 shrink-0">
-          <select value={currentStatusId} onChange={e => handleStatusChange(e.target.value)}
-            className="text-[11px] px-2 py-1 border border-ink-200 rounded-md bg-white focus:outline-none focus:ring-1 ring-accent">
-            {stageStatuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
+        <div className="flex flex-col gap-1 shrink-0 relative">
+          <Button size="sm" variant={isDone ? 'accent' : 'outline'} icon="more-horizontal" onClick={() => setMenuOpen(o => !o)}>
+            Actions
+          </Button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full mt-1 w-64 surface border border-soft rounded-md shadow-pop z-30">
+              {completionCriteria && (
+                <div className="px-3 py-2 border-b border-soft bg-amber-50">
+                  <div className="text-[10px] uppercase tracking-wider text-ink-500 mb-0.5">Completion criteria</div>
+                  <div className="text-[11px] text-ink-700">{completionCriteria}</div>
+                </div>
+              )}
+              <div className="px-3 py-1.5 border-b border-soft text-[10px] uppercase tracking-wider text-ink-500">Set status</div>
+              {stageStatuses.map(s => {
+                const active = s.id === currentStatusId;
+                return (
+                  <button key={s.id} onClick={() => handleStatusChange(s.id)}
+                    className={cls('w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2', active && 'bg-accent-soft font-semibold')}>
+                    <span className="w-2 h-2 rounded-full" style={{ background: s.color }} />
+                    {s.id === 'not-started' && active ? 'Already not started'
+                     : s.id === 'in-progress' && isDone ? 'Reopen stage (→ In Progress)'
+                     : s.id === 'blocked' ? 'Mark as Blocked'
+                     : s.id === 'skipped' ? 'Skip stage'
+                     : s.id === 'done' && !isDone ? 'Mark as Done'
+                     : s.label}
+                  </button>
+                );
+              })}
+              <div className="border-t border-soft px-3 py-1.5 text-[10px] uppercase tracking-wider text-ink-500">Other</div>
+              <button onClick={() => { setEditingDate(true); setMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2">
+                <Icon name="pencil" size={12} /> Edit completion date
+              </button>
+              <button onClick={() => { setShowHistory(h => !h); setMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2">
+                <Icon name="clock" size={12} /> {showHistory ? 'Hide' : 'View'} status history ({history.length})
+              </button>
+              <button onClick={() => { onUploadPhoto(); setMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2">
+                <Icon name="upload" size={12} /> Upload photo evidence
+              </button>
+              <button onClick={() => { onAddTask(); setMenuOpen(false); }}
+                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2 border-t border-soft">
+                <Icon name="plus" size={12} /> Add follow-up task
+              </button>
+            </div>
+          )}
           <Button size="sm" variant="outline" icon="upload" onClick={onUploadPhoto}>Photo</Button>
-          <Button size="sm" variant="ghost" icon="plus" onClick={onAddTask}>Task</Button>
         </div>
       </div>
+      {editingDate && (
+        <div className="px-3 pb-3 flex gap-2 items-center border-t border-soft pt-2">
+          <label className="text-[11px] font-medium text-ink-700">Completion date:</label>
+          <input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)}
+            className="px-2 py-1 text-xs rounded-md border border-ink-200 bg-white" />
+          <Button size="sm" variant="accent" onClick={saveDate}>Save date</Button>
+          <Button size="sm" variant="ghost" onClick={() => setEditingDate(false)}>Cancel</Button>
+        </div>
+      )}
       {showReason && (
         <div className="px-3 pb-3 flex gap-2 items-center border-t border-soft pt-2">
           <TextField value={reason} onChange={setReason} placeholder="Reason for status change (optional)…" className="flex-1 !text-xs" />
@@ -5606,7 +5667,7 @@ function PageSettings({ currentUser }) {
   const TABS = [
     'Users','Roles & Permissions','Projects','Lifecycle Stages','School Stages',
     'Custom Statuses','Custom Fields','Milestone Templates','KPIs',
-    'Branding','Notifications','Integrations',
+    'Branding','Notifications',
     ...(showAudit ? ['Audit Log'] : []),
   ];
 
@@ -5621,7 +5682,7 @@ function PageSettings({ currentUser }) {
         <div className="p-5">
           {tab === 'Users'              && <UsersTab />}
           {tab === 'Roles & Permissions'&& <RolesTab />}
-          {tab === 'Projects'           && <ProjectsTab />}
+          {tab === 'Projects'           && <ProjectsTab currentUser={currentUser} />}
           {tab === 'Lifecycle Stages'   && <LifecycleTab />}
           {tab === 'School Stages'      && <SchoolStagesTab />}
           {tab === 'Custom Statuses'    && <CustomStatusesTab />}
@@ -5629,8 +5690,7 @@ function PageSettings({ currentUser }) {
           {tab === 'Milestone Templates'&& <MilestoneTemplatesTab />}
           {tab === 'KPIs'               && <KPIsTab />}
           {tab === 'Branding'           && <BrandingTab />}
-          {tab === 'Notifications'      && <NotificationsTab />}
-          {tab === 'Integrations'       && <IntegrationsTab />}
+          {tab === 'Notifications'      && <NotificationsTab currentUser={currentUser} />}
           {tab === 'Audit Log'          && <AuditTab />}
         </div>
       </Card>
@@ -6094,122 +6154,386 @@ function RolesTab() {
   );
 }
 
-function ProjectsTab() {
+function ProjectsTab({ currentUser }) {
+  const { projects, addProject, deleteProject, logAudit } = useStore();
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [confirmDel, setConfirmDel] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+  const canAdd = canCreateProject(currentUser);
+
+  React.useEffect(() => {
+    if (toast) { const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); }
+  }, [toast]);
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <SectionTitle title="Projects" className="!mb-0" />
-        <Button icon="plus" variant="accent">Add Project</Button>
+        <SectionTitle title="Projects" subtitle={`${projects.length} programs`} className="!mb-0" />
+        {canAdd
+          ? <Button icon="plus" variant="accent" onClick={() => setAddOpen(true)}>Add Project</Button>
+          : <span className="text-[11px] text-ink-500 italic">Only Anas, Fasiulla, and Naif can create projects.</span>}
       </div>
+
+      {toast && (
+        <div className="rounded-md p-2.5 text-xs border bg-emerald-50 border-emerald-200 text-emerald-800">
+          <span className="font-semibold">✓</span> {toast}
+        </div>
+      )}
+
       <div className="space-y-1">
-        {PROJECTS.map(p => (
+        {projects.map(p => (
           <div key={p.id} className="flex items-center justify-between border border-soft rounded-md p-2.5">
-            <div className="flex items-center gap-2"><Pill tone="soft">{p.type}</Pill><span className="text-sm font-medium">{p.name}</span></div>
-            <RowActions onEdit={() => {}} onArchive={() => {}} />
+            <div className="flex items-center gap-2">
+              <Pill tone="soft">{p.type}</Pill>
+              <span className="text-sm font-medium">{p.name}</span>
+              <span className="text-[11px] text-ink-500">· {p.region}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button className="p-1 rounded hover:bg-ink-100 text-ink-500" title="Edit (read-only in demo)"><Icon name="pencil" size={13} /></button>
+              {canAdd && (
+                <button onClick={() => setConfirmDel(p)} className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600" title="Delete">
+                  <Icon name="trash-2" size={13} />
+                </button>
+              )}
+            </div>
           </div>
         ))}
       </div>
+
+      {/* Reuses the global NewProjectModal exposed from page-dashboard.jsx */}
+      {typeof NewProjectModal === 'function' && (
+        <NewProjectModal open={addOpen} onClose={() => setAddOpen(false)} currentUser={currentUser}
+          onCreate={data => {
+            const p = addProject(data);
+            if (p && logAudit && currentUser) logAudit({
+              actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+              action: 'CREATE', entityType: 'project', entityId: p.id, entityLabel: p.name,
+              summary: `Created project "${p.name}" in ${p.region}` + (p.value ? ` (SAR ${SAR(p.value)})` : ''),
+            });
+            setToast(`Project "${data.name}" created.`);
+          }} />
+      )}
+
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title="Delete project (permanent)"
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirmDel(null)}>Cancel</Button>
+          <Button variant="danger" icon="trash-2" onClick={() => {
+            deleteProject(confirmDel.id);
+            if (logAudit) logAudit({
+              actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+              action: 'DELETE', entityType: 'project', entityId: confirmDel.id, entityLabel: confirmDel.name,
+              summary: `Deleted project "${confirmDel.name}"`,
+            });
+            setToast(`Project "${confirmDel.name}" deleted.`);
+            setConfirmDel(null);
+          }}>Delete permanently</Button>
+        </>}>
+        <p className="text-sm">Permanently delete <strong>{confirmDel?.name}</strong>?</p>
+        <p className="text-xs text-red-600 mt-2">This removes the project from the list. Existing schools assigned to this project will be orphaned.</p>
+      </Modal>
     </div>
   );
 }
 
 function KPIsTab() {
-  const kpis = [
-    { name: 'Schedule Score',  target: 90, amber: 70, red: 50 },
-    { name: 'Quality Score',   target: 90, amber: 75, red: 60 },
-    { name: 'HSE Score',       target: 95, amber: 80, red: 65 },
-    { name: 'Documentation',   target: 90, amber: 75, red: 60 },
-    { name: 'Stage Wait Days', target: 5,  amber: 7,  red: 14 },
-  ];
+  const [kpis, setKpis] = React.useState([
+    { id: 'k1', name: 'Schedule Score',  target: 90, amber: 70, red: 50 },
+    { id: 'k2', name: 'Quality Score',   target: 90, amber: 75, red: 60 },
+    { id: 'k3', name: 'HSE Score',       target: 95, amber: 80, red: 65 },
+    { id: 'k4', name: 'Documentation',   target: 90, amber: 75, red: 60 },
+    { id: 'k5', name: 'Stage Wait Days', target: 5,  amber: 7,  red: 14 },
+  ]);
+  const [editId, setEditId] = React.useState(null);
+  const [addOpen, setAddOpen] = React.useState(false);
+  const [confirmDel, setConfirmDel] = React.useState(null);
+  const [draft, setDraft] = React.useState({ name: '', target: 0, amber: 0, red: 0 });
+
+  const startEdit = (k) => { setEditId(k.id); setDraft({ ...k }); };
+  const saveEdit = () => { setKpis(ks => ks.map(k => k.id === editId ? { ...k, ...draft } : k)); setEditId(null); };
+  const startAdd = () => { setDraft({ name: '', target: 0, amber: 0, red: 0 }); setAddOpen(true); };
+  const saveAdd = () => {
+    if (!draft.name.trim()) return;
+    setKpis(ks => [...ks, { id: 'k' + Date.now(), ...draft, target: +draft.target, amber: +draft.amber, red: +draft.red }]);
+    setAddOpen(false);
+  };
+
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between"><SectionTitle title="KPIs" className="!mb-0" /><Button icon="plus" variant="accent">Add KPI</Button></div>
+      <div className="flex items-center justify-between">
+        <SectionTitle title="KPIs" className="!mb-0" />
+        <Button icon="plus" variant="accent" onClick={startAdd}>Add KPI</Button>
+      </div>
       <table className="w-full text-sm border border-soft rounded-md">
         <thead className="surface-2 text-[11px] uppercase tracking-wider text-ink-500">
           <tr><th className="text-left px-3 py-2">KPI</th><th className="text-right px-3 py-2">Target</th><th className="text-right px-3 py-2">Amber</th><th className="text-right px-3 py-2">Red</th><th className="text-right px-3 py-2"></th></tr>
         </thead>
         <tbody>
-          {kpis.map(k => (
-            <tr key={k.name} className="border-t border-soft hover-row">
+          {kpis.map(k => editId === k.id ? (
+            <tr key={k.id} className="border-t border-accent bg-accent-soft">
+              <td className="px-3 py-2"><TextField value={draft.name} onChange={v => setDraft(d => ({ ...d, name: v }))} /></td>
+              <td className="px-3 py-2"><TextField value={draft.target} onChange={v => setDraft(d => ({ ...d, target: +v }))} type="number" /></td>
+              <td className="px-3 py-2"><TextField value={draft.amber} onChange={v => setDraft(d => ({ ...d, amber: +v }))} type="number" /></td>
+              <td className="px-3 py-2"><TextField value={draft.red} onChange={v => setDraft(d => ({ ...d, red: +v }))} type="number" /></td>
+              <td className="px-3 py-2 text-right">
+                <div className="inline-flex gap-1">
+                  <Button size="sm" variant="accent" icon="check" onClick={saveEdit}>Save</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditId(null)}>Cancel</Button>
+                </div>
+              </td>
+            </tr>
+          ) : (
+            <tr key={k.id} className="border-t border-soft hover-row">
               <td className="px-3 py-2 font-medium">{k.name}</td>
               <td className="px-3 py-2 text-right tnum">{k.target}</td>
               <td className="px-3 py-2 text-right tnum text-amber-600">{k.amber}</td>
               <td className="px-3 py-2 text-right tnum text-red-600">{k.red}</td>
-              <td className="px-3 py-2 text-right"><RowActions onEdit={() => {}} onArchive={() => {}} /></td>
+              <td className="px-3 py-2 text-right">
+                <div className="inline-flex gap-1">
+                  <button onClick={() => startEdit(k)} className="p-1 rounded hover:bg-ink-100 text-ink-500" title="Edit"><Icon name="pencil" size={13} /></button>
+                  <button onClick={() => setConfirmDel(k)} className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600" title="Delete"><Icon name="trash-2" size={13} /></button>
+                </div>
+              </td>
             </tr>
           ))}
         </tbody>
       </table>
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add KPI"
+        footer={<><Button variant="ghost" onClick={() => setAddOpen(false)}>Cancel</Button>
+          <Button variant="accent" icon="check" onClick={saveAdd}>Add KPI</Button></>}>
+        <div className="space-y-3">
+          <div><label className="text-[11px] font-medium text-ink-700 mb-1 block">Name</label>
+            <TextField value={draft.name} onChange={v => setDraft(d => ({ ...d, name: v }))} placeholder="e.g. Energization Rate" /></div>
+          <div className="grid grid-cols-3 gap-3">
+            <div><label className="text-[11px] font-medium text-ink-700 mb-1 block">Target</label>
+              <TextField value={draft.target} onChange={v => setDraft(d => ({ ...d, target: +v }))} type="number" /></div>
+            <div><label className="text-[11px] font-medium text-ink-700 mb-1 block">Amber</label>
+              <TextField value={draft.amber} onChange={v => setDraft(d => ({ ...d, amber: +v }))} type="number" /></div>
+            <div><label className="text-[11px] font-medium text-ink-700 mb-1 block">Red</label>
+              <TextField value={draft.red} onChange={v => setDraft(d => ({ ...d, red: +v }))} type="number" /></div>
+          </div>
+        </div>
+      </Modal>
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title="Delete KPI"
+        footer={<><Button variant="ghost" onClick={() => setConfirmDel(null)}>Cancel</Button>
+          <Button variant="danger" icon="trash-2" onClick={() => { setKpis(ks => ks.filter(x => x.id !== confirmDel.id)); setConfirmDel(null); }}>Delete</Button></>}>
+        <p className="text-sm">Delete KPI <strong>{confirmDel?.name}</strong>?</p>
+      </Modal>
     </div>
   );
 }
 
 function BrandingTab() {
+  const [colors, setColors] = React.useState({
+    'Primary': '#0B2545', 'Primary 2': '#13315C', 'Accent': '#B8860B', 'Industrial Red': '#C8102E',
+  });
+  const [logoName, setLogoName] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+  const fileRef = React.useRef(null);
+
+  React.useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); } }, [toast]);
+
+  const onPickLogo = (e) => {
+    const f = e.target.files?.[0];
+    if (f) { setLogoName(f.name); setToast(`Logo "${f.name}" uploaded (demo).`); e.target.value = ''; }
+  };
+  const setColor = (n, v) => { setColors(c => ({ ...c, [n]: v })); setToast(`${n} color updated to ${v}.`); };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-      <div>
-        <SectionTitle title="Logo" />
-        <div className="border-2 border-dashed border-soft rounded-md p-8 text-center text-xs text-ink-500">
-          <Icon name="upload" size={20} /><div className="mt-1">Upload SVG or PNG</div>
+    <div className="space-y-3">
+      {toast && <div className="rounded-md p-2.5 text-xs border bg-emerald-50 border-emerald-200 text-emerald-800"><span className="font-semibold">✓</span> {toast}</div>}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <div>
+          <SectionTitle title="Logo" />
+          <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={onPickLogo} />
+          <button onClick={() => fileRef.current?.click()}
+            className="w-full border-2 border-dashed border-soft hover:border-accent rounded-md p-8 text-center text-xs text-ink-500 transition">
+            <Icon name="upload" size={20} />
+            <div className="mt-1">{logoName ? <span className="text-emerald-700 font-semibold">{logoName}</span> : 'Click to upload SVG or PNG'}</div>
+          </button>
         </div>
-      </div>
-      <div>
-        <SectionTitle title="Colors" />
-        <div className="space-y-2">
-          {[['Primary','#0B2545'],['Primary 2','#13315C'],['Accent','#B8860B'],['Industrial Red','#C8102E']].map(([n, c]) => (
-            <div key={n} className="flex items-center justify-between border border-soft rounded-md p-2">
-              <div className="flex items-center gap-2"><div className="w-6 h-6 rounded" style={{ background: c }} /><span className="text-sm">{n}</span></div>
-              <span className="text-xs tnum text-ink-500">{c}</span>
-            </div>
-          ))}
+        <div>
+          <SectionTitle title="Colors" />
+          <div className="space-y-2">
+            {Object.entries(colors).map(([n, c]) => (
+              <div key={n} className="flex items-center justify-between border border-soft rounded-md p-2">
+                <div className="flex items-center gap-2">
+                  <input type="color" value={c} onChange={e => setColor(n, e.target.value)}
+                    className="w-7 h-7 border border-ink-200 rounded cursor-pointer" />
+                  <span className="text-sm">{n}</span>
+                </div>
+                <span className="text-xs tnum text-ink-500">{c}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function NotificationsTab() {
-  const events = ['Task assigned','Task overdue','Payment received','NCR opened','Stage transition','Material delivered','School energized','Document uploaded'];
-  return (
-    <table className="w-full text-sm border border-soft rounded-md">
-      <thead className="surface-2 text-[11px] uppercase tracking-wider text-ink-500">
-        <tr><th className="text-left px-3 py-2">Event</th><th className="text-center px-3 py-2">Email</th><th className="text-center px-3 py-2">In-app</th><th className="text-center px-3 py-2">SMS</th></tr>
-      </thead>
-      <tbody>
-        {events.map((e, i) => (
-          <tr key={e} className="border-t border-soft hover-row">
-            <td className="px-3 py-2">{e}</td>
-            <td className="px-3 py-2 text-center"><input type="checkbox" defaultChecked={i % 2 === 0} /></td>
-            <td className="px-3 py-2 text-center"><input type="checkbox" defaultChecked /></td>
-            <td className="px-3 py-2 text-center"><input type="checkbox" defaultChecked={i === 1} /></td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function IntegrationsTab() {
-  const ints = [
-    { name: 'Warehouse System',   icon: 'warehouse',  status: 'Connected' },
-    { name: 'ERP',                icon: 'database',   status: 'Connected' },
-    { name: 'Email / SMTP',       icon: 'mail',       status: 'Connected' },
-    { name: 'SSO',                icon: 'key-round',  status: 'Disconnected' },
-    { name: 'BIM',                icon: 'box',        status: 'Disconnected' },
-    { name: 'Monitoring Platform',icon: 'activity',   status: 'Connected' },
+function NotificationsTab({ currentUser }) {
+  const { logAudit, pushNotif } = useStore();
+  const EVENT_TYPES = [
+    { id: 'escalation_created', label: 'Escalation created' },
+    { id: 'task_assigned',      label: 'Task assigned' },
+    { id: 'task_overdue',       label: 'Task overdue' },
+    { id: 'stage_status_change',label: 'Stage status change' },
+    { id: 'schedule_overdue',   label: 'Schedule overdue' },
+    { id: 'payment_received',   label: 'Payment received' },
+    { id: 'school_energized',   label: 'School energized' },
+    { id: 'report_ready',       label: 'Report ready' },
+    { id: 'document_uploaded',  label: 'Document uploaded' },
   ];
+  const RECIPIENT_ROLES = ['VP', 'Manager', 'Operations Manager', 'Program Manager', 'Project Manager', 'Material planning', 'Coordinator'];
+
+  // Per-event rule config: { eventId: { email, inapp, sms, recipients: [], throttle: 'immediate'|'daily', template: '' } }
+  const initial = React.useMemo(() => {
+    const out = {};
+    EVENT_TYPES.forEach((e, i) => {
+      out[e.id] = {
+        email: i % 2 === 0,
+        inapp: true,
+        sms: i === 2,
+        recipients: ['Manager','Program Manager'],
+        throttle: 'immediate',
+        template: `[${e.label}] {actor} on {entity} at {timestamp}`,
+      };
+    });
+    return out;
+  }, []);
+  const [rules, setRules] = React.useState(initial);
+  const [editEventId, setEditEventId] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+
+  React.useEffect(() => {
+    if (toast) { const t = setTimeout(() => setToast(null), 5000); return () => clearTimeout(t); }
+  }, [toast]);
+
+  const updateRule = (eid, patch) => setRules(r => ({ ...r, [eid]: { ...r[eid], ...patch } }));
+
+  const saveRule = (eid) => {
+    const r = rules[eid];
+    const event = EVENT_TYPES.find(x => x.id === eid);
+    if (logAudit && currentUser) logAudit({
+      actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+      action: 'UPDATE', entityType: 'notification_rule', entityId: eid, entityLabel: event.label,
+      summary: `Saved notification rule for "${event.label}" — channels: ${[r.email && 'email', r.inapp && 'in-app', r.sms && 'sms'].filter(Boolean).join('/')} → ${r.recipients.join(', ')} (${r.throttle})`,
+    });
+    setEditEventId(null);
+    setToast(`Saved rule for "${event.label}".`);
+  };
+
+  const testSend = (eid) => {
+    const event = EVENT_TYPES.find(x => x.id === eid);
+    const r = rules[eid];
+    const channels = [r.email && 'email', r.inapp && 'in-app', r.sms && 'sms'].filter(Boolean).join(' + ');
+    // Push an in-app notification immediately so the bell shows it
+    if (pushNotif) pushNotif({
+      kind: 'reminder',
+      text: `TEST — ${event.label}: would notify ${r.recipients.join(' & ')} via ${channels}`,
+      target: { kind: 'project', id: PROJECTS[0]?.id },
+    });
+    if (logAudit && currentUser) logAudit({
+      actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+      action: 'CREATE', entityType: 'notification_test', entityId: 'test-' + eid + '-' + Date.now(),
+      entityLabel: event.label,
+      summary: `Test notification sent — "${event.label}" via ${channels} to ${r.recipients.join(', ')} (no real email — demo mode)`,
+    });
+    setToast(`Test notification queued for "${event.label}" — see Audit Log + bell icon.`);
+  };
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-      {ints.map(i => (
-        <div key={i.name} className="border border-soft rounded-md p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-10 h-10 rounded-md bg-ink-100 flex items-center justify-center"><Icon name={i.icon} size={20} /></div>
-            <Pill tone={i.status === 'Connected' ? 'ok' : 'soft'}>{i.status}</Pill>
-          </div>
-          <div className="text-sm font-semibold">{i.name}</div>
-          <Button variant="outline" size="sm" className="mt-3">{i.status === 'Connected' ? 'Edit' : 'Connect'}</Button>
+    <div className="space-y-3">
+      <SectionTitle title="Notifications" subtitle="Configure rules per event type. Save persists for the session." className="!mb-0" />
+
+      <div className="bg-amber-50 border border-amber-200 rounded-md p-3 text-xs text-amber-900">
+        <div className="font-semibold flex items-center gap-1 mb-1"><Icon name="info" size={13} /> Demo mode</div>
+        Email and SMS rules below are configured here, but <strong>actual sending requires a backend integration</strong> (SendGrid / AWS SES / Mailgun / Twilio) to be wired up in production.
+        The Audit Log will record every notification that <strong>would have been sent</strong>, and the in-app bell icon shows the live notification immediately when you click "Send test".
+      </div>
+
+      {toast && (
+        <div className="rounded-md p-2.5 text-xs border bg-emerald-50 border-emerald-200 text-emerald-800">
+          <span className="font-semibold">✓</span> {toast}
         </div>
-      ))}
+      )}
+
+      <div className="border border-soft rounded-md overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="surface-2 text-[11px] uppercase tracking-wider text-ink-500">
+            <tr>
+              <th className="text-left px-3 py-2">Event</th>
+              <th className="text-center px-3 py-2">Email</th>
+              <th className="text-center px-3 py-2">In-app</th>
+              <th className="text-center px-3 py-2">SMS</th>
+              <th className="text-left px-3 py-2">Recipients</th>
+              <th className="text-left px-3 py-2">Throttle</th>
+              <th className="text-right px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {EVENT_TYPES.map(e => {
+              const r = rules[e.id];
+              const editing = editEventId === e.id;
+              return (
+                <React.Fragment key={e.id}>
+                  <tr className="border-t border-soft hover-row">
+                    <td className="px-3 py-2 font-medium">{e.label}</td>
+                    <td className="px-3 py-2 text-center"><input type="checkbox" checked={r.email} onChange={ev => updateRule(e.id, { email: ev.target.checked })} /></td>
+                    <td className="px-3 py-2 text-center"><input type="checkbox" checked={r.inapp} onChange={ev => updateRule(e.id, { inapp: ev.target.checked })} /></td>
+                    <td className="px-3 py-2 text-center"><input type="checkbox" checked={r.sms} onChange={ev => updateRule(e.id, { sms: ev.target.checked })} /></td>
+                    <td className="px-3 py-2 text-xs text-ink-500">{r.recipients.join(', ') || '—'}</td>
+                    <td className="px-3 py-2 text-xs">{r.throttle}</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="inline-flex gap-1">
+                        <Button size="sm" variant="outline" icon="bell" onClick={() => testSend(e.id)}>Send test</Button>
+                        <Button size="sm" variant="ghost" icon="pencil" onClick={() => setEditEventId(editing ? null : e.id)}>{editing ? 'Hide' : 'Edit'}</Button>
+                      </div>
+                    </td>
+                  </tr>
+                  {editing && (
+                    <tr className="bg-ink-50">
+                      <td colSpan="7" className="px-6 py-3">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="text-[10px] uppercase tracking-wider text-ink-500 mb-1 block">Recipient roles</label>
+                            <div className="space-y-1">
+                              {RECIPIENT_ROLES.map(role => (
+                                <label key={role} className="flex items-center gap-2 text-xs">
+                                  <input type="checkbox" checked={r.recipients.includes(role)}
+                                    onChange={ev => updateRule(e.id, {
+                                      recipients: ev.target.checked ? [...r.recipients, role] : r.recipients.filter(x => x !== role),
+                                    })} />
+                                  {role}
+                                </label>
+                              ))}
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] uppercase tracking-wider text-ink-500 mb-1 block">Throttle</label>
+                            <Select value={r.throttle} onChange={v => updateRule(e.id, { throttle: v })}
+                              options={[{value:'immediate',label:'Immediate'},{value:'daily',label:'Daily digest'}]} className="w-full" />
+                          </div>
+                          <div>
+                            <label className="text-[10px] uppercase tracking-wider text-ink-500 mb-1 block">Template (rich-text)</label>
+                            <textarea value={r.template} onChange={ev => updateRule(e.id, { template: ev.target.value })} rows={3}
+                              placeholder="Use {actor}, {entity}, {timestamp} placeholders"
+                              className="w-full px-2.5 py-1.5 text-xs rounded-md border border-ink-200 bg-white" />
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-3">
+                          <Button size="sm" variant="ghost" onClick={() => setEditEventId(null)}>Cancel</Button>
+                          <Button size="sm" variant="accent" icon="check" onClick={() => saveRule(e.id)}>Save rule</Button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

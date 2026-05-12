@@ -93,8 +93,8 @@ record('FIX 8: Duplicate SEC meter validated on save',
        /validateSchool\(\{ id: school\.id, meter: form\.meter \}, school\.id\)/.test(detailJsx));
 record('FIX 8: Contractor changeable via FieldRow select',
        /label="Contractor"[\s\S]{0,200}options=\{\[\{value:'',label:'— Unassigned —'/.test(detailJsx));
-record('Stage status dropdown wired to setSchoolStageStatus',
-       /onChange=\{e => handleStatusChange\(e\.target\.value\)\}/.test(detailJsx));
+record('Stage status menu wired to setSchoolStageStatus',
+       /onClick=\{\(\) => handleStatusChange\(s\.id\)\}/.test(detailJsx));
 record('Photo upload button wired to uploadPhoto',
        /onClick=\{onUploadPhoto\}/.test(detailJsx));
 record('Materials Log button wired to logUsage',
@@ -154,6 +154,64 @@ record('Sidebar removes Materials nav item entirely',
        !/{ id: 'materials',\s*label: 'Materials'/.test(shellJsx));
 record('Sidebar Financials gated by canViewFinancials',
        /canViewFinancials\(currentUser\)/.test(shellJsx));
+
+// ── J2. Round 8 fixes ─────────────────────────────────────────────────────
+record('BUG 1: Settings ProjectsTab uses real addProject',
+       /const \{ projects, addProject, deleteProject, logAudit \} = useStore\(\);/.test(settingsJsx));
+record('BUG 1: Settings Add Project button onClick set',
+       /onClick=\{\(\) => setAddOpen\(true\)\}>Add Project/.test(settingsJsx));
+record('BUG 1: Settings Add Project gated by canCreateProject',
+       /canCreateProject\(currentUser\)/.test(settingsJsx));
+record('BUG 1: Settings reuses NewProjectModal (shared with dashboard)',
+       /typeof NewProjectModal === 'function'/.test(settingsJsx) && /Object\.assign\(window, \{ PageDashboard, NewProjectModal \}\)/.test(dashJsx));
+record('BUG 1: Settings ProjectsTab writes CREATE audit',
+       /entityType: 'project'/.test(settingsJsx) && /Created project/.test(settingsJsx));
+record('BUG 1: Settings ProjectsTab DELETE audit on remove',
+       /action: 'DELETE', entityType: 'project'/.test(settingsJsx));
+
+record('BUG 2: Integrations tab removed from TABS',
+       !/'Integrations'/.test(settingsJsx));
+record('BUG 2: IntegrationsTab component removed',
+       !/function IntegrationsTab\(/.test(settingsJsx));
+record('BUG 2: No <IntegrationsTab/> render',
+       !/<IntegrationsTab/.test(settingsJsx));
+
+record('BUG 3: Notifications demo banner present',
+       /This is a demo|This is a demo\b|requires a backend integration/i.test(settingsJsx));
+record('BUG 3: Notifications has Send test button',
+       /Send test/.test(settingsJsx) && /testSend\(e\.id\)/.test(settingsJsx));
+record('BUG 3: Notifications saveRule writes audit',
+       /entityType: 'notification_rule'/.test(settingsJsx));
+record('BUG 3: Notifications test send writes audit',
+       /entityType: 'notification_test'/.test(settingsJsx));
+record('BUG 3: Notifications rule rich-text template field',
+       /placeholder="Use \{actor\}/.test(settingsJsx));
+record('BUG 3: Notifications throttle Immediate / Daily',
+       /Immediate.*Daily digest|daily/.test(settingsJsx));
+
+record('BUG 4: StageRow has Actions menu button',
+       /menuOpen, setMenuOpen.*useState/.test(detailJsx) && /Actions/.test(detailJsx));
+record('BUG 4: StageRow reopen label for Done stages',
+       /Reopen stage \(→ In Progress\)/.test(detailJsx));
+record('BUG 4: StageRow "Mark as Blocked"',
+       /Mark as Blocked/.test(detailJsx));
+record('BUG 4: StageRow Skip option',
+       /Skip stage/.test(detailJsx));
+record('BUG 4: StageRow Edit completion date',
+       /Edit completion date/.test(detailJsx) && /editingDate/.test(detailJsx));
+record('BUG 4: StageRow View status history',
+       /View.*status history.*history\.length/.test(detailJsx) || /View.*history.*\{history\.length\}/.test(detailJsx));
+record('BUG 4: StageRow shows completion criteria',
+       /completionCriteria/.test(detailJsx) && /Completion criteria/.test(detailJsx));
+record('BUG 4: Free transitions in all directions (in-progress/blocked/skipped prompt for reason)',
+       /statusId === 'in-progress' \|\| statusId === 'blocked' \|\| statusId === 'skipped'/.test(detailJsx));
+
+record('BUG 5: Settings KPIs add/edit/delete wired',
+       /startEdit\(k\)/.test(settingsJsx) && /setConfirmDel\(k\)/.test(settingsJsx) && /saveAdd/.test(settingsJsx));
+record('BUG 5: Settings Branding color picker wired',
+       /<input type="color"/.test(settingsJsx) && /setColor\(n, e\.target\.value\)/.test(settingsJsx));
+record('BUG 5: Settings Branding logo upload wired',
+       /onPickLogo/.test(settingsJsx) && /fileRef\.current\?\.click\(\)/.test(settingsJsx));
 
 // ── K. Login + Sign-out ────────────────────────────────────────────────────
 record('FIX 5: Login no stat tiles',
