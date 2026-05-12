@@ -2028,6 +2028,33 @@ function StoreProvider({ children }) {
   const [people]                  = React.useState(() => PEOPLE);
   const [projects, setProjects]   = React.useState(() => PROJECTS);
 
+  // Project CRUD
+  const addProject = (data) => {
+    const id = data.id || ('p-' + Date.now());
+    const proj = {
+      id,
+      tag: data.tag || id.toUpperCase(),
+      name: data.name || 'Untitled program',
+      type: data.type || 'School Program',
+      region: data.region || '',
+      city: data.city || '',
+      value: +data.value || 0,
+      start: data.start || new Date().toISOString().slice(0, 10),
+      target: data.target || '2027-12-31',
+      status: data.status || 'On Track',
+      pmId: data.pmId || null,
+      contractorId: data.contractorId || null,
+      sites: 0,
+      progress: 0,
+      schoolDist: STAGE_KEYS.map(() => 0),
+      currentStage: 0,
+    };
+    setProjects(ps => [...ps, proj]);
+    return proj;
+  };
+  const updateProject = (id, patch) => setProjects(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p));
+  const deleteProject = (id) => setProjects(ps => ps.filter(p => p.id !== id));
+
   // ----- Tasks -----
   const addTask = (t) => {
     const id = `t${Date.now()}`;
@@ -2158,6 +2185,7 @@ function StoreProvider({ children }) {
     sendChatMessage,
     updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     pushNotif, markNotifRead, markAllNotifsRead,
+    addProject, updateProject, deleteProject,
     _setSchools: setSchools,
   };
   const r2 = (typeof useStoreR2 === 'function') ? useStoreR2(baseValue) : {};
@@ -2807,8 +2835,84 @@ function ProjectCard({ p, onOpen }) {
   );
 }
 
+function NewProjectModal({ open, onClose, onCreate, currentUser }) {
+  const [form, setForm] = React.useState({
+    tag: '', name: '', region: '', city: '', value: '', start: '', target: '', contractorId: '', pmId: '',
+  });
+  React.useEffect(() => {
+    if (open) setForm({ tag: '', name: '', region: '', city: '', value: '', start: new Date().toISOString().slice(0,10), target: '', contractorId: '', pmId: '' });
+  }, [open]);
+  if (!open) return null;
+  const submit = () => {
+    if (!form.name.trim() || !form.region.trim()) return;
+    onCreate({ ...form, value: +form.value || 0 });
+    onClose();
+  };
+  return (
+    <Modal open={open} onClose={onClose} title="New Project" wide
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="accent" icon="check" onClick={submit}>Create project</Button>
+      </>}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Project name *</label>
+            <TextField value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} placeholder="e.g. Tabuk Schools Solar Program" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Tag</label>
+            <TextField value={form.tag} onChange={v => setForm(f => ({ ...f, tag: v }))} placeholder="e.g. Tabuk-1" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Region *</label>
+            <TextField value={form.region} onChange={v => setForm(f => ({ ...f, region: v }))} placeholder="e.g. Tabuk" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">City</label>
+            <TextField value={form.city} onChange={v => setForm(f => ({ ...f, city: v }))} />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Contract value (SAR)</label>
+            <TextField value={form.value} onChange={v => setForm(f => ({ ...f, value: v }))} type="number" placeholder="350000000" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Start date</label>
+            <TextField value={form.start} onChange={v => setForm(f => ({ ...f, start: v }))} type="date" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Target date</label>
+            <TextField value={form.target} onChange={v => setForm(f => ({ ...f, target: v }))} type="date" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Project Manager</label>
+            <Select value={form.pmId} onChange={v => setForm(f => ({ ...f, pmId: v }))}
+              options={[{value:'',label:'— Assign later —'}, ...PEOPLE.filter(p => p.role === 'Project Manager').map(p => ({ value: p.id, label: p.name }))]} className="w-full" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Primary contractor</label>
+            <Select value={form.contractorId} onChange={v => setForm(f => ({ ...f, contractorId: v }))}
+              options={[{value:'',label:'— Unassigned —'}, ...CONTRACTORS.map(c => ({ value: c.id, label: c.name }))]} className="w-full" />
+          </div>
+        </div>
+        <div className="text-[11px] text-ink-500 bg-ink-50 rounded p-2">
+          Only Anas Alshahrani, Fasiulla Baig, and Naif Alsalmah can create new projects (Round 6 gate).
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function PageDashboard({ projects, onOpenProject, currentUser }) {
+  const { addProject, logAudit } = useStore() || {};
   const [stageFilter, setStageFilter] = React.useState(null);
+  const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
   const totalValue = projects.reduce((a, p) => a + p.value, 0);
   const openCount = projects.filter(p => p.progress < 100).length;
@@ -2837,10 +2941,12 @@ function PageDashboard({ projects, onOpenProject, currentUser }) {
 
   return (
     <div className="p-6 space-y-6">
-      {/* KPI strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-        {kpis.map((k, i) => <KPICard key={i} {...k} accent={i === 0 || i === 6} />)}
-      </div>
+      {/* KPI strip — visible only to VP + 2 Managers (Anas, Fasiulla) */}
+      {canViewFinancials(currentUser) && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+          {kpis.map((k, i) => <KPICard key={i} {...k} accent={i === 0 || i === 6} />)}
+        </div>
+      )}
 
       {/* Stage strip */}
       <Card>
@@ -2865,12 +2971,23 @@ function PageDashboard({ projects, onOpenProject, currentUser }) {
           icon="folder-kanban"
           title={stageFilter != null ? `Projects with schools at "${SCHOOL_STAGES[stageFilter]}"` : 'All Projects'}
           subtitle={`${filteredProjects.length} of ${projects.length} projects`}
-          action={canCreateProject(currentUser) ? <Button icon="plus" variant="accent" onClick={() => alert('New project — Use Settings → Projects to add')}>New Project</Button> : null}
+          action={canCreateProject(currentUser) ? <Button icon="plus" variant="accent" onClick={() => setNewProjectOpen(true)}>New Project</Button> : null}
         />
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {filteredProjects.map(p => <ProjectCard key={p.id} p={p} onOpen={onOpenProject} />)}
         </div>
       </div>
+
+      <NewProjectModal open={newProjectOpen} onClose={() => setNewProjectOpen(false)}
+        currentUser={currentUser}
+        onCreate={data => {
+          const p = addProject && addProject(data);
+          if (p && logAudit) logAudit({
+            actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+            action: 'CREATE', entityType: 'project', entityId: p.id, entityLabel: p.name,
+            summary: `Created project "${p.name}" in ${p.region}` + (p.value ? ` (SAR ${SAR(p.value)})` : ''),
+          });
+        }} />
     </div>
   );
 }
@@ -3459,7 +3576,7 @@ const LEGACY_STAGE_MAP = [
 ];
 
 function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser }) {
-  const { schools, addSchool, deleteSchool, validateSchool, updateSchool } = useStore();
+  const { schools, addSchool, deleteSchool, validateSchool, updateSchool, logAudit } = useStore();
   const projSchools = React.useMemo(() => schools.filter(s => s.projectId === project.id), [schools, project.id]);
 
   const [q, setQ] = React.useState('');
@@ -3571,7 +3688,15 @@ function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser
       )}
 
       <AddSchoolModal open={addOpen} onClose={() => setAddOpen(false)}
-        onSave={data => { const r = addSchool(data); if (r && r.ok === false) console.warn('add failed', r); }}
+        onSave={data => {
+          const r = addSchool(data);
+          if (r && r.ok === false) { console.warn('add failed', r); return; }
+          if (r && r.ok && logAudit && currentUser) logAudit({
+            actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+            action: 'CREATE', entityType: 'school', entityId: r.school.id, entityLabel: r.school.id + ' · ' + (r.school.nameEn || r.school.name),
+            summary: `Created school ${r.school.id} (${r.school.nameEn || r.school.name}) in ${getProject(r.school.projectId)?.name || 'project'}`,
+          });
+        }}
         project={project} validateSchool={validateSchool} />
       <ImportSchoolsModal open={importOpen} onClose={() => setImportOpen(false)} />
 
@@ -6493,32 +6618,26 @@ function PageMyEscalations({ currentUser, onOpen, onNew }) {
   );
 }
 
-// ───────── VP — split Dashboard from Programs ─────────
+// ───────── VP — Executive dashboard ─────────
 function PageVPDashboard({ onOpenEscalation }) {
-  const { projects, escalations, financialEntries, finRollup } = useStore();
-  const totalValue = projects.reduce((a, p) => a + p.value, 0);
-  const totalSchools = ALL_SCHOOLS.length;
-  const energizedAll = ALL_SCHOOLS.filter(s => s.stages[11].done).length;
-  const handedAll = ALL_SCHOOLS.filter(s => s.stages[12].done).length;
-  const energizedPct = Math.round(energizedAll / totalSchools * 100);
-  const handedPct = Math.round(handedAll / totalSchools * 100);
-  const roll = finRollup ? finRollup() : { receipts: 0, receivables: 0, payments: 0, payables: 0 };
+  const { projects, escalations, finRollup, auditLog, schools } = useStore();
+  const totalSchools = (schools || ALL_SCHOOLS).length;
+  const energizedAll = (schools || ALL_SCHOOLS).filter(s => s.stages[11].done).length;
+  const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages[12].done).length;
+  const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
   const open = escalations.filter(e => e.status !== 'Resolved');
-
   return (
     <div className="p-6 space-y-4">
       <div>
-        <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">Executive dashboard</div>
+        <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">Executive overview</div>
         <h1 className="text-2xl font-semibold">Portfolio at a glance</h1>
       </div>
-      <div className="grid grid-cols-4 gap-3">
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Programs</div><div className="text-2xl font-bold num mt-1">{projects.length}</div><div className="text-[11px] text-ink-500">active</div></Card>
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Total schools</div><div className="text-2xl font-bold num mt-1">{totalSchools.toLocaleString()}</div></Card>
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">% Energized</div><div className="text-2xl font-bold num mt-1">{energizedPct}%</div><div className="text-[11px] text-ink-500">{energizedAll.toLocaleString()} schools</div></Card>
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">% Handed Over</div><div className="text-2xl font-bold num mt-1">{handedPct}%</div><div className="text-[11px] text-ink-500">{handedAll.toLocaleString()} schools</div></Card>
-      </div>
-      <SectionTitle icon="alert-circle" title="Escalations awaiting my support" subtitle={`${open.length} open · click any row for full thread`} />
-      <EscalationsTable items={open} onOpen={onOpenEscalation} />
+      <ExecutiveKPIStrip projects={projects} totalSchools={totalSchools} energizedAll={energizedAll} handedAll={handedAll} avgProgress={avgProgress} />
+      <ExecutiveProgressTrend />
+      <ExecutiveFinancialSummary finRollup={finRollup} />
+      <SectionTitle icon="alert-circle" title="Top risks & escalations awaiting my support" subtitle={`${open.length} open · click any row for full thread`} />
+      <EscalationsTable items={open.slice(0, 6)} onOpen={onOpenEscalation} />
+      <ExecutiveAuditPanel auditLog={auditLog} />
     </div>
   );
 }
@@ -6561,46 +6680,156 @@ function PageVPPrograms({ projects, onOpen }) {
 
 // ───────── Program Manager — distinct dashboard ─────────
 function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalation }) {
-  const { escalations, contractorScore, schools } = useStore();
+  const { escalations, finRollup, financialEntries, schools, auditLog } = useStore();
   const mine = escalations.filter(e => e.fromUserId === currentUser.id);
   const open = mine.filter(e => e.status !== 'Resolved');
-  const contractorRows = CONTRACTORS.map(c => ({ ...c, score: contractorScore ? contractorScore(c.id) : c.schedule }));
   const escTarget = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, null) : null;
   const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
   const energizedAll = (schools || ALL_SCHOOLS).filter(s => s.stages && s.stages[11] && s.stages[11].done).length;
+  const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages && s.stages[12] && s.stages[12].done).length;
+  const totalSchools = (schools || ALL_SCHOOLS).length;
+  const isExec = canViewFinancials(currentUser);
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-end justify-between">
         <div>
-          <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">Program Manager</div>
-          <h1 className="text-2xl font-semibold">Portfolio dashboard</h1>
+          <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">{isExec ? 'Executive overview' : currentUser.role}</div>
+          <h1 className="text-2xl font-semibold">{isExec ? 'Portfolio at a glance' : 'Portfolio dashboard'}</h1>
         </div>
         {escTarget && <Button variant="accent" icon="alert-circle" onClick={onNewEscalation}>{escTarget.label}</Button>}
       </div>
-      <div className="grid grid-cols-4 gap-3">
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Programs</div><div className="text-2xl font-bold num mt-1">{projects.length}</div></Card>
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Schools</div><div className="text-2xl font-bold num mt-1">{ALL_SCHOOLS.length.toLocaleString()}</div></Card>
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Overall progress</div><div className="text-2xl font-bold num mt-1">{avgProgress}%</div><div className="text-[11px] text-ink-500">{energizedAll.toLocaleString()} energized</div></Card>
-        <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">My escalations</div><div className="text-2xl font-bold num mt-1 text-amber-600">{open.length}</div><div className="text-[11px] text-ink-500">{mine.length} total raised</div></Card>
-      </div>
-      <Card>
-        <SectionTitle icon="hard-hat" title="Contractor performance" subtitle="Auto-scored from milestone entries" />
-        <div className="grid grid-cols-2 gap-3">
-          {contractorRows.map(c => (
-            <div key={c.id} className="border border-soft rounded-md p-3 flex items-center gap-3">
-              <div className="w-10 h-10 rounded-md bg-navy-900 text-white flex items-center justify-center font-bold">{c.name.split(' ').map(w => w[0]).slice(0,2).join('')}</div>
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate">{c.name}</div>
-                <div className="text-[11px] text-ink-500">{c.region} · {c.activeSites} active sites</div>
-              </div>
-              <ScoreBadge score={c.score} />
-            </div>
-          ))}
+
+      {/* KPI strip — exec only */}
+      {isExec ? (
+        <ExecutiveKPIStrip projects={projects} totalSchools={totalSchools} energizedAll={energizedAll} handedAll={handedAll} avgProgress={avgProgress} />
+      ) : (
+        <div className="grid grid-cols-4 gap-3">
+          <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Programs</div><div className="text-2xl font-bold num mt-1">{projects.length}</div></Card>
+          <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Schools</div><div className="text-2xl font-bold num mt-1">{totalSchools.toLocaleString()}</div></Card>
+          <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">Overall progress</div><div className="text-2xl font-bold num mt-1">{avgProgress}%</div><div className="text-[11px] text-ink-500">{energizedAll.toLocaleString()} energized</div></Card>
+          <Card padding="p-4"><div className="text-[10px] uppercase tracking-wider text-ink-500">My escalations</div><div className="text-2xl font-bold num mt-1 text-amber-600">{open.length}</div><div className="text-[11px] text-ink-500">{mine.length} total raised</div></Card>
         </div>
-      </Card>
-      <SectionTitle icon="alert-circle" title="My escalations" subtitle={`${open.length} awaiting executive`} action={<Button size="sm" variant="ghost" icon="alert-circle" onClick={onNewEscalation}>New</Button>} />
-      <EscalationsTable items={open} onOpen={onOpenEscalation} showFrom={false} />
+      )}
+
+      {/* Exec: Progress trend chart */}
+      {isExec && <ExecutiveProgressTrend />}
+
+      {/* Exec: Financial summary card */}
+      {isExec && <ExecutiveFinancialSummary finRollup={finRollup} />}
+
+      {/* Top 3 escalations / risks */}
+      <SectionTitle icon="alert-circle"
+        title={isExec ? 'Top risks & escalations' : 'My escalations'}
+        subtitle={`${open.length} awaiting attention`}
+        action={!isExec && <Button size="sm" variant="ghost" icon="alert-circle" onClick={onNewEscalation}>New</Button>} />
+      <EscalationsTable items={isExec ? escalations.filter(e => e.status !== 'Resolved').slice(0, 3) : open} onOpen={onOpenEscalation} showFrom={isExec} />
+
+      {/* Exec: Recent audit activity (last 10) */}
+      {isExec && <ExecutiveAuditPanel auditLog={auditLog} />}
     </div>
+  );
+}
+
+function ExecutiveKPIStrip({ projects, totalSchools, energizedAll, handedAll, avgProgress }) {
+  const totalValue = projects.reduce((a, p) => a + (p.value || 0), 0);
+  const openProj = projects.filter(p => p.progress < 100).length;
+  const closedProj = projects.length - openProj;
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
+      <KPI label="Total Programs Value" value={'SAR ' + SAR(totalValue)} sub={`${projects.length} active`} accent />
+      <KPI label="Total Projects"       value={projects.length} />
+      <KPI label="Open Projects"        value={openProj} />
+      <KPI label="Closed / Handed Over" value={closedProj} />
+      <KPI label="Total Schools"        value={totalSchools.toLocaleString()} />
+      <KPI label="Schools Energized"    value={energizedAll.toLocaleString()} sub={`${Math.round(energizedAll/totalSchools*100)}%`} />
+      <KPI label="Overall Progress"     value={avgProgress + '%'} accent />
+    </div>
+  );
+}
+function KPI({ label, value, sub, accent }) {
+  return (
+    <div className="surface border border-soft rounded-xl p-4 shadow-card relative overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent ? 'var(--accent)' : '#0B2545' }} />
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500">{label}</div>
+      <div className="text-[22px] font-bold leading-tight text-navy-900 tnum mt-1">{value}</div>
+      {sub && <div className="text-[11px] text-ink-500 mt-0.5">{sub}</div>}
+    </div>
+  );
+}
+
+function ExecutiveProgressTrend() {
+  const { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Area, AreaChart } = window.Recharts || {};
+  if (!AreaChart) return null;
+  // Build month buckets — count schools whose energized stage date falls in each month
+  const buckets = {};
+  ALL_SCHOOLS.forEach(s => {
+    const st = s.stages && s.stages[11];
+    if (st && st.done && st.date) {
+      const d = new Date(st.date);
+      const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+      buckets[k] = (buckets[k] || 0) + 1;
+    }
+  });
+  const keys = Object.keys(buckets).sort().slice(-12);
+  let cum = 0;
+  const data = keys.map(k => { cum += buckets[k]; return { month: k.slice(5), value: buckets[k], cumulative: cum }; });
+  return (
+    <Card>
+      <SectionTitle icon="trending-up" title="Program progress trend" subtitle="Schools energized per month — cumulative" />
+      <div style={{ width: '100%', height: 200 }}>
+        <ResponsiveContainer>
+          <AreaChart data={data}>
+            <defs>
+              <linearGradient id="cumGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#D4A52A" stopOpacity={0.6} />
+                <stop offset="100%" stopColor="#D4A52A" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+            <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
+            <YAxis stroke="#94A3B8" fontSize={11} />
+            <Tooltip />
+            <Area type="monotone" dataKey="cumulative" stroke="#B8860B" strokeWidth={2} fill="url(#cumGrad)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </Card>
+  );
+}
+
+function ExecutiveFinancialSummary({ finRollup }) {
+  const r = finRollup ? finRollup() : { receipts: 0, receivables: 0, payments: 0, payables: 0 };
+  return (
+    <Card>
+      <SectionTitle icon="banknote" title="Financial summary" subtitle="Cross-program rollup (Manager / VP view only)" />
+      <div className="grid grid-cols-4 gap-3 text-center">
+        <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Received</div><div className="text-xl font-bold num text-emerald-600">SAR {SAR(r.receipts)}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Receivables</div><div className="text-xl font-bold num text-amber-600">SAR {SAR(r.receivables)}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Paid out</div><div className="text-xl font-bold num text-sky-700">SAR {SAR(r.payments)}</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-ink-500">Payables</div><div className="text-xl font-bold num text-red-600">SAR {SAR(r.payables)}</div></div>
+      </div>
+    </Card>
+  );
+}
+
+function ExecutiveAuditPanel({ auditLog }) {
+  const recent = (auditLog || []).slice(0, 10);
+  return (
+    <Card>
+      <SectionTitle icon="clock" title="Recent activity" subtitle="Last 10 events across the system" />
+      <div className="space-y-1.5">
+        {recent.map(l => (
+          <div key={l.id} className="flex items-center gap-2 text-xs border border-soft rounded-md p-2 surface-2">
+            <span className="text-[10px] font-mono text-ink-500 w-32 shrink-0">{new Date(l.timestamp).toLocaleString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}</span>
+            <Pill tone={l.action === 'CREATE' ? 'ok' : l.action === 'DELETE' ? 'danger' : l.action === 'UPDATE' ? 'info' : 'soft'}>{l.action}</Pill>
+            <span className="text-[10px] text-ink-500">{l.actorName}</span>
+            <span className="flex-1 text-[11px]">{l.summary}</span>
+          </div>
+        ))}
+        {recent.length === 0 && <div className="text-xs text-ink-500 italic">No recent activity.</div>}
+      </div>
+    </Card>
   );
 }
 
