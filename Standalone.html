@@ -4388,7 +4388,6 @@ function StageRow({ index, stageName, school, onToggle, onUploadPhoto, onAddTask
     </div>
   );
 }
-}
 
 // Per-school materials consumption tab
 function SchoolMaterialsTab({ school, catalog, usage, logUsage, deleteUsage, currentUser }) {
@@ -7095,17 +7094,17 @@ function ExecutiveKPIStrip({ projects, totalSchools, energizedAll, handedAll, av
   const closedProj = projects.length - openProj;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
-      <KPI label="Total Programs Value" value={'SAR ' + SAR(totalValue)} sub={`${projects.length} active`} accent />
-      <KPI label="Total Projects"       value={projects.length} />
-      <KPI label="Open Projects"        value={openProj} />
-      <KPI label="Closed / Handed Over" value={closedProj} />
-      <KPI label="Total Schools"        value={totalSchools.toLocaleString()} />
-      <KPI label="Schools Energized"    value={energizedAll.toLocaleString()} sub={`${Math.round(energizedAll/totalSchools*100)}%`} />
-      <KPI label="Overall Progress"     value={avgProgress + '%'} accent />
+      <ExecKPI label="Total Programs Value" value={'SAR ' + SAR(totalValue)} sub={`${projects.length} active`} accent />
+      <ExecKPI label="Total Projects"       value={projects.length} />
+      <ExecKPI label="Open Projects"        value={openProj} />
+      <ExecKPI label="Closed / Handed Over" value={closedProj} />
+      <ExecKPI label="Total Schools"        value={totalSchools.toLocaleString()} />
+      <ExecKPI label="Schools Energized"    value={energizedAll.toLocaleString()} sub={`${Math.round(energizedAll/totalSchools*100)}%`} />
+      <ExecKPI label="Overall Progress"     value={avgProgress + '%'} accent />
     </div>
   );
 }
-function KPI({ label, value, sub, accent }) {
+function ExecKPI({ label, value, sub, accent }) {
   return (
     <div className="surface border border-soft rounded-xl p-4 shadow-card relative overflow-hidden">
       <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent ? 'var(--accent)' : '#0B2545' }} />
