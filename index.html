@@ -580,10 +580,13 @@ const FINANCIALS_USERS     = ['u-vp', 'u-mgr1', 'u-mgr2'];               // Olaf
 const NEW_PROJECT_USERS    = ['u-mgr1', 'u-mgr2', 'u-pgm'];              // Fasiulla, Anas, Naif
 const ESCALATE_TO_VP_USERS = ['u-mgr1', 'u-mgr2'];                       // Fasiulla, Anas (Managers only)
 const AUDIT_LOG_USERS      = ['u-vp', 'u-mgr1', 'u-mgr2', 'u-op1', 'u-op2', 'u-pgm'];
+// Round 10: Settings is Manager-only (by user.id, not by role)
+const SETTINGS_USERS       = ['u-mgr1', 'u-mgr2'];                       // Fasiulla, Anas only
 function canViewFinancials(u) { return !!u && FINANCIALS_USERS.indexOf(u.id) !== -1; }
 function canCreateProject(u)  { return !!u && NEW_PROJECT_USERS.indexOf(u.id) !== -1; }
 function canEscalateToVP(u)   { return !!u && ESCALATE_TO_VP_USERS.indexOf(u.id) !== -1; }
 function canViewAuditLog(u)   { return !!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1; }
+function canViewSettings(u)   { return !!u && SETTINGS_USERS.indexOf(u.id) !== -1; }
 
 // 15 real Zamil Services users
 const PEOPLE = [
@@ -1158,8 +1161,8 @@ Object.assign(window, {
   SAR, SARfull, fmtDate,
   SCHOOL_STAGES, STAGE_KEYS, STAGE_KEY_LABEL, LEGACY_SCHOOL_STAGES,
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
-  FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS,
-  canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog,
+  FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
+  canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,
   MATERIALS, MATERIALS_CATALOG, MATERIALS_USAGE,
   FIN, FIN_CURVE,
@@ -1745,6 +1748,89 @@ function useStoreR2(base) {
   const [escalations, setEscalations]       = React.useState(() => ESCALATIONS_DEFAULT);
   const [stageStatuses, setStageStatuses]   = React.useState(() => STAGE_STATUSES_DEFAULT);
   const [lifecycleStages, setLifecycleStages] = React.useState(() => LIFECYCLE_STAGES_DEFAULT);
+
+  // Round 10: per-project lifecycle stage state.
+  // Shape: { [projectId]: [{stageId, status: 'done'|'not-started'|'blocked', date}, ...] }
+  const [projectLifecycleState, setProjectLifecycleState] = React.useState(() => {
+    const out = {};
+    const rng = (() => { let s = 0xC0FFEE; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xffffffff; }; })();
+    const today = new Date('2026-05-12').getTime();
+    const totalStages = LIFECYCLE_STAGES_DEFAULT.length;
+    const blockedProjectIds = (() => {
+      const ids = PROJECTS.map(p => p.id);
+      const a = ids[Math.floor(rng() * ids.length)];
+      let b = ids[Math.floor(rng() * ids.length)];
+      while (b === a) b = ids[Math.floor(rng() * ids.length)];
+      return [a, b];
+    })();
+    PROJECTS.forEach(p => {
+      // Pick a current stage index between 3 and Math.min(11, totalStages - 2)
+      const maxIdx = Math.min(11, totalStages - 2);
+      const cur = 3 + Math.floor(rng() * (maxIdx - 3 + 1));
+      // 50/50 whether current stage is itself Done
+      const currentIsDone = rng() < 0.5;
+      const list = LIFECYCLE_STAGES_DEFAULT.map((s, i) => {
+        let status = 'not-started';
+        let date = null;
+        if (i < cur) {
+          status = 'done';
+          // dates spread across past 8 months
+          const offsetDays = (totalStages - i) * 12 + Math.floor(rng() * 20);
+          date = new Date(today - offsetDays * 86400000).toISOString().slice(0, 10);
+        } else if (i === cur && currentIsDone) {
+          status = 'done';
+          date = new Date(today - Math.floor(rng() * 10) * 86400000).toISOString().slice(0, 10);
+        }
+        return { stageId: s.id, status, date };
+      });
+      // Inject a Blocked stage into 1-2 random projects (Round 10 spec)
+      if (blockedProjectIds.indexOf(p.id) !== -1) {
+        // Mark the stage just after `cur` as blocked (or the next not-started)
+        const blockIdx = Math.min(totalStages - 1, cur + 1);
+        if (list[blockIdx] && list[blockIdx].status === 'not-started') {
+          list[blockIdx].status = 'blocked';
+        }
+      }
+      out[p.id] = list;
+    });
+    return out;
+  });
+
+  // Toggle a project lifecycle stage between Done and Not Started (Round 10).
+  // Audit-logged by caller via `currentUser` argument.
+  const toggleProjectLifecycleStage = (projectId, stageId, currentUser) => {
+    let before = 'not-started', after = 'done';
+    setProjectLifecycleState(state => {
+      const list = (state[projectId] || []).slice();
+      const idx = list.findIndex(x => x.stageId === stageId);
+      if (idx < 0) {
+        list.push({ stageId, status: 'done', date: new Date().toISOString().slice(0, 10) });
+        after = 'done';
+      } else {
+        before = list[idx].status;
+        after = list[idx].status === 'done' ? 'not-started' : 'done';
+        list[idx] = { ...list[idx], status: after, date: after === 'done' ? new Date().toISOString().slice(0, 10) : null };
+      }
+      return { ...state, [projectId]: list };
+    });
+    // Audit
+    if (currentUser) {
+      const proj = PROJECTS.find(p => p.id === projectId);
+      const stage = lifecycleStages.find(s => s.id === stageId);
+      setTimeout(() => {
+        const auditEntry = {
+          actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+          action: 'UPDATE', entityType: 'project_lifecycle_stage',
+          entityId: projectId + ':' + stageId,
+          entityLabel: (proj?.name || projectId) + ' / ' + (stage?.name || stageId),
+          before, after,
+          summary: `Toggled "${stage?.name || stageId}" on ${proj?.name || projectId}: ${before} → ${after}`,
+        };
+        // call logAudit directly (defined later in scope)
+        if (typeof logAudit === 'function') logAudit(auditEntry);
+      }, 0);
+    }
+  };
   const [schoolStagesList, setSchoolStagesList] = React.useState(() => SCHOOL_STAGES.map((name, i) => ({
     id: 'ss' + (i + 1), name, order: i, archived: false,
     color: i < 3 ? '#13315C' : i < 11 ? '#2A5A9A' : '#B8860B',
@@ -1813,6 +1899,40 @@ function useStoreR2(base) {
   };
 
   // ---- Stage flexible status ----
+  // Round 10: simple two-state toggle for school stages (Done ⇄ Not Started)
+  const toggleSchoolStage = (schoolId, stageIdx, currentUser) => {
+    let before = 'not-started', after = 'done';
+    base._setSchools(ss => ss.map(s => {
+      if (s.id !== schoolId) return s;
+      const stages = s.stages.slice();
+      const st = stages[stageIdx] || {};
+      before = st.done ? 'done' : 'not-started';
+      after  = st.done ? 'not-started' : 'done';
+      stages[stageIdx] = {
+        ...st,
+        done: !st.done,
+        statusId: !st.done ? 'done' : 'not-started',
+        date: !st.done ? new Date().toISOString() : null,
+        by: currentUser ? currentUser.id : st.by,
+      };
+      // Recompute status
+      const doneCount = stages.filter(x => x.done).length;
+      const newStatus = doneCount === stages.length ? 'Completed' : doneCount > 0 ? 'In Progress' : 'Not Started';
+      return { ...s, stages, status: newStatus, lastUpdate: { by: currentUser?.id, when: new Date().toISOString() } };
+    }));
+    if (currentUser) {
+      const stageLabel = SCHOOL_STAGES[stageIdx] || ('Stage ' + (stageIdx + 1));
+      setTimeout(() => {
+        if (typeof logAudit === 'function') logAudit({
+          actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+          action: 'UPDATE', entityType: 'school_stage', entityId: schoolId + ':' + stageIdx, entityLabel: schoolId + ' / ' + stageLabel,
+          before, after,
+          summary: `Toggled "${stageLabel}" on school ${schoolId}: ${before} → ${after}`,
+        });
+      }, 0);
+    }
+  };
+
   const setSchoolStageStatus = (schoolId, stageIdx, statusId, who, reason) => {
     const status = stageStatuses.find(s => s.id === statusId);
     base.updateSchoolStage(schoolId, stageIdx, {
@@ -1979,6 +2099,7 @@ function useStoreR2(base) {
     validateSchool, addSchool, updateSchool, deleteSchool,
     contractorsLocal,
     auditLog, logAudit,
+    projectLifecycleState, toggleProjectLifecycleStage, toggleSchoolStage,
   };
 }
 
@@ -2589,6 +2710,9 @@ function navForRole(role, currentUser) {
     ];
   }
   // Program Manager group (Manager / Operations Manager / Program Manager)
+  const settingsItem = canViewSettings(currentUser)
+    ? [{ id: 'settings', label: 'Settings', icon: 'settings' }]
+    : [];
   return [
     { id: 'home',           label: 'Dashboard',      icon: 'home' },
     { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
@@ -2597,7 +2721,7 @@ function navForRole(role, currentUser) {
     ...finItem,
     { id: 'contractors',    label: 'Contractors',    icon: 'hard-hat' },
     { id: 'reports',        label: 'Reports',        icon: 'file-text' },
-    { id: 'settings',       label: 'Settings',       icon: 'settings' },
+    ...settingsItem,
   ];
 }
 
@@ -3000,33 +3124,46 @@ Object.assign(window, { PageDashboard, NewProjectModal });
 // FIX 1: Lifecycle is editable from project detail (rename / reorder / color / add / delete with confirm).
 // FIX 6: Robust tab rendering — null-guarded for projects with many schools and tabs that previously crashed.
 
-function ProjectLifecycle({ stages, currentStage, onClickStage, onEditMode, isEditMode, canEdit }) {
+// Round 10: single-click toggle (Done ⇄ Not Started). Blocked stages render in red and don't toggle.
+function ProjectLifecycle({ stages, stageState, onToggle }) {
   return (
     <div className="overflow-x-auto scrollbar-thin">
       <div className="flex items-center gap-0 min-w-[1100px] py-4">
         {stages.map((s, i) => {
-          const done = i < currentStage;
-          const current = i === currentStage;
+          const stateEntry = (stageState || []).find(x => x.stageId === s.id) || { status: 'not-started' };
+          const done = stateEntry.status === 'done';
+          const blocked = stateEntry.status === 'blocked';
           return (
             <React.Fragment key={s.id || s.name}>
-              <button onClick={() => onClickStage(i)} className="flex flex-col items-center text-center px-1 group" style={{ minWidth: 96 }}>
-                <div className={cls('w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold border-2 transition group-hover:scale-110',
-                  done ? 'bg-navy-900 border-navy-900 text-white' :
-                  current ? 'text-white' :
-                  'bg-white border-ink-200 text-ink-500')}
-                  style={current ? { background: s.color || '#B8860B', borderColor: s.color || '#B8860B' } : {}}>
-                  {done ? <Icon name="check" size={14} /> : (i + 1)}
+              <button
+                onClick={() => !blocked && onToggle(s.id)}
+                title={blocked ? 'Blocked — clear block in stage management to toggle' : (done ? 'Click to mark Not Started' : 'Click to mark Done')}
+                className="flex flex-col items-center text-center px-1 group"
+                style={{ minWidth: 96 }}>
+                <div className={cls('w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold border-2 transition group-hover:scale-110',
+                  done    ? 'bg-navy-900 border-navy-900 text-white'           :
+                  blocked ? 'bg-red-600  border-red-600  text-white'           :
+                            'bg-white    border-navy-900 text-navy-900')}>
+                  {done ? <Icon name="check" size={14} strokeWidth={3} />
+                        : blocked ? <Icon name="x" size={14} strokeWidth={3} />
+                        : <span>{i + 1}</span>}
                 </div>
                 <div className={cls('mt-1.5 text-[10px] leading-tight w-24',
-                  done ? 'text-navy-900 font-medium ink-on-dark' :
-                  current ? 'font-semibold' :
-                  'text-ink-500 ink-muted-on-dark')}
-                  style={current ? { color: s.color || '#B8860B' } : {}}>
+                  done ? 'text-navy-900 font-medium' :
+                  blocked ? 'text-red-700 font-semibold' :
+                  'text-ink-500')}>
                   {s.name}
                 </div>
+                {stateEntry.date && done && (
+                  <div className="text-[9px] text-ink-400 tnum">{stateEntry.date}</div>
+                )}
+                {blocked && <div className="text-[9px] text-red-600 font-semibold">Blocked</div>}
               </button>
               {i < stages.length - 1 && (
-                <div className={cls('h-0.5 flex-1 -mt-7', done ? 'bg-navy-900' : current ? 'bg-gradient-to-r from-amber-400 to-ink-200' : 'bg-ink-200')} style={{ minWidth: 24 }} />
+                <div className={cls('h-0.5 flex-1 -mt-7',
+                  done    ? 'bg-navy-900' :
+                  blocked ? 'bg-red-300'  :
+                  'bg-ink-200')} style={{ minWidth: 24 }} />
               )}
             </React.Fragment>
           );
@@ -3151,6 +3288,7 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
   const store = (typeof useStore === 'function') ? useStore() : null;
   const {
     lifecycleStages, addLifecycleStage, updateLifecycleStage, deleteLifecycleStage, reorderLifecycleStage,
+    projectLifecycleState, toggleProjectLifecycleStage,
     tasks: allTasks, schools: allSchools,
   } = store || {};
 
@@ -3158,6 +3296,12 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
     () => [...(lifecycleStages || [])].sort((a, b) => a.order - b.order),
     [lifecycleStages]
   );
+
+  const projStageState = (projectLifecycleState && projectLifecycleState[project.id]) || [];
+  // Round 10: Overall progress = lifecycle Done count / total × 100
+  const lifecycleProgress = sortedLifecycle.length
+    ? Math.round(projStageState.filter(x => x.status === 'done').length / sortedLifecycle.length * 100)
+    : 0;
 
   // FIX 6: Tasks scoped (avoid huge unfiltered iteration)
   const allProjTasks = (allTasks || []).filter(t => t.projectId === project.id);
@@ -3211,7 +3355,7 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
         </div>
         <div className="text-right">
           <div className="text-[11px] text-ink-500">Overall progress</div>
-          <div className="text-3xl font-bold tnum text-navy-900">{project.progress}%</div>
+          <div className="text-3xl font-bold tnum text-navy-900">{lifecycleProgress}%</div>
         </div>
       </div>
 
@@ -3225,9 +3369,9 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
               {lifecycleEditOpen ? 'Done' : 'Edit lifecycle'}
             </Button>
           )} />
-        <ProjectLifecycle stages={sortedLifecycle.length ? sortedLifecycle : PROJECT_STAGES.map((s, i) => ({ id: 'ls' + i, name: s.name, color: '#13315C', order: i, criteria: '' }))}
-          currentStage={project.currentStage || 0}
-          onClickStage={i => setOpenStage(i)} />
+        <ProjectLifecycle stages={sortedLifecycle.length ? sortedLifecycle : PROJECT_STAGES.map((s, i) => ({ id: 'ls' + (i + 1), name: s.name, color: '#13315C', order: i, criteria: '' }))}
+          stageState={projStageState}
+          onToggle={(stageId) => toggleProjectLifecycleStage && toggleProjectLifecycleStage(project.id, stageId, currentUser)} />
       </Card>
 
       {lifecycleEditOpen && canEditLifecycle && (
@@ -3862,7 +4006,7 @@ Object.assign(window, { PageSchoolsList });
 function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate }) {
   const {
     schools, chats, sendChatMessage, updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
-    stageStatuses, setSchoolStageStatus, stageHistory,
+    stageStatuses, setSchoolStageStatus, stageHistory, toggleSchoolStage,
     updateSchool, validateSchool,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
   } = useStore();
@@ -4070,10 +4214,7 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
               <div className="space-y-2">
                 {SCHOOL_STAGES.map((stageName, i) => (
                   <StageRow key={i} index={i} stageName={stageName} school={school}
-                    stageStatuses={stageStatuses || []}
-                    stageHistory={stageHistory}
-                    completionCriteria={`Verify the ${stageName.toLowerCase()} work is complete, photo evidence is uploaded, and the responsible engineer has signed off.`}
-                    onChangeStatus={(statusId, reason) => changeStatus(i, statusId, reason)}
+                    onToggle={() => toggleSchoolStage && toggleSchoolStage(school.id, i, currentUser)}
                     onUploadPhoto={() => uploadPhoto(i)}
                     onAddTask={() => onAddTask({ projectId: school.projectId, schoolId: school.id, stageIndex: i })} />
                 ))}
@@ -4198,162 +4339,55 @@ function FieldRow({ label, value, editMode, onChange, type, options, dir, placeh
 }
 
 // Stage row with flexible status picker (Round 4 preserved)
-function StageRow({ index, stageName, school, stageStatuses, stageHistory, onChangeStatus, onUploadPhoto, onAddTask, completionCriteria }) {
-  const st = school.stages[index];
+// Round 10: Single-click toggle (Done ⇄ Not Started). No menu, no multi-state.
+function StageRow({ index, stageName, school, onToggle, onUploadPhoto, onAddTask }) {
+  const st = school.stages[index] || {};
   const photos = school.photos[index] || [];
-  const histKey = `${school.id}-${index}`;
-  const history = (stageHistory || {})[histKey] || [];
-  const [showReason, setShowReason] = React.useState(false);
-  const [pendingStatus, setPendingStatus] = React.useState(null);
-  const [reason, setReason] = React.useState('');
-  const [showHistory, setShowHistory] = React.useState(false);
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const [editingDate, setEditingDate] = React.useState(false);
-  const [draftDate, setDraftDate] = React.useState(st.date ? st.date.slice(0, 10) : '');
-
-  const currentStatusId = st.statusId || (st.done ? 'done' : 'not-started');
-  const currentStatus   = stageStatuses.find(s => s.id === currentStatusId) || { label: st.done ? 'Done' : 'Not Started', color: st.done ? '#16A34A' : '#94A3B8' };
+  const isDone = !!st.done;
   const responsiblePerson = st.by ? getPerson(st.by) : null;
-  const isDone = st.done;
-  const rowBg = isDone ? 'border-emerald-200 bg-emerald-50/30' : 'border-soft surface-2';
-
-  const handleStatusChange = (statusId) => {
-    setMenuOpen(false);
-    const status = stageStatuses.find(s => s.id === statusId);
-    if (statusId === currentStatusId) return;
-    // Always prompt for reason on Reopen / Block / Skip — terminal transitions go through directly.
-    if (status && (statusId === 'in-progress' || statusId === 'blocked' || statusId === 'skipped' || (!status.builtin && !status.terminal))) {
-      setPendingStatus(statusId); setShowReason(true);
-    } else { onChangeStatus(statusId, ''); }
-  };
-  const confirmWithReason = () => {
-    if (pendingStatus) onChangeStatus(pendingStatus, reason);
-    setShowReason(false); setReason(''); setPendingStatus(null);
-  };
-  const saveDate = () => {
-    if (draftDate) onChangeStatus(currentStatusId, `Edited completion date to ${draftDate}`);
-    setEditingDate(false);
-  };
-
   return (
-    <div className={cls('rounded-md border', rowBg)}>
-      <div className="flex items-start gap-3 p-3">
-        <div className={cls('w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold shrink-0',
-          isDone ? 'bg-emerald-500 text-white' : 'bg-ink-200 text-ink-700')}>
-          {isDone ? <Icon name="check" size={14} strokeWidth={3} /> : index + 1}
+    <div className={cls('rounded-md border flex items-start gap-3 p-3 transition',
+      isDone ? 'border-navy-900 bg-navy-50' : 'border-soft surface-2')}>
+      <button onClick={onToggle}
+        title={isDone ? 'Click to mark Not Started' : 'Click to mark Done'}
+        className={cls('w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition hover:scale-110 shrink-0',
+          isDone ? 'bg-navy-900 border-navy-900 text-white' : 'bg-white border-navy-900 text-navy-900')}>
+        {isDone ? <Icon name="check" size={16} strokeWidth={3} /> : (index + 1)}
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm">{stageName}</span>
+          <span className={cls('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+            isDone ? 'bg-navy-900 text-white' : 'bg-ink-100 text-ink-700')}>
+            {isDone ? 'Done' : 'Not Started'}
+          </span>
+          {isDone && st.date && <span className="text-[11px] text-ink-500">{fmtDate(st.date)}</span>}
+          {responsiblePerson && (
+            <span className="text-[11px] text-ink-500 flex items-center gap-1">
+              · <Avatar initials={responsiblePerson.initials} size={16} /> {responsiblePerson.name}
+            </span>
+          )}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm">{stageName}</span>
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium text-white"
-              style={{ background: currentStatus.color }}>{currentStatus.label}</span>
-            {isDone && <span className="text-[11px] text-ink-500">{fmtDate(st.date)}</span>}
-            {responsiblePerson && (
-              <span className="text-[11px] text-ink-500 flex items-center gap-1">
-                · <Avatar initials={responsiblePerson.initials} size={16} /> {responsiblePerson.name}
-              </span>
-            )}
-            {history.length > 0 && (
-              <button onClick={() => setShowHistory(h => !h)} className="text-[10px] text-ink-500 hover:text-ink-800 underline">
-                {history.length} change{history.length > 1 ? 's' : ''}
-              </button>
-            )}
+        {photos.length > 0 && (
+          <div className="mt-2 flex gap-1 flex-wrap">
+            {photos.map(ph => (
+              <div key={ph.id} className="w-14 h-14 rounded bg-ink-100 placeholder-grid border border-soft flex items-center justify-center text-[9px] text-ink-500">
+                <Icon name="sun" size={14} />
+              </div>
+            ))}
           </div>
-          {photos.length > 0 && (
-            <div className="mt-2 flex gap-1 flex-wrap">
-              {photos.map(ph => (
-                <div key={ph.id} className="w-14 h-14 rounded bg-ink-100 placeholder-grid border border-soft flex items-center justify-center text-[9px] text-ink-500">
-                  <Icon name="sun" size={14} />
-                </div>
-              ))}
-            </div>
-          )}
-          {showHistory && history.length > 0 && (
-            <div className="mt-2 space-y-1 border-t border-soft pt-2">
-              {history.map((h, j) => {
-                const u = getPerson(h.who);
-                const toSt = stageStatuses.find(s => s.id === h.to);
-                return (
-                  <div key={j} className="text-[10px] text-ink-500 flex items-center gap-1">
-                    <Avatar initials={u?.initials || '?'} size={14} />
-                    <span>{u?.name}</span> →
-                    <span className="font-medium" style={{ color: toSt?.color || '#666' }}>{toSt?.label || h.to}</span>
-                    {h.reason && <span className="text-ink-400">"{h.reason}"</span>}
-                    <span className="ml-auto">{new Date(h.when).toLocaleTimeString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col gap-1 shrink-0 relative">
-          <Button size="sm" variant={isDone ? 'accent' : 'outline'} icon="more-horizontal" onClick={() => setMenuOpen(o => !o)}>
-            Actions
-          </Button>
-          {menuOpen && (
-            <div className="absolute right-0 top-full mt-1 w-64 surface border border-soft rounded-md shadow-pop z-30">
-              {completionCriteria && (
-                <div className="px-3 py-2 border-b border-soft bg-amber-50">
-                  <div className="text-[10px] uppercase tracking-wider text-ink-500 mb-0.5">Completion criteria</div>
-                  <div className="text-[11px] text-ink-700">{completionCriteria}</div>
-                </div>
-              )}
-              <div className="px-3 py-1.5 border-b border-soft text-[10px] uppercase tracking-wider text-ink-500">Set status</div>
-              {stageStatuses.map(s => {
-                const active = s.id === currentStatusId;
-                return (
-                  <button key={s.id} onClick={() => handleStatusChange(s.id)}
-                    className={cls('w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2', active && 'bg-accent-soft font-semibold')}>
-                    <span className="w-2 h-2 rounded-full" style={{ background: s.color }} />
-                    {s.id === 'not-started' && active ? 'Already not started'
-                     : s.id === 'in-progress' && isDone ? 'Reopen stage (→ In Progress)'
-                     : s.id === 'blocked' ? 'Mark as Blocked'
-                     : s.id === 'skipped' ? 'Skip stage'
-                     : s.id === 'done' && !isDone ? 'Mark as Done'
-                     : s.label}
-                  </button>
-                );
-              })}
-              <div className="border-t border-soft px-3 py-1.5 text-[10px] uppercase tracking-wider text-ink-500">Other</div>
-              <button onClick={() => { setEditingDate(true); setMenuOpen(false); }}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2">
-                <Icon name="pencil" size={12} /> Edit completion date
-              </button>
-              <button onClick={() => { setShowHistory(h => !h); setMenuOpen(false); }}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2">
-                <Icon name="clock" size={12} /> {showHistory ? 'Hide' : 'View'} status history ({history.length})
-              </button>
-              <button onClick={() => { onUploadPhoto(); setMenuOpen(false); }}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2">
-                <Icon name="upload" size={12} /> Upload photo evidence
-              </button>
-              <button onClick={() => { onAddTask(); setMenuOpen(false); }}
-                className="w-full text-left px-3 py-1.5 text-xs hover:bg-ink-100 flex items-center gap-2 border-t border-soft">
-                <Icon name="plus" size={12} /> Add follow-up task
-              </button>
-            </div>
-          )}
-          <Button size="sm" variant="outline" icon="upload" onClick={onUploadPhoto}>Photo</Button>
-        </div>
+        )}
       </div>
-      {editingDate && (
-        <div className="px-3 pb-3 flex gap-2 items-center border-t border-soft pt-2">
-          <label className="text-[11px] font-medium text-ink-700">Completion date:</label>
-          <input type="date" value={draftDate} onChange={e => setDraftDate(e.target.value)}
-            className="px-2 py-1 text-xs rounded-md border border-ink-200 bg-white" />
-          <Button size="sm" variant="accent" onClick={saveDate}>Save date</Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditingDate(false)}>Cancel</Button>
-        </div>
-      )}
-      {showReason && (
-        <div className="px-3 pb-3 flex gap-2 items-center border-t border-soft pt-2">
-          <TextField value={reason} onChange={setReason} placeholder="Reason for status change (optional)…" className="flex-1 !text-xs" />
-          <Button size="sm" variant="accent" onClick={confirmWithReason}>Confirm</Button>
-          <Button size="sm" variant="ghost" onClick={() => { setShowReason(false); setPendingStatus(null); }}>Cancel</Button>
-        </div>
-      )}
+      <div className="flex flex-col gap-1 shrink-0">
+        <Button size="sm" variant={isDone ? 'outline' : 'accent'} icon={isDone ? 'x' : 'check'} onClick={onToggle}>
+          {isDone ? 'Undo' : 'Mark Done'}
+        </Button>
+        <Button size="sm" variant="outline" icon="upload" onClick={onUploadPhoto}>Photo</Button>
+        <Button size="sm" variant="ghost" icon="plus" onClick={onAddTask}>Task</Button>
+      </div>
     </div>
   );
+}
 }
 
 // Per-school materials consumption tab
@@ -7630,6 +7664,10 @@ function AppInner() {
   const [openTask, setOpenTask] = React.useState(null);
   const [escModalOpen, setEscModalOpen] = React.useState(false);
   const [escDefaults,   setEscDefaults]   = React.useState({});
+  const [globalToast, setGlobalToast] = React.useState(null);
+  React.useEffect(() => {
+    if (globalToast) { const t = setTimeout(() => setGlobalToast(null), 4000); return () => clearTimeout(t); }
+  }, [globalToast]);
 
   const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const accentClass = `accent-${tweaks.accent}`;
@@ -7780,7 +7818,13 @@ function AppInner() {
     if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
     if (page === 'contractors') return <PageContractors contractors={CONTRACTORS} projects={projects} />;
     if (page === 'reports')     return <PageReportsZamil projects={projects} />;
-    if (page === 'settings')    return <PageSettings currentUser={currentUser} />;
+    if (page === 'settings') {
+      if (!canViewSettings(currentUser)) {
+        // Defensive: shouldn't normally hit this path since sidebar is hidden, but block direct route too.
+        return <div className="p-6"><div className="bg-red-50 border border-red-300 rounded-md p-4 text-sm text-red-800">Access denied — Settings is restricted to Managers.</div></div>;
+      }
+      return <PageSettings currentUser={currentUser} />;
+    }
     return <PagePMDashboard projects={projects} currentUser={currentUser} onOpenEscalation={openEsc} onNewEscalation={() => onNewEscalation({})} />;
   };
 
@@ -7791,14 +7835,28 @@ function AppInner() {
   return (
     <div className={cls('min-h-screen flex', accentClass, themeClass)}>
       <Sidebar active={sidebarActive} role={role} currentUser={currentUser}
-        onNav={(id) => { setPage(id); setActiveProjectId(null); setActiveSchoolId(null); setActiveEscId(null); }} />
+        onNav={(id) => {
+          if (id === 'settings' && !canViewSettings(currentUser)) {
+            setGlobalToast({ kind: 'error', msg: 'Access denied — Settings is restricted to Managers.' });
+            return;
+          }
+          setPage(id); setActiveProjectId(null); setActiveSchoolId(null); setActiveEscId(null);
+        }} />
 
       <div className="flex-1 min-w-0 flex flex-col">
         <TopBar role={role} onRoleChange={handleRoleChange} currentUser={currentUser}
           search={search} onSearch={setSearch} onSignOut={handleSignOut}
           onOpenNotifs={() => setNotifsOpen(true)} unreadCount={unread} />
 
-        <main className="flex-1 min-w-0 overflow-auto">{renderPage()}</main>
+        <main className="flex-1 min-w-0 overflow-auto relative">
+          {globalToast && (
+            <div className={cls('fixed top-16 right-6 z-50 rounded-md px-4 py-2.5 shadow-pop border text-sm',
+              globalToast.kind === 'error' ? 'bg-red-50 border-red-300 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}>
+              <span className="font-semibold mr-1">{globalToast.kind === 'error' ? '⚠' : '✓'}</span>{globalToast.msg}
+            </div>
+          )}
+          {renderPage()}
+        </main>
       </div>
 
       <NotifPanel open={notifsOpen} onClose={() => setNotifsOpen(false)} items={notifs}

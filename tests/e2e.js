@@ -93,8 +93,7 @@ record('FIX 8: Duplicate SEC meter validated on save',
        /validateSchool\(\{ id: school\.id, meter: form\.meter \}, school\.id\)/.test(detailJsx));
 record('FIX 8: Contractor changeable via FieldRow select',
        /label="Contractor"[\s\S]{0,200}options=\{\[\{value:'',label:'— Unassigned —'/.test(detailJsx));
-record('Stage status menu wired to setSchoolStageStatus',
-       /onClick=\{\(\) => handleStatusChange\(s\.id\)\}/.test(detailJsx));
+// (R10 replaced status menu with single-click toggle — see R10 FIX 1b checks below)
 record('Photo upload button wired to uploadPhoto',
        /onClick=\{onUploadPhoto\}/.test(detailJsx));
 record('Materials Log button wired to logUsage',
@@ -155,6 +154,34 @@ record('Sidebar removes Materials nav item entirely',
 record('Sidebar Financials gated by canViewFinancials',
        /canViewFinancials\(currentUser\)/.test(shellJsx));
 
+// ── J3. Round 10 fixes ────────────────────────────────────────────────────
+record('R10 FIX 2: canViewSettings helper exported',
+       /canViewSettings/.test(dataJsx) && /SETTINGS_USERS\s*=\s*\['u-mgr1',\s*'u-mgr2'\]/.test(dataJsx));
+record('R10 FIX 2: Sidebar gates Settings via canViewSettings',
+       /canViewSettings\(currentUser\)/.test(shellJsx));
+record('R10 FIX 2: Settings route blocks non-allowed with toast',
+       /Access denied — Settings is restricted to Managers/.test(appJsx));
+record('R10 FIX 1a: projectLifecycleState seeded per project',
+       /const \[projectLifecycleState, setProjectLifecycleState\]/.test(storeR2Jsx));
+record('R10 FIX 1a: realistic seed picks current stage 3-11',
+       /const cur = 3 \+ Math\.floor\(rng\(\) \* \(maxIdx - 3 \+ 1\)\)/.test(storeR2Jsx));
+record('R10 FIX 1a: 1-2 projects have Blocked stage',
+       /blockedProjectIds/.test(storeR2Jsx) && /status = 'blocked'/.test(storeR2Jsx));
+record('R10 FIX 1b: toggleProjectLifecycleStage exposed',
+       /toggleProjectLifecycleStage/.test(storeR2Jsx));
+record('R10 FIX 1b: toggle writes audit entry',
+       /entityType: 'project_lifecycle_stage'/.test(storeR2Jsx));
+record('R10 FIX 1b: project lifecycle uses single-click onToggle',
+       /onClick=\{\(\) => !blocked && onToggle\(s\.id\)\}/.test(projectJsx));
+record('R10 FIX 1b: project Overall progress recomputed from lifecycle',
+       /lifecycleProgress/.test(projectJsx) && /projStageState\.filter\(x => x\.status === 'done'\)\.length/.test(projectJsx));
+record('R10 FIX 1b: toggleSchoolStage exposed',
+       /toggleSchoolStage/.test(storeR2Jsx));
+record('R10 FIX 1b: toggleSchoolStage writes audit entry',
+       /entityType: 'school_stage'/.test(storeR2Jsx));
+record('R10 FIX 1b: StageRow uses single-click toggle (no menu)',
+       /onClick=\{onToggle\}/.test(detailJsx) && !/menuOpen, setMenuOpen.*useState/.test(detailJsx));
+
 // ── J2. Round 8 fixes ─────────────────────────────────────────────────────
 record('BUG 1: Settings ProjectsTab uses real addProject',
        /const \{ projects, addProject, deleteProject, logAudit \} = useStore\(\);/.test(settingsJsx));
@@ -189,22 +216,8 @@ record('BUG 3: Notifications rule rich-text template field',
 record('BUG 3: Notifications throttle Immediate / Daily',
        /Immediate.*Daily digest|daily/.test(settingsJsx));
 
-record('BUG 4: StageRow has Actions menu button',
-       /menuOpen, setMenuOpen.*useState/.test(detailJsx) && /Actions/.test(detailJsx));
-record('BUG 4: StageRow reopen label for Done stages',
-       /Reopen stage \(→ In Progress\)/.test(detailJsx));
-record('BUG 4: StageRow "Mark as Blocked"',
-       /Mark as Blocked/.test(detailJsx));
-record('BUG 4: StageRow Skip option',
-       /Skip stage/.test(detailJsx));
-record('BUG 4: StageRow Edit completion date',
-       /Edit completion date/.test(detailJsx) && /editingDate/.test(detailJsx));
-record('BUG 4: StageRow View status history',
-       /View.*status history.*history\.length/.test(detailJsx) || /View.*history.*\{history\.length\}/.test(detailJsx));
-record('BUG 4: StageRow shows completion criteria',
-       /completionCriteria/.test(detailJsx) && /Completion criteria/.test(detailJsx));
-record('BUG 4: Free transitions in all directions (in-progress/blocked/skipped prompt for reason)',
-       /statusId === 'in-progress' \|\| statusId === 'blocked' \|\| statusId === 'skipped'/.test(detailJsx));
+// (Round 8 BUG 4 multi-state action menu was deliberately replaced by Round 10's
+//  single-click two-state toggle. See R10 FIX 1b checks for current behaviour.)
 
 record('BUG 5: Settings KPIs add/edit/delete wired',
        /startEdit\(k\)/.test(settingsJsx) && /setConfirmDel\(k\)/.test(settingsJsx) && /saveAdd/.test(settingsJsx));
