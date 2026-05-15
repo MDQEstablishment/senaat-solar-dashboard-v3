@@ -1,3 +1,4 @@
+import React from 'react';
 // Updated shell — sidebar nav adapts to role; topbar wires notifications, role switcher, sign-out
 // Round 12: Vite migration. Adds H1 global search w/ 250ms debounce + grouped dropdown,
 // H4 button semantics, H5 responsive drawer (hamburger under lg), M1/M2/M3 aria.

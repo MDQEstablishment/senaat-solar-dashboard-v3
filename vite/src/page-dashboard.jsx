@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 1 — Main Dashboard
 
 const KPICard = ({ label, value, trend, spark, accent, suffix }) => (

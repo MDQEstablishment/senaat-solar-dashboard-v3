@@ -1,3 +1,4 @@
+import React from 'react';
 // Shared UI primitives
 
 const cls = (...xs) => xs.filter(Boolean).join(' ');

@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 3 — Materials (wired to store-r2 for full CRUD)
 
 function MaterialTable({ items, projects, onEdit, onDelete }) {

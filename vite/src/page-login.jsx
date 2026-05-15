@@ -1,3 +1,4 @@
+import React from 'react';
 // Login page — Zamil Services Solar Programs (Round 5)
 // Demo-mode: any email/password works. Real-user picker lets the demo show different role views.
 

@@ -1,3 +1,4 @@
+import React from 'react';
 // Task creation modal & side panel
 
 function TaskModal({ open, onClose, projects, schools, defaults = {}, onCreate }) {

@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 4 — Financials (wired to store-r2 financialEntries with auto-rollup)
 
 function FinEntryModal({ open, onClose, onSave, projects, initial }) {

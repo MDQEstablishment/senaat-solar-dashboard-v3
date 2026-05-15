@@ -1,3 +1,4 @@
+import React from 'react';
 // School chat panel — Zamil Round 5
 // Improvements: file attach (placeholder), unread indicator, updated mention regex for new user IDs
 

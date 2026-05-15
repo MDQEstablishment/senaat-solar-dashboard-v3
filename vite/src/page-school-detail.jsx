@@ -1,3 +1,4 @@
+import React from 'react';
 // School detail — Zamil Round 5
 // Edit-in-place for all school fields, contractor dropdown, photos/PDF placeholders, materials consumption tab
 

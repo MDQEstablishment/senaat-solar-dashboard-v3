@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 7 — Employees
 
 function PageEmployees({ employees, setEmployees }) {

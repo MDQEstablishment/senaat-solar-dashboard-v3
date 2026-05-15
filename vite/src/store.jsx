@@ -1,3 +1,4 @@
+import React from 'react';
 // Central reactive store using React Context.
 // All cross-cutting state (schools, tasks, chats, notifications) lives here.
 

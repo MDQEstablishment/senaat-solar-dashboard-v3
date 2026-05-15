@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 2 — Project Detail (Round 6)
 // FIX 1: Lifecycle is editable from project detail (rename / reorder / color / add / delete with confirm).
 // FIX 6: Robust tab rendering — null-guarded for projects with many schools and tabs that previously crashed.

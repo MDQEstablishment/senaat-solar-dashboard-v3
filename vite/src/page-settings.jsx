@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 8 — Settings / Admin (with R2 tabs: Lifecycle, Statuses, Custom Fields, Milestones)
 
 function PageSettings({ currentUser }) {

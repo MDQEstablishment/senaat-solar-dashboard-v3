@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 5 — Contractors (milestone-based auto-scoring from store-r2)
 
 function PageContractors({ contractors, projects }) {

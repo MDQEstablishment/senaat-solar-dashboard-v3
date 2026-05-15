@@ -1,3 +1,4 @@
+import React from 'react';
 // Round 2 pages — escalations, VP programs, recycle bin, settings extensions
 
 // ───────── Escalation modal & detail ─────────

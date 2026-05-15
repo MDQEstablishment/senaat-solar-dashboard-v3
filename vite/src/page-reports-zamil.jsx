@@ -1,3 +1,4 @@
+import React from 'react';
 // Reports page — Zamil Round 5
 // 3 report types: Master Daily Report, Material Consumption Report, Zamil Report
 // Each exports XLSX using SheetJS, matching the reference template formats.

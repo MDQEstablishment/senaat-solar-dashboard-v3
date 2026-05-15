@@ -1,3 +1,4 @@
+import React from 'react';
 // Root App — Zamil Services Solar Programs Dashboard (Round 5)
 // Login → Main shell. Role-based routing. Site Engineer + Recycle Bin removed.
 

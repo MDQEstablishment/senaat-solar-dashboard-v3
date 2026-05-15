@@ -1,3 +1,4 @@
+import React from 'react';
 // Round 5 store extensions — composed with the base store
 // Recycle Bin REMOVED (hard-delete with confirmation). Site Engineer removed from targets.
 

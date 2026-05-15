@@ -1,3 +1,4 @@
+import React from 'react';
 // Page 6 — Reports
 
 function PageReports({ projects }) {

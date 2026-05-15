@@ -1,3 +1,4 @@
+import React from 'react';
 // Schools list — Zamil Round 6
 // FIX 2: No pagination - all schools visible, scrollable.
 // FIX 8: Exact columns - School ID | Name (EN + AR) | Level/Gender | City | SEC Meter | Contractor (inline edit) | Status | Remark | Actions

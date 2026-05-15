@@ -4,7 +4,7 @@ import path from 'path';
 
 export default defineConfig({
   base: '/senaat-solar-dashboard-v3/',
-  plugins: [react()],
+  plugins: [react({ jsxRuntime: 'automatic' })],
   resolve: {
     extensions: ['.js', '.jsx', '.json'],
     alias: { '@': path.resolve('./src') },
