@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { background: #F8FAFC; color: #0F172A; font-family: 'Inter', system-ui, sans-serif; }
+.num, .tnum, table td, table th { font-variant-numeric: tabular-nums; }
+.scrollbar-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+.scrollbar-thin::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
+.scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+.accent-gold     { --accent: #B8860B; --accent-600: #A0750A; --accent-400: #D4A52A; }
+.accent-steel    { --accent: #2A5A9A; --accent-600: #1B4378; --accent-400: #4A7BC4; }
+.accent-red      { --accent: #C8102E; --accent-600: #A50C25; --accent-400: #E64A65; }
+.text-accent     { color: var(--accent); }
+.bg-accent       { background: var(--accent); }
+.bg-accent-soft  { background: color-mix(in srgb, var(--accent) 12%, white); }
+.border-accent   { border-color: var(--accent); }
+.ring-accent     { --tw-ring-color: var(--accent); }
+
+.dark-mode { background: #061528; color: #E2E8F0; }
+.dark-mode .surface { background: #0B2545; border-color: #13315C; color: #E2E8F0; }
+.dark-mode .surface-2 { background: #13315C; border-color: #1B4378; color: #E2E8F0; }
+.dark-mode .ink-on-dark { color: #E2E8F0; }
+.dark-mode .ink-muted-on-dark { color: #94A3B8; }
+.dark-mode .border-soft { border-color: #1B4378; }
+.dark-mode .hover-row:hover { background: #13315C; }
+
+.surface { background: #fff; border-color: #E2E8F0; color: #0F172A; }
+.surface-2 { background: #F8FAFC; border-color: #E2E8F0; color: #0F172A; }
+.border-soft { border-color: #E2E8F0; }
+.hover-row:hover { background: #F8FAFC; }
+
+.placeholder-grid {
+  background-image:
+    linear-gradient(45deg, rgba(15,23,42,0.04) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(15,23,42,0.04) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(15,23,42,0.04) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(15,23,42,0.04) 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+
+.stage-pill { transition: all .15s ease; }
+.stage-pill:hover { transform: translateY(-1px); }
+.slide-over-enter { animation: slideIn .22s ease-out; }
+@keyframes slideIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* Accessibility: skip-to-main link (visually hidden until focused) */
+.sr-only-focusable { position: absolute; left: -9999px; }
+.sr-only-focusable:focus { left: 12px; top: 12px; z-index: 100; background: #0B2545; color: white; padding: 8px 16px; border-radius: 6px; }

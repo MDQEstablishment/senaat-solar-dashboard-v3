@@ -1,0 +1,392 @@
+// Round 5 store extensions — composed with the base store
+// Recycle Bin REMOVED (hard-delete with confirmation). Site Engineer removed from targets.
+
+function useStoreR2(base) {
+  const [escalations, setEscalations]       = React.useState(() => ESCALATIONS_DEFAULT);
+  const [stageStatuses, setStageStatuses]   = React.useState(() => STAGE_STATUSES_DEFAULT);
+  const [lifecycleStages, setLifecycleStages] = React.useState(() => LIFECYCLE_STAGES_DEFAULT);
+
+  // Round 10: per-project lifecycle stage state.
+  // Shape: { [projectId]: [{stageId, status: 'done'|'not-started'|'blocked', date}, ...] }
+  const [projectLifecycleState, setProjectLifecycleState] = React.useState(() => {
+    const out = {};
+    const rng = (() => { let s = 0xC0FFEE; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0xffffffff; }; })();
+    const today = new Date('2026-05-12').getTime();
+    const totalStages = LIFECYCLE_STAGES_DEFAULT.length;
+    const blockedProjectIds = (() => {
+      const ids = PROJECTS.map(p => p.id);
+      const a = ids[Math.floor(rng() * ids.length)];
+      let b = ids[Math.floor(rng() * ids.length)];
+      while (b === a) b = ids[Math.floor(rng() * ids.length)];
+      return [a, b];
+    })();
+    PROJECTS.forEach(p => {
+      // Pick a current stage index between 3 and Math.min(11, totalStages - 2)
+      const maxIdx = Math.min(11, totalStages - 2);
+      const cur = 3 + Math.floor(rng() * (maxIdx - 3 + 1));
+      // 50/50 whether current stage is itself Done
+      const currentIsDone = rng() < 0.5;
+      const list = LIFECYCLE_STAGES_DEFAULT.map((s, i) => {
+        let status = 'not-started';
+        let date = null;
+        if (i < cur) {
+          status = 'done';
+          // dates spread across past 8 months
+          const offsetDays = (totalStages - i) * 12 + Math.floor(rng() * 20);
+          date = new Date(today - offsetDays * 86400000).toISOString().slice(0, 10);
+        } else if (i === cur && currentIsDone) {
+          status = 'done';
+          date = new Date(today - Math.floor(rng() * 10) * 86400000).toISOString().slice(0, 10);
+        }
+        return { stageId: s.id, status, date };
+      });
+      // Inject a Blocked stage into 1-2 random projects (Round 10 spec)
+      if (blockedProjectIds.indexOf(p.id) !== -1) {
+        // Mark the stage just after `cur` as blocked (or the next not-started)
+        const blockIdx = Math.min(totalStages - 1, cur + 1);
+        if (list[blockIdx] && list[blockIdx].status === 'not-started') {
+          list[blockIdx].status = 'blocked';
+        }
+      }
+      out[p.id] = list;
+    });
+    return out;
+  });
+
+  // Toggle a project lifecycle stage between Done and Not Started (Round 10).
+  // Audit-logged by caller via `currentUser` argument.
+  const toggleProjectLifecycleStage = (projectId, stageId, currentUser) => {
+    let before = 'not-started', after = 'done';
+    setProjectLifecycleState(state => {
+      const list = (state[projectId] || []).slice();
+      const idx = list.findIndex(x => x.stageId === stageId);
+      if (idx < 0) {
+        list.push({ stageId, status: 'done', date: new Date().toISOString().slice(0, 10) });
+        after = 'done';
+      } else {
+        before = list[idx].status;
+        after = list[idx].status === 'done' ? 'not-started' : 'done';
+        list[idx] = { ...list[idx], status: after, date: after === 'done' ? new Date().toISOString().slice(0, 10) : null };
+      }
+      return { ...state, [projectId]: list };
+    });
+    // Audit
+    if (currentUser) {
+      const proj = PROJECTS.find(p => p.id === projectId);
+      const stage = lifecycleStages.find(s => s.id === stageId);
+      setTimeout(() => {
+        const auditEntry = {
+          actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+          action: 'UPDATE', entityType: 'project_lifecycle_stage',
+          entityId: projectId + ':' + stageId,
+          entityLabel: (proj?.name || projectId) + ' / ' + (stage?.name || stageId),
+          before, after,
+          summary: `Toggled "${stage?.name || stageId}" on ${proj?.name || projectId}: ${before} → ${after}`,
+        };
+        // call logAudit directly (defined later in scope)
+        if (typeof logAudit === 'function') logAudit(auditEntry);
+      }, 0);
+    }
+  };
+  const [schoolStagesList, setSchoolStagesList] = React.useState(() => SCHOOL_STAGES.map((name, i) => ({
+    id: 'ss' + (i + 1), name, order: i, archived: false,
+    color: i < 3 ? '#13315C' : i < 11 ? '#2A5A9A' : '#B8860B',
+  })));
+  const [customFields, setCustomFields]     = React.useState(() => CUSTOM_FIELDS_DEFAULT);
+  const [milestoneTemplates, setMTemplates] = React.useState(() => MILESTONE_TEMPLATES_DEFAULT);
+  const [milestoneEntries, setMEntries]     = React.useState(() => MILESTONE_ENTRIES_DEFAULT);
+  const [financialEntries, setFinancialEntries] = React.useState(() => FINANCIAL_ENTRIES_DEFAULT);
+  const [stageHistory, setStageHistory]     = React.useState(() => ({}));
+  const [materials, setMaterials]           = React.useState(() => MATERIALS);
+  const [materialsCatalog, setMatCatalog]   = React.useState(() => MATERIALS_CATALOG);
+  const [materialUsage, setMaterialUsage]   = React.useState(() => []);  // { id, schoolId, materialNo, qty, unit, date, by }
+  const [contractorsLocal]                  = React.useState(() => CONTRACTORS);
+  const [auditLog, setAuditLog]             = React.useState(() => (typeof AUDIT_LOG_SEED !== 'undefined' ? AUDIT_LOG_SEED : []));
+
+  // Audit log helper — call from any mutation. Caps at 5000 entries.
+  const logAudit = (entry) => {
+    const e = {
+      id: 'au' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+      timestamp: new Date().toISOString(),
+      ...entry,
+    };
+    setAuditLog(log => {
+      const next = [e, ...log];
+      return next.length > 5000 ? next.slice(0, 5000) : next;
+    });
+    return e;
+  };
+
+  // ---- Escalations ----
+  const addEscalation = (data) => {
+    const id = 'esc' + Date.now();
+    const target = data.target || { toUserId: 'u-vp', toRole: 'VP' };
+    const today = new Date().toISOString().slice(0, 10);
+    const e = {
+      id, title: data.title, reason: data.reason, urgency: data.urgency,
+      projectId: data.projectId, schoolId: data.schoolId || null, taskId: data.taskId || null,
+      fromUserId: data.fromUserId, status: 'Open',
+      currentlyWith: target.toUserId, toUserId: target.toUserId, toRole: target.toRole,
+      opened: today, daysOpen: 0,
+      chain: [{ fromUserId: data.fromUserId, toUserId: target.toUserId, toRole: target.toRole, when: today, action: 'Escalated' }],
+      history: [{ who: data.fromUserId, when: today, action: 'Created', note: data.reason || ('Escalated to ' + target.toRole) }],
+    };
+    setEscalations(es => [e, ...es]);
+    base.pushNotif({ kind: 'overdue', text: 'New escalation: ' + data.title, target: { kind: 'escalation', id } });
+    return e;
+  };
+  const addEscalationComment = (id, who, note) => {
+    setEscalations(es => es.map(e => e.id === id
+      ? { ...e, history: [...e.history, { who, when: new Date().toISOString().slice(0, 10), action: 'Comment', note }] }
+      : e));
+  };
+  const resolveEscalation = (id, who, note) => {
+    setEscalations(es => es.map(e => e.id === id
+      ? { ...e, status: 'Resolved', currentlyWith: null, resolvedDate: new Date().toISOString().slice(0, 10),
+          history: [...e.history, { who, when: new Date().toISOString().slice(0, 10), action: 'Resolved', note }] }
+      : e));
+  };
+  const escalateFurther = (id, fromUserId, target, note) => {
+    const today = new Date().toISOString().slice(0, 10);
+    setEscalations(es => es.map(e => e.id === id ? {
+      ...e, currentlyWith: target.toUserId, toUserId: target.toUserId, toRole: target.toRole,
+      chain: [...(e.chain || []), { fromUserId, toUserId: target.toUserId, toRole: target.toRole, when: today, action: 'Forwarded' }],
+      history: [...e.history, { who: fromUserId, when: today, action: 'Forwarded', note: 'Forwarded to ' + target.toRole + (note ? ': ' + note : '') }],
+    } : e));
+  };
+
+  // ---- Stage flexible status ----
+  // Round 10: simple two-state toggle for school stages (Done ⇄ Not Started)
+  const toggleSchoolStage = (schoolId, stageIdx, currentUser) => {
+    let before = 'not-started', after = 'done';
+    base._setSchools(ss => ss.map(s => {
+      if (s.id !== schoolId) return s;
+      const stages = s.stages.slice();
+      const st = stages[stageIdx] || {};
+      before = st.done ? 'done' : 'not-started';
+      after  = st.done ? 'not-started' : 'done';
+      stages[stageIdx] = {
+        ...st,
+        done: !st.done,
+        statusId: !st.done ? 'done' : 'not-started',
+        date: !st.done ? new Date().toISOString() : null,
+        by: currentUser ? currentUser.id : st.by,
+      };
+      // Recompute status
+      const doneCount = stages.filter(x => x.done).length;
+      const newStatus = doneCount === stages.length ? 'Completed' : doneCount > 0 ? 'In Progress' : 'Not Started';
+      return { ...s, stages, status: newStatus, lastUpdate: { by: currentUser?.id, when: new Date().toISOString() } };
+    }));
+    if (currentUser) {
+      const stageLabel = SCHOOL_STAGES[stageIdx] || ('Stage ' + (stageIdx + 1));
+      setTimeout(() => {
+        if (typeof logAudit === 'function') logAudit({
+          actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+          action: 'UPDATE', entityType: 'school_stage', entityId: schoolId + ':' + stageIdx, entityLabel: schoolId + ' / ' + stageLabel,
+          before, after,
+          summary: `Toggled "${stageLabel}" on school ${schoolId}: ${before} → ${after}`,
+        });
+      }, 0);
+    }
+  };
+
+  const setSchoolStageStatus = (schoolId, stageIdx, statusId, who, reason) => {
+    const status = stageStatuses.find(s => s.id === statusId);
+    base.updateSchoolStage(schoolId, stageIdx, {
+      done: status?.terminal || false, statusId,
+      date: status?.terminal ? new Date().toISOString() : null, by: who,
+    });
+    const key = schoolId + '-' + stageIdx;
+    setStageHistory(h => ({
+      ...h,
+      [key]: [...(h[key] || []), { who, when: new Date().toISOString(), to: statusId, reason: reason || '' }],
+    }));
+  };
+  const addStageStatus = (s) => setStageStatuses(ss => [...ss, { id: 'cs' + Date.now(), builtin: false, terminal: false, color: '#64748B', ...s }]);
+  const updateStageStatus = (id, patch) => setStageStatuses(ss => ss.map(s => s.id === id ? { ...s, ...patch } : s));
+  const deleteStageStatus = (id) => setStageStatuses(ss => ss.filter(s => s.id !== id || s.builtin));
+
+  // ---- Lifecycle CRUD ----
+  const addLifecycleStage = (s) => setLifecycleStages(ls => [...ls, { id: 'ls' + Date.now(), order: ls.length, archived: false, color: '#13315C', criteria: '', ...s }]);
+  const updateLifecycleStage = (id, patch) => setLifecycleStages(ls => ls.map(s => s.id === id ? { ...s, ...patch } : s));
+  const deleteLifecycleStage = (id) => setLifecycleStages(ls => ls.filter(s => s.id !== id));
+  const reorderLifecycleStage = (id, dir) => setLifecycleStages(ls => {
+    const sorted = [...ls].sort((a, b) => a.order - b.order);
+    const i = sorted.findIndex(s => s.id === id);
+    const j = i + dir;
+    if (j < 0 || j >= sorted.length) return ls;
+    [sorted[i].order, sorted[j].order] = [sorted[j].order, sorted[i].order];
+    return [...sorted];
+  });
+
+  // ---- School Stages CRUD ----
+  const addSchoolStage_ = (s) => setSchoolStagesList(ls => [...ls, { id: 'ss' + Date.now(), order: ls.length, archived: false, color: '#13315C', ...s }]);
+  const updateSchoolStage_ = (id, patch) => setSchoolStagesList(ls => ls.map(s => s.id === id ? { ...s, ...patch } : s));
+  const deleteSchoolStage_ = (id) => setSchoolStagesList(ls => ls.filter(s => s.id !== id));
+  const reorderSchoolStage_ = (id, dir) => setSchoolStagesList(ls => {
+    const sorted = [...ls].sort((a, b) => a.order - b.order);
+    const i = sorted.findIndex(s => s.id === id);
+    const j = i + dir;
+    if (j < 0 || j >= sorted.length) return ls;
+    [sorted[i].order, sorted[j].order] = [sorted[j].order, sorted[i].order];
+    return [...sorted];
+  });
+
+  // ---- Custom fields ----
+  const addCustomField = (entity, field) =>
+    setCustomFields(cf => ({ ...cf, [entity]: [...(cf[entity] || []), { id: 'cf-' + Date.now(), ...field }] }));
+  const updateCustomField = (entity, id, patch) =>
+    setCustomFields(cf => ({ ...cf, [entity]: cf[entity].map(f => f.id === id ? { ...f, ...patch } : f) }));
+  const deleteCustomField = (entity, id) =>
+    setCustomFields(cf => ({ ...cf, [entity]: cf[entity].filter(f => f.id !== id) }));
+
+  // ---- Milestone templates ----
+  const addMilestoneTemplate = (mt) => setMTemplates(t => [...t, { id: 'mt' + Date.now(), weight: 25, fields: [], ...mt }]);
+  const updateMilestoneTemplate = (id, patch) => setMTemplates(t => t.map(m => m.id === id ? { ...m, ...patch } : m));
+  const deleteMilestoneTemplate = (id) => setMTemplates(t => t.filter(m => m.id !== id));
+  const setMilestoneEntry = (contractorId, templateId, values) => {
+    setMEntries(es => {
+      const idx = es.findIndex(e => e.contractorId === contractorId && e.templateId === templateId);
+      const entry = { id: idx >= 0 ? es[idx].id : 'me-' + contractorId + '-' + templateId, contractorId, templateId, values, when: new Date().toISOString().slice(0, 10) };
+      return idx >= 0 ? es.map((e, i) => i === idx ? entry : e) : [...es, entry];
+    });
+  };
+  const contractorScore = (contractorId) => {
+    let total = 0, weightSum = 0;
+    milestoneTemplates.forEach(mt => {
+      const entry = milestoneEntries.find(e => e.contractorId === contractorId && e.templateId === mt.id);
+      if (!entry) return;
+      const scoreField = mt.fields.find(f => f.label.includes('Score'));
+      const score = scoreField ? Number(entry.values[scoreField.id] || 0) : 75;
+      total += score * mt.weight; weightSum += mt.weight;
+    });
+    return weightSum > 0 ? Math.round(total / weightSum) : 0;
+  };
+
+  // ---- Financial entries with auto-rollup ----
+  const addFinancialEntry = (e) => setFinancialEntries(fe => [{ id: 'fe' + Date.now(), archived: false, document: null, ...e }, ...fe]);
+  const updateFinancialEntry = (id, patch) => setFinancialEntries(fe => fe.map(e => e.id === id ? { ...e, ...patch } : e));
+  const deleteFinancialEntry = (id) => setFinancialEntries(fe => fe.filter(e => e.id !== id));
+  const finRollup = (filterFn = () => true) => {
+    const live = financialEntries.filter(e => !e.archived).filter(filterFn);
+    const sum = (t) => live.filter(e => e.type === t).reduce((a, e) => a + e.amount, 0);
+    return {
+      receipts: sum('Receipt'), receivables: sum('Receivable'),
+      payments: sum('Payment'), payables: sum('Payable'),
+      net: sum('Receipt') - sum('Payment'),
+    };
+  };
+
+  // ---- Schools CRUD with duplicate guard ----
+  // Returns {ok: true, school} on success or {ok: false, error: 'dup-id'|'dup-meter', conflictWith: existing}
+  const validateSchool = (data, excludeId) => {
+    const idDup = base.schools.find(x => x.id === data.id && x.id !== excludeId);
+    if (idDup) return { ok: false, error: 'dup-id', conflictWith: idDup };
+    if (data.meter) {
+      const meterDup = base.schools.find(x => (x.meter || '') === data.meter && x.id !== excludeId && data.meter.trim() !== '');
+      if (meterDup) return { ok: false, error: 'dup-meter', conflictWith: meterDup };
+    }
+    return { ok: true };
+  };
+  const addSchool = (data) => {
+    const v = validateSchool(data);
+    if (!v.ok) return v;
+    const sid = data.id || ('SS-ZAM-NEW-' + Date.now());
+    const school = {
+      id: sid, code: sid, projectId: data.projectId,
+      nameAr: data.nameAr || '', nameEn: data.nameEn || '',
+      name: data.nameEn || data.nameAr || sid,
+      level: data.level || 'Primary', gender: data.gender || 'Boys',
+      region: data.region || '', city: data.city || '',
+      coords: data.coords || '', meter: data.meter || '', account: data.account || '',
+      survey: data.survey || null, installStart: data.installStart || null,
+      address: (data.city || '') + (data.region ? ', ' + data.region : ''),
+      type: data.level || 'Primary', kw: data.kw || 100,
+      contractor: data.contractor || '',
+      remark: 'Active', status: 'Not Started',
+      stages: STAGE_KEYS.map(() => ({ done: false, date: null, by: null, statusId: 'not-started' })),
+      rawStages: STAGE_KEYS.reduce((a, k) => (a[k] = 'not-started', a), {}),
+      issues: [], photos: {}, photosList: [], deliveryNotes: [],
+      lastUpdate: { by: null, when: null },
+      materialUsage: [],
+    };
+    base._setSchools(ss => [school, ...ss]);
+    return { ok: true, school };
+  };
+  const updateSchool = (id, patch) => {
+    if (patch.id && patch.id !== id) {
+      const v = validateSchool({ ...patch }, id);
+      if (!v.ok) return v;
+    }
+    if (patch.meter !== undefined) {
+      const v = validateSchool({ id, meter: patch.meter }, id);
+      if (!v.ok) return v;
+    }
+    base._setSchools(ss => ss.map(s => s.id === id ? { ...s, ...patch } : s));
+    return { ok: true };
+  };
+  const deleteSchool = (id) => {
+    // Hard-delete (no recycle bin in Round 5)
+    base._setSchools(ss => ss.filter(x => x.id !== id));
+  };
+
+  // ---- Materials catalog CRUD ----
+  const addMaterial = (m) => setMaterials(ms => [{ id: 'm' + Date.now(), fix: 'Fix1', planned: 0, ordered: 0, dWh: 0, dSite: 0, installed: 0, status: 'Planning', archived: false, ...m }, ...ms]);
+  const updateMaterial = (id, patch) => setMaterials(ms => ms.map(m => m.id === id ? { ...m, ...patch } : m));
+  const deleteMaterial = (id) => setMaterials(ms => ms.filter(x => x.id !== id));
+
+  // Per-school material consumption logging
+  const logMaterialUsage = (entry) => {
+    const id = 'mu' + Date.now();
+    setMaterialUsage(mu => [{ id, ...entry, when: new Date().toISOString().slice(0, 10) }, ...mu]);
+    return id;
+  };
+  const deleteMaterialUsage = (id) => setMaterialUsage(mu => mu.filter(x => x.id !== id));
+
+  return {
+    escalations, addEscalation, addEscalationComment, resolveEscalation, escalateFurther,
+    stageStatuses, setSchoolStageStatus, addStageStatus, updateStageStatus, deleteStageStatus, stageHistory,
+    lifecycleStages, addLifecycleStage, updateLifecycleStage, deleteLifecycleStage, reorderLifecycleStage,
+    schoolStagesList, addSchoolStage: addSchoolStage_, updateSchoolStage_, deleteSchoolStage: deleteSchoolStage_, reorderSchoolStage: reorderSchoolStage_,
+    customFields, addCustomField, updateCustomField, deleteCustomField,
+    milestoneTemplates, milestoneEntries, addMilestoneTemplate, updateMilestoneTemplate, deleteMilestoneTemplate, setMilestoneEntry, contractorScore,
+    financialEntries, addFinancialEntry, updateFinancialEntry, deleteFinancialEntry, finRollup,
+    materials, addMaterial, updateMaterial, deleteMaterial,
+    materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
+    validateSchool, addSchool, updateSchool, deleteSchool,
+    contractorsLocal,
+    auditLog, logAudit,
+    projectLifecycleState, toggleProjectLifecycleStage, toggleSchoolStage,
+  };
+}
+
+// Escalation hierarchy helper (Round 6)
+//   Project Manager / Material planning / Coordinator / QA / Procurement → Program Manager (Naif)
+//   Program Manager (Naif) / Operations Manager (Syed F, Syed A)         → Manager (Anas or Fasiulla)
+//   Manager (Anas, Fasiulla)                                              → VP (Olaf)
+//   VP cannot escalate further.
+// Only users in ESCALATE_TO_VP_USERS (Anas, Fasiulla) ever see "Escalate to VP".
+function getEscalationTarget(currentUser, projectId) {
+  if (!currentUser) return null;
+  const role = currentUser.role;
+  if (role === 'VP') return null;
+
+  // Manager → VP (only Anas + Fasiulla)
+  if (role === 'Manager') {
+    if (!canEscalateToVP(currentUser)) return null;
+    const vp = PEOPLE.find(p => p.role === 'VP');
+    return vp ? { toUserId: vp.id, toRole: 'VP', label: 'Escalate to VP' } : null;
+  }
+
+  // Operations Manager / Program Manager → Manager
+  if (role === 'Operations Manager' || role === 'Program Manager') {
+    const mgr = PEOPLE.find(p => p.role === 'Manager');  // first manager (Fasiulla)
+    return mgr ? { toUserId: mgr.id, toRole: 'Manager', label: 'Escalate to Manager' } : null;
+  }
+
+  // Project Manager / Material planning / Coordinator / Project Engineer / QA / Procurement → Program Manager (Naif)
+  const pgm = PEOPLE.find(p => p.role === 'Program Manager');
+  return pgm ? { toUserId: pgm.id, toRole: 'Program Manager', label: 'Escalate to Program Manager' } : null;
+}
+
+Object.assign(window, { useStoreR2, getEscalationTarget });
