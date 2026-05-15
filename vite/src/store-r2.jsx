@@ -165,6 +165,162 @@ function useStoreR2(base) {
   };
   const [auditLog, setAuditLog]             = React.useState(() => (typeof AUDIT_LOG_SEED !== 'undefined' ? AUDIT_LOG_SEED : []));
 
+  // ─── Round 14: Settings admin state ────────────────────────────────────
+  // P1 Users: editable user roster on top of seeded PEOPLE
+  const [users, setUsers] = React.useState(() => PEOPLE.map(p => ({ ...p, active: true, archived: false })));
+  const addUser = (data, actor) => {
+    const id = 'u-new-' + Date.now();
+    const tempPw = 'Welcome@123';
+    const u = {
+      id, name: data.name, email: data.email, role: data.role,
+      region: Array.isArray(data.region) ? data.region.join(', ') : (data.region || ''),
+      mobile: data.mobile || '', active: data.active !== false, archived: false,
+      initials: (data.name || '??').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase(),
+      tempPassword: tempPw,
+    };
+    setUsers(us => [u, ...us]);
+    if (typeof window !== 'undefined' && Array.isArray(window.PEOPLE)) window.PEOPLE.unshift(u);
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'CREATE', entityType: 'user', entityId: id, entityLabel: u.name,
+      summary: `Created user "${u.name}" (${u.role}) — temp password issued`,
+    }), 0);
+    return { ok: true, user: u, tempPassword: tempPw };
+  };
+  const updateUser = (id, patch, actor) => {
+    setUsers(us => us.map(u => u.id === id ? { ...u, ...patch } : u));
+    if (typeof window !== 'undefined' && Array.isArray(window.PEOPLE)) {
+      const i = window.PEOPLE.findIndex(u => u.id === id);
+      if (i >= 0) window.PEOPLE[i] = { ...window.PEOPLE[i], ...patch };
+    }
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'user', entityId: id, entityLabel: patch.name || id,
+      summary: `Updated user "${patch.name || id}"`,
+    }), 0);
+  };
+  const archiveUser = (id, actor) => {
+    let target = null;
+    setUsers(us => { target = us.find(u => u.id === id); return us.map(u => u.id === id ? { ...u, archived: true, active: false } : u); });
+    if (actor && target && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'user', entityId: id, entityLabel: target.name,
+      before: 'active', after: 'archived', summary: `Archived user "${target.name}"`,
+    }), 0);
+  };
+  const resetUserPassword = (id, actor) => {
+    const tempPw = 'Welcome@123';
+    let target = null;
+    setUsers(us => { target = us.find(u => u.id === id); return us.map(u => u.id === id ? { ...u, tempPassword: tempPw } : u); });
+    if (actor && target && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'user', entityId: id, entityLabel: target.name,
+      summary: `Reset password for "${target.name}" — temp password "${tempPw}"`,
+    }), 0);
+    return tempPw;
+  };
+
+  // P4 Roles & Permissions: role × feature matrix
+  const FEATURE_KEYS = ['Dashboard','Projects','Materials','Financials','Contractors','Reports','Employees','Settings'];
+  const buildDefaultPerms = () => {
+    const PG = (typeof PROGRAM_MANAGER_GROUP !== 'undefined' ? PROGRAM_MANAGER_GROUP : ['Manager','Operations Manager','Program Manager']);
+    const out = {};
+    ROLES.forEach(r => {
+      out[r] = {};
+      FEATURE_KEYS.forEach((s, j) => {
+        const isPgm = PG.indexOf(r) !== -1;
+        out[r][s] = isPgm || r === 'VP'
+          || (r === 'Project Manager' && j !== 2 && j !== 3 && j !== 4 && j !== 7)
+          || (r === 'Material planning' && (s === 'Materials' || s === 'Reports'))
+          || (r === 'Coordinator' && (s === 'Dashboard' || s === 'Projects' || s === 'Reports'));
+      });
+    });
+    return out;
+  };
+  const [rolePermissions, setRolePermissions] = React.useState(buildDefaultPerms);
+  const toggleRolePermission = (role, feature, actor) => {
+    let before = null, after = null;
+    setRolePermissions(rp => {
+      before = !!(rp[role] && rp[role][feature]);
+      after = !before;
+      return { ...rp, [role]: { ...(rp[role] || {}), [feature]: after } };
+    });
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'role_permission', entityId: role + ':' + feature, entityLabel: role + ' → ' + feature,
+      before: String(before), after: String(after),
+      summary: `Permission ${role} · ${feature}: ${before} → ${after}`,
+    }), 0);
+  };
+  const resetRolePermissions = (actor) => {
+    setRolePermissions(buildDefaultPerms());
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'role_permission', entityId: 'all', entityLabel: 'All roles',
+      summary: `Reset role permissions to defaults`,
+    }), 0);
+  };
+
+  // P7 Branding: live theme state with CSS variables applied to :root
+  const DEFAULT_THEME = { Primary: '#0B2545', 'Primary 2': '#13315C', Accent: '#B8860B', 'Industrial Red': '#C8102E' };
+  const [themeColors, setThemeColors] = React.useState(() => ({ ...DEFAULT_THEME }));
+  const [themeLogo, setThemeLogo] = React.useState(null);
+  const applyCssVars = (colors) => {
+    if (typeof document === 'undefined') return;
+    Object.entries(colors).forEach(([k, v]) => {
+      const slug = k.toLowerCase().replace(/\s+/g, '-');
+      document.documentElement.style.setProperty('--color-' + slug, v);
+    });
+  };
+  React.useEffect(() => { applyCssVars(themeColors); }, [themeColors]);
+  const updateThemeColor = (key, value, actor) => {
+    setThemeColors(c => ({ ...c, [key]: value }));
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'branding', entityId: 'color:' + key, entityLabel: key,
+      after: value, summary: `Brand color ${key} set to ${value}`,
+    }), 0);
+  };
+  const updateThemeLogo = (dataUrl, name, actor) => {
+    setThemeLogo({ dataUrl, name });
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'branding', entityId: 'logo', entityLabel: name || 'logo',
+      summary: `Brand logo uploaded (${name})`,
+    }), 0);
+  };
+  const resetBranding = (actor) => {
+    setThemeColors({ ...DEFAULT_THEME });
+    setThemeLogo(null);
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'branding', entityId: 'reset', entityLabel: 'Brand reset',
+      summary: `Branding reset to Zamil defaults`,
+    }), 0);
+  };
+
+  // P5 Notifications: per-event templates + autosaved channel preferences
+  const DEFAULT_TEMPLATES = {
+    escalation_created: { subject: '[Zamil] Escalation: {{title}}', body: '{{actor}} raised an escalation on {{project}} at {{timestamp}}.', recipients: 'Direct manager' },
+    task_assigned:      { subject: '[Zamil] Task assigned: {{title}}', body: '{{actor}} assigned a task to you due {{due}}.', recipients: 'Direct manager' },
+    task_overdue:       { subject: '[Zamil] Task overdue: {{title}}', body: 'Task {{title}} is overdue (due {{due}}).', recipients: 'Direct manager' },
+    stage_status_change:{ subject: '[Zamil] Stage update: {{stage}} on {{entity}}', body: '{{actor}} marked stage as {{after}}.', recipients: 'Project owner' },
+    schedule_overdue:   { subject: '[Zamil] Schedule overdue: {{project}}', body: 'Project {{project}} is past schedule.', recipients: 'All managers' },
+    payment_received:   { subject: '[Zamil] Payment received: {{project}}', body: 'Payment recorded for {{milestone}}.', recipients: 'All managers' },
+    school_energized:   { subject: '[Zamil] School energized: {{school}}', body: 'Energization recorded for {{school}}.', recipients: 'All managers' },
+    report_ready:       { subject: '[Zamil] Report ready: {{report}}', body: 'Report is available for download.', recipients: 'Custom list' },
+    document_uploaded:  { subject: '[Zamil] Document uploaded: {{entity}}', body: '{{actor}} uploaded a document.', recipients: 'Direct manager' },
+  };
+  const [notificationTemplates, setNotificationTemplates] = React.useState(() => ({ ...DEFAULT_TEMPLATES }));
+  const updateNotificationTemplate = (eventId, patch, actor) => {
+    setNotificationTemplates(t => ({ ...t, [eventId]: { ...(t[eventId] || {}), ...patch } }));
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'notification_template', entityId: eventId, entityLabel: eventId,
+      summary: `Updated notification template for "${eventId}"`,
+    }), 0);
+  };
+
   // Audit log helper — call from any mutation. Caps at 5000 entries.
   const logAudit = (entry) => {
     const e = {
@@ -419,6 +575,11 @@ function useStoreR2(base) {
     contractorsLocal, addContractor, updateContractor, deleteContractor,
     auditLog, logAudit,
     projectLifecycleState, toggleProjectLifecycleStage, toggleSchoolStage,
+    // Round 14 settings admin
+    users, addUser, updateUser, archiveUser, resetUserPassword,
+    rolePermissions, toggleRolePermission, resetRolePermissions,
+    themeColors, themeLogo, updateThemeColor, updateThemeLogo, resetBranding,
+    notificationTemplates, updateNotificationTemplate,
   };
 }
 

@@ -20,8 +20,8 @@ function PageSettings({ currentUser }) {
       <Card padding="p-0">
         <div className="px-5 pt-3"><Tabs tabs={TABS} active={tab} onChange={setTab} /></div>
         <div className="p-5">
-          {tab === 'Users'              && <UsersTab />}
-          {tab === 'Roles & Permissions'&& <RolesTab />}
+          {tab === 'Users'              && <UsersTab currentUser={currentUser} />}
+          {tab === 'Roles & Permissions'&& <RolesTab currentUser={currentUser} />}
           {tab === 'Projects'           && <ProjectsTab currentUser={currentUser} />}
           {tab === 'Lifecycle Stages'   && <LifecycleTab />}
           {tab === 'School Stages'      && <SchoolStagesTab />}
@@ -29,7 +29,7 @@ function PageSettings({ currentUser }) {
           {tab === 'Custom Fields'      && <CustomFieldsTab />}
           {tab === 'Milestone Templates'&& <MilestoneTemplatesTab />}
           {tab === 'KPIs'               && <KPIsTab />}
-          {tab === 'Branding'           && <BrandingTab />}
+          {tab === 'Branding'           && <BrandingTab currentUser={currentUser} />}
           {tab === 'Notifications'      && <NotificationsTab currentUser={currentUser} />}
           {tab === 'Audit Log'          && <AuditTab />}
         </div>
@@ -431,65 +431,266 @@ function AddMilestoneTemplateForm({ onSave, onCancel }) {
 }
 
 // ── Users ─────────────────────────────────────────────────────────────────────
-function UsersTab() {
+// P1: Users — fully wired Add / Edit / Reset PW / Archive with audit log.
+function UsersTab({ currentUser }) {
+  const { users, addUser, updateUser, archiveUser, resetUserPassword } = useStore();
+  const [modal, setModal] = React.useState({ open: false, initial: null });
+  const [confirmReset, setConfirmReset] = React.useState(null);
+  const [confirmArchive, setConfirmArchive] = React.useState(null);
+  const [showArchived, setShowArchived] = React.useState(false);
+  const [toast, setToast] = React.useState(null);
+  React.useEffect(() => {
+    if (toast) { const t = setTimeout(() => setToast(null), 4500); return () => clearTimeout(t); }
+  }, [toast]);
+
+  const list = (users || []).filter(u => showArchived ? true : !u.archived);
+  const archivedCount = (users || []).filter(u => u.archived).length;
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <SectionTitle title="Users" subtitle={`${PEOPLE.length} accounts`} className="!mb-0" />
-        <Button icon="plus" variant="accent">Add User</Button>
+        <SectionTitle title="Users" subtitle={`${list.length} accounts${archivedCount > 0 ? ` · ${archivedCount} archived` : ''}`} className="!mb-0" />
+        <div className="flex items-center gap-2">
+          {archivedCount > 0 && (
+            <label className="text-[11px] text-ink-500 flex items-center gap-1.5 cursor-pointer">
+              <input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)} />
+              Show archived ({archivedCount})
+            </label>
+          )}
+          <Button icon="plus" variant="accent" onClick={() => setModal({ open: true, initial: null })}>Add User</Button>
+        </div>
       </div>
+      {toast && (
+        <div className={cls('rounded-md px-3 py-2 text-xs border',
+          toast.kind === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}>
+          <span className="font-semibold mr-1">{toast.kind === 'error' ? '⚠' : '✓'}</span>{toast.msg}
+        </div>
+      )}
       <table className="w-full text-sm border border-soft rounded-md overflow-hidden">
         <thead className="surface-2 text-[11px] uppercase tracking-wider text-ink-500">
-          <tr><th className="text-left px-3 py-2">Name</th><th className="text-left px-3 py-2">Role</th><th className="text-left px-3 py-2">Region</th><th className="text-left px-3 py-2">Status</th><th className="text-right px-3 py-2"></th></tr>
+          <tr>
+            <th className="text-left px-3 py-2">Name</th>
+            <th className="text-left px-3 py-2">Email</th>
+            <th className="text-left px-3 py-2">Role</th>
+            <th className="text-left px-3 py-2">Region</th>
+            <th className="text-left px-3 py-2">Status</th>
+            <th className="text-right px-3 py-2">Actions</th>
+          </tr>
         </thead>
         <tbody>
-          {PEOPLE.map(u => (
-            <tr key={u.id} className="border-t border-soft hover-row">
+          {list.map(u => (
+            <tr key={u.id} className={cls('border-t border-soft hover-row', u.archived && 'opacity-60')}>
               <td className="px-3 py-2"><div className="flex items-center gap-2"><Avatar initials={u.initials} size={22} /><span className="font-medium">{u.name}</span></div></td>
+              <td className="px-3 py-2 text-xs text-ink-700">{u.email || '—'}</td>
               <td className="px-3 py-2 text-xs">{u.role}</td>
-              <td className="px-3 py-2 text-xs">{u.region}</td>
-              <td className="px-3 py-2"><Pill tone="ok">Active</Pill></td>
+              <td className="px-3 py-2 text-xs">{u.region || '—'}</td>
+              <td className="px-3 py-2"><Pill tone={u.archived ? 'soft' : 'ok'}>{u.archived ? 'Archived' : 'Active'}</Pill></td>
               <td className="px-3 py-2 text-right">
                 <div className="inline-flex items-center gap-1">
-                  <button className="text-[11px] px-2 py-1 rounded hover:bg-ink-100">Reset PW</button>
-                  <RowActions onEdit={() => {}} onArchive={() => {}} />
+                  <button type="button" disabled={u.archived}
+                    onClick={() => setConfirmReset(u)}
+                    className="text-[11px] px-2 py-1 rounded hover:bg-ink-100 disabled:opacity-30">Reset PW</button>
+                  <button type="button" aria-label={`Edit ${u.name}`} onClick={() => setModal({ open: true, initial: u })}
+                    className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-ink-900"><Icon name="pencil" size={13} /></button>
+                  {!u.archived && (
+                    <button type="button" aria-label={`Archive ${u.name}`} onClick={() => setConfirmArchive(u)}
+                      className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600"><Icon name="archive" size={13} /></button>
+                  )}
                 </div>
               </td>
             </tr>
           ))}
+          {list.length === 0 && <tr><td colSpan="6" className="text-center py-6 text-xs text-ink-500 italic">No users.</td></tr>}
         </tbody>
       </table>
+
+      <UserModal open={modal.open} initial={modal.initial}
+        onClose={() => setModal({ open: false, initial: null })}
+        onSave={(data) => {
+          if (modal.initial) {
+            updateUser(modal.initial.id, data, currentUser);
+            setToast({ kind: 'success', msg: `User "${data.name}" updated.` });
+          } else {
+            const r = addUser(data, currentUser);
+            setToast({ kind: 'success', msg: `User "${r.user.name}" added · temp password "${r.tempPassword}".` });
+          }
+        }} />
+
+      <Modal open={!!confirmReset} onClose={() => setConfirmReset(null)} title="Reset password"
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirmReset(null)}>Cancel</Button>
+          <Button variant="accent" icon="check" onClick={() => {
+            const pw = resetUserPassword(confirmReset.id, currentUser);
+            setToast({ kind: 'success', msg: `Password reset for "${confirmReset.name}" — new temp password "${pw}".` });
+            setConfirmReset(null);
+          }}>Reset password</Button>
+        </>}>
+        <p className="text-sm">Reset password for <strong>{confirmReset?.name}</strong>?</p>
+        <p className="text-xs text-ink-500 mt-1">A new temporary password will be issued. The user will be prompted to change it on next sign-in.</p>
+      </Modal>
+
+      <Modal open={!!confirmArchive} onClose={() => setConfirmArchive(null)} title="Archive user"
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirmArchive(null)}>Cancel</Button>
+          <Button variant="danger" icon="archive" onClick={() => {
+            archiveUser(confirmArchive.id, currentUser);
+            setToast({ kind: 'success', msg: `"${confirmArchive.name}" archived.` });
+            setConfirmArchive(null);
+          }}>Archive</Button>
+        </>}>
+        <p className="text-sm">Archive <strong>{confirmArchive?.name}</strong>?</p>
+        <p className="text-xs text-ink-500 mt-1">Archived users are hidden from the active list but their history is preserved. You can restore them from "Show archived".</p>
+      </Modal>
     </div>
   );
 }
 
-function RolesTab() {
-  const sections = ['Dashboard','Projects','Materials','Financials','Contractors','Reports','Employees','Settings'];
+function UserModal({ open, onClose, onSave, initial }) {
+  const ROLE_OPTIONS = ['VP','Manager','Operations Manager','Program Manager','Project Manager','Material planning','Coordinator'];
+  const REGION_OPTIONS = ['Dammam','Madinah','Qassim','Makkah','Al Jouf','Hail','Northern Borders','Najran','Jazan','Eastern','Riyadh'];
+  const [form, setForm] = React.useState({
+    name: '', email: '', role: 'Project Manager', region: [], mobile: '', active: true,
+  });
+  const [err, setErr] = React.useState({});
+  React.useEffect(() => {
+    if (open) {
+      setForm({
+        name: initial?.name || '',
+        email: initial?.email || '',
+        role: initial?.role || 'Project Manager',
+        region: initial?.region ? String(initial.region).split(',').map(s => s.trim()).filter(Boolean) : [],
+        mobile: initial?.mobile || '',
+        active: initial?.active !== false,
+      });
+      setErr({});
+    }
+  }, [open, initial]);
+  const submit = () => {
+    const e = {};
+    if (!form.name.trim()) e.name = 'Full name is required';
+    if (!form.email.trim()) e.email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email';
+    if (!form.role) e.role = 'Role is required';
+    setErr(e);
+    if (Object.keys(e).length > 0) return;
+    onSave({ ...form });
+    onClose();
+  };
+  if (!open) return null;
+  const errCls = (k) => err[k] ? 'border-red-500 ring-1 ring-red-500' : 'border-ink-200';
   return (
-    <div className="overflow-x-auto scrollbar-thin">
-      <table className="w-full text-sm border border-soft rounded-md">
-        <thead className="surface-2 text-[11px] uppercase tracking-wider text-ink-500">
-          <tr>
-            <th className="text-left px-3 py-2">Role</th>
-            {sections.map(s => <th key={s} className="text-center px-3 py-2">{s}</th>)}
-          </tr>
-        </thead>
-        <tbody>
-          {ROLES.map((r, i) => (
-            <tr key={r} className="border-t border-soft hover-row">
-              <td className="px-3 py-2 font-medium">{r}</td>
-              {sections.map((s, j) => {
-                const isPgm = PROGRAM_MANAGER_GROUP.indexOf(r) !== -1;
-                const checked = isPgm || r === 'VP'
-                  || (r === 'Project Manager' && j !== 2 && j !== 3 && j !== 4 && j !== 7)  // no materials/financials/contractors/settings
-                  || (r === 'Material planning' && (s === 'Materials' || s === 'Reports'))
-                  || (r === 'Coordinator' && (s === 'Dashboard' || s === 'Projects' || s === 'Reports'));
-                return <td key={s} className="px-3 py-2 text-center"><input type="checkbox" defaultChecked={checked} /></td>;
-              })}
+    <Modal open={open} onClose={onClose} title={initial ? `Edit User — ${initial.name}` : 'Add User'} wide
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="accent" icon="check" onClick={submit}>{initial ? 'Save changes' : 'Add user'}</Button>
+      </>}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Full name *</label>
+            <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              className={`w-full px-2.5 py-1.5 text-sm rounded-md border bg-white focus:outline-none focus:ring-2 ring-accent ${errCls('name')}`} />
+            {err.name && <div className="text-[10px] text-red-600 mt-0.5">{err.name}</div>}
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Email *</label>
+            <input type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+              placeholder="name@coolcare.com.sa"
+              className={`w-full px-2.5 py-1.5 text-sm rounded-md border bg-white focus:outline-none focus:ring-2 ring-accent ${errCls('email')}`} />
+            {err.email && <div className="text-[10px] text-red-600 mt-0.5">{err.email}</div>}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Role *</label>
+            <Select value={form.role} onChange={v => setForm(f => ({ ...f, role: v }))} options={ROLE_OPTIONS} className="w-full" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Mobile</label>
+            <input value={form.mobile} onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))}
+              placeholder="+966 …"
+              className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white focus:outline-none focus:ring-2 ring-accent" />
+          </div>
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-ink-700 mb-1 block">Default region(s)</label>
+          <div className="flex flex-wrap gap-1">
+            {REGION_OPTIONS.map(r => {
+              const sel = form.region.includes(r);
+              return (
+                <button key={r} type="button"
+                  onClick={() => setForm(f => ({ ...f, region: sel ? f.region.filter(x => x !== r) : [...f.region, r] }))}
+                  className={cls('px-2.5 py-1 rounded-full text-[11px] border',
+                    sel ? 'bg-navy-900 text-white border-navy-900' : 'bg-white border-ink-200 hover:bg-ink-50')}>
+                  {r}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} />
+          Active (uncheck to disable sign-in)
+        </label>
+      </div>
+    </Modal>
+  );
+}
+
+// P4: Roles & Permissions — 56 checkboxes wired to store with autosave + audit.
+function RolesTab({ currentUser }) {
+  const { rolePermissions, toggleRolePermission, resetRolePermissions } = useStore();
+  const sections = ['Dashboard','Projects','Materials','Financials','Contractors','Reports','Employees','Settings'];
+  const [savedFlash, setSavedFlash] = React.useState(false);
+  const [confirmReset, setConfirmReset] = React.useState(false);
+  const flashSaved = () => { setSavedFlash(true); setTimeout(() => setSavedFlash(false), 1400); };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <SectionTitle title="Roles & Permissions"
+          subtitle="Toggling autosaves. Lower roles inherit feature visibility from this matrix."
+          className="!mb-0" />
+        <div className="flex items-center gap-2">
+          {savedFlash && <span className="text-[11px] text-emerald-600 inline-flex items-center gap-1"><Icon name="check" size={11} /> Saved</span>}
+          <Button size="sm" variant="outline" icon="arrow-left" onClick={() => setConfirmReset(true)}>Reset to defaults</Button>
+        </div>
+      </div>
+      <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full text-sm border border-soft rounded-md">
+          <thead className="surface-2 text-[11px] uppercase tracking-wider text-ink-500">
+            <tr>
+              <th className="text-left px-3 py-2">Role</th>
+              {sections.map(s => <th key={s} className="text-center px-3 py-2">{s}</th>)}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {ROLES.map((r) => (
+              <tr key={r} className="border-t border-soft hover-row">
+                <td className="px-3 py-2 font-medium">{r}</td>
+                {sections.map((s) => {
+                  const checked = !!(rolePermissions && rolePermissions[r] && rolePermissions[r][s]);
+                  return (
+                    <td key={s} className="px-3 py-2 text-center">
+                      <input type="checkbox" checked={checked}
+                        aria-label={`${r} can access ${s}`}
+                        onChange={() => { toggleRolePermission(r, s, currentUser); flashSaved(); }} />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Modal open={confirmReset} onClose={() => setConfirmReset(false)} title="Reset role permissions"
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirmReset(false)}>Cancel</Button>
+          <Button variant="danger" icon="check" onClick={() => { resetRolePermissions(currentUser); flashSaved(); setConfirmReset(false); }}>Reset to defaults</Button>
+        </>}>
+        <p className="text-sm">Reset every role's feature permissions to the Zamil defaults?</p>
+        <p className="text-xs text-ink-500 mt-1">All current matrix edits will be lost.</p>
+      </Modal>
     </div>
   );
 }
@@ -662,42 +863,67 @@ function KPIsTab() {
   );
 }
 
-function BrandingTab() {
-  const [colors, setColors] = React.useState({
-    'Primary': '#0B2545', 'Primary 2': '#13315C', 'Accent': '#B8860B', 'Industrial Red': '#C8102E',
-  });
-  const [logoName, setLogoName] = React.useState(null);
+// P7: Branding — live CSS variable update + store-backed color + logo upload + reset.
+function BrandingTab({ currentUser }) {
+  const { themeColors, themeLogo, updateThemeColor, updateThemeLogo, resetBranding } = useStore();
   const [toast, setToast] = React.useState(null);
+  const [confirmReset, setConfirmReset] = React.useState(false);
   const fileRef = React.useRef(null);
-
   React.useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 4000); return () => clearTimeout(t); } }, [toast]);
 
   const onPickLogo = (e) => {
     const f = e.target.files?.[0];
-    if (f) { setLogoName(f.name); setToast(`Logo "${f.name}" uploaded (demo).`); e.target.value = ''; }
+    if (!f) return;
+    if (f.size > 500 * 1024) {
+      setToast({ kind: 'warn', msg: `Logo is ${(f.size/1024).toFixed(0)} KB — larger than the 500 KB recommendation. Uploaded anyway.` });
+    }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      updateThemeLogo(ev.target.result, f.name, currentUser);
+      setToast(prev => prev?.kind === 'warn' ? prev : { kind: 'success', msg: `Logo "${f.name}" uploaded.` });
+    };
+    reader.readAsDataURL(f);
+    e.target.value = '';
   };
-  const setColor = (n, v) => { setColors(c => ({ ...c, [n]: v })); setToast(`${n} color updated to ${v}.`); };
 
   return (
     <div className="space-y-3">
-      {toast && <div className="rounded-md p-2.5 text-xs border bg-emerald-50 border-emerald-200 text-emerald-800"><span className="font-semibold">✓</span> {toast}</div>}
+      {toast && (
+        <div className={cls('rounded-md p-2.5 text-xs border',
+          toast.kind === 'warn'  ? 'bg-amber-50 border-amber-200 text-amber-800' :
+          toast.kind === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+                                   'bg-emerald-50 border-emerald-200 text-emerald-800')}>
+          <span className="font-semibold mr-1">{toast.kind === 'warn' || toast.kind === 'error' ? '⚠' : '✓'}</span>{toast.msg}
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div>
-          <SectionTitle title="Logo" />
-          <input type="file" ref={fileRef} accept="image/*" className="hidden" onChange={onPickLogo} />
-          <button onClick={() => fileRef.current?.click()}
+          <SectionTitle title="Logo" subtitle="PNG/SVG/JPEG · recommended ≤ 500 KB" />
+          <input type="file" ref={fileRef} accept="image/png,image/svg+xml,image/jpeg" className="hidden" onChange={onPickLogo} />
+          <button type="button" onClick={() => fileRef.current?.click()}
             className="w-full border-2 border-dashed border-soft hover:border-accent rounded-md p-8 text-center text-xs text-ink-500 transition">
-            <Icon name="upload" size={20} />
-            <div className="mt-1">{logoName ? <span className="text-emerald-700 font-semibold">{logoName}</span> : 'Click to upload SVG or PNG'}</div>
+            {themeLogo ? (
+              <div className="flex flex-col items-center gap-2">
+                <img src={themeLogo.dataUrl} alt={themeLogo.name} className="max-h-16" />
+                <div className="text-emerald-700 font-semibold">{themeLogo.name}</div>
+                <div className="text-ink-500">Click to replace</div>
+              </div>
+            ) : (
+              <>
+                <Icon name="upload" size={20} />
+                <div className="mt-1">Click to upload SVG, PNG, or JPEG</div>
+              </>
+            )}
           </button>
         </div>
         <div>
-          <SectionTitle title="Colors" />
+          <SectionTitle title="Colors" subtitle="Click any swatch to change. Updates live via CSS variables." />
           <div className="space-y-2">
-            {Object.entries(colors).map(([n, c]) => (
+            {Object.entries(themeColors || {}).map(([n, c]) => (
               <div key={n} className="flex items-center justify-between border border-soft rounded-md p-2">
                 <div className="flex items-center gap-2">
-                  <input type="color" value={c} onChange={e => setColor(n, e.target.value)}
+                  <input type="color" value={c} aria-label={`${n} color`}
+                    onChange={e => updateThemeColor(n, e.target.value, currentUser)}
                     className="w-7 h-7 border border-ink-200 rounded cursor-pointer" />
                   <span className="text-sm">{n}</span>
                 </div>
@@ -705,8 +931,22 @@ function BrandingTab() {
               </div>
             ))}
           </div>
+          <button type="button" onClick={() => setConfirmReset(true)}
+            className="mt-3 text-[11px] text-accent hover:underline">Reset to Zamil defaults</button>
         </div>
       </div>
+      <Modal open={confirmReset} onClose={() => setConfirmReset(false)} title="Reset brand"
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirmReset(false)}>Cancel</Button>
+          <Button variant="danger" icon="arrow-left" onClick={() => {
+            resetBranding(currentUser);
+            setToast({ kind: 'success', msg: 'Branding reset to Zamil defaults.' });
+            setConfirmReset(false);
+          }}>Reset branding</Button>
+        </>}>
+        <p className="text-sm">Reset all brand colors and clear the uploaded logo?</p>
+        <p className="text-xs text-ink-500 mt-1">This restores the Zamil Services default palette and removes any custom logo.</p>
+      </Modal>
     </div>
   );
 }

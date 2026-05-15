@@ -154,6 +154,34 @@ record('Sidebar removes Materials nav item entirely',
 record('Sidebar Financials gated by canViewFinancials',
        /canViewFinancials\(currentUser\)/.test(shellJsx));
 
+// ── J5. Round 14 Settings admin ───────────────────────────────────────────
+record('R14 P1: UsersTab uses store users (not static PEOPLE)',
+       /const \{ users, addUser, updateUser, archiveUser, resetUserPassword \}/.test(settingsJsx));
+record('R14 P1: Add User button wired',
+       /onClick=\{\(\) => setModal\(\{ open: true, initial: null \}\)\}>Add User/.test(settingsJsx));
+record('R14 P1: addUser writes CREATE audit + issues temp password',
+       /entityType: 'user'/.test(storeR2Jsx) && /Welcome@123/.test(storeR2Jsx));
+record('R14 P1: Reset PW button wired with confirmation',
+       /setConfirmReset\(u\)/.test(settingsJsx) && /resetUserPassword\(confirmReset\.id/.test(settingsJsx));
+record('R14 P1: Archive flow + Show archived toggle',
+       /setConfirmArchive\(u\)/.test(settingsJsx) && /archiveUser\(confirmArchive\.id/.test(settingsJsx) && /Show archived/.test(settingsJsx));
+record('R14 P1: UserModal has all required fields',
+       /Full name \*/.test(settingsJsx) && />Role \*</.test(settingsJsx) && /Default region/.test(settingsJsx) && />Mobile</.test(settingsJsx) && /Active \(uncheck/.test(settingsJsx));
+record('R14 P4: RolesTab onChange toggleRolePermission (autosave)',
+       /toggleRolePermission\(r, s, currentUser\)/.test(settingsJsx) && /flashSaved\(\)/.test(settingsJsx));
+record('R14 P4: Reset to defaults button + confirmation',
+       /resetRolePermissions\(currentUser\)/.test(settingsJsx) && /Reset to defaults/.test(settingsJsx));
+record('R14 P4: rolePermissions state + audit on toggle',
+       /const \[rolePermissions, setRolePermissions\]/.test(storeR2Jsx) && /entityType: 'role_permission'/.test(storeR2Jsx));
+record('R14 P7: BrandingTab uses store theme + applies CSS variables',
+       /updateThemeColor/.test(settingsJsx) && /applyCssVars/.test(storeR2Jsx) && /document\.documentElement\.style\.setProperty/.test(storeR2Jsx));
+record('R14 P7: Logo upload reads dataURL + warns >500KB',
+       /readAsDataURL/.test(settingsJsx) && /500 KB/.test(settingsJsx));
+record('R14 P7: Reset to Zamil defaults link wired',
+       /resetBranding\(currentUser\)/.test(settingsJsx));
+record('R14 P7: Branding actions audit-logged',
+       /entityType: 'branding'/.test(storeR2Jsx));
+
 // ── J4. Round 13 fixes ────────────────────────────────────────────────────
 const contractorsJsx = read('page-contractors.jsx');
 record('R13 H1: Add Contractor button wired to setContractorModal',
@@ -275,7 +303,7 @@ record('BUG 3: Notifications throttle Immediate / Daily',
 record('BUG 5: Settings KPIs add/edit/delete wired',
        /startEdit\(k\)/.test(settingsJsx) && /setConfirmDel\(k\)/.test(settingsJsx) && /saveAdd/.test(settingsJsx));
 record('BUG 5: Settings Branding color picker wired',
-       /<input type="color"/.test(settingsJsx) && /setColor\(n, e\.target\.value\)/.test(settingsJsx));
+       /<input type="color"/.test(settingsJsx) && /updateThemeColor\(n, e\.target\.value/.test(settingsJsx));
 record('BUG 5: Settings Branding logo upload wired',
        /onPickLogo/.test(settingsJsx) && /fileRef\.current\?\.click\(\)/.test(settingsJsx));
 
