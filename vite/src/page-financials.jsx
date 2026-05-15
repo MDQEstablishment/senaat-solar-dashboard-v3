@@ -276,6 +276,8 @@ function PageFinancials({ projects, fin }) {
                     </div>
                   ))}
                 </div>
+                {/* R15 #4: Cash Flow chart demo caption */}
+                <p className="text-xs text-slate-500 italic mt-2">Curve shown is a representative trend; live cumulative data populates post-integration with the accounting system.</p>
               </div>
               <div>
                 <SectionTitle title="Aging buckets" subtitle="Outstanding receivables by age" />

@@ -1537,6 +1537,7 @@ const ICON_PATHS = {
   'info': '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
   'chevron-up': '<polyline points="18 15 12 9 6 15"/>',
   'arrow-up-circle': '<circle cx="12" cy="12" r="10"/><polyline points="16 12 12 8 8 12"/><line x1="12" y1="16" x2="12" y2="8"/>',
+  'clipboard-list': '<rect x="8" y="2" width="8" height="4" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
 };
 
 const Icon = ({ name, size = 16, className = '', strokeWidth = 1.75, style }) => {
@@ -2930,6 +2931,10 @@ function navForRole(role, currentUser) {
   const finItem = canViewFinancials(currentUser)
     ? [{ id: 'financials', label: 'Financials', icon: 'banknote' }]
     : [];
+  // R15 #1: Audit Log sidebar item for users with canViewAuditLog who don't have full Settings access.
+  const auditLogItem = canViewAuditLog(currentUser)
+    ? [{ id: 'audit-log', label: 'Audit Log', icon: 'clipboard-list' }]
+    : [];
 
   if (role === 'VP') {
     return [
@@ -2938,6 +2943,7 @@ function navForRole(role, currentUser) {
       { id: 'escalations', label: 'Escalations', icon: 'alert-circle' },
       ...finItem,
       { id: 'reports',     label: 'Reports',     icon: 'file-text' },
+      ...auditLogItem,
     ];
   }
   if (role === 'Project Manager') {
@@ -2975,6 +2981,12 @@ function navForRole(role, currentUser) {
   const settingsItem = canViewSettings(currentUser)
     ? [{ id: 'settings', label: 'Settings', icon: 'settings' }]
     : [];
+  // R15 #1: show Audit Log direct link for users in the PM group who can view it
+  // but don't have full Settings access (Operations Manager, Program Manager).
+  // Managers reach the same Audit Log via the Settings page's Audit Log tab.
+  const auditLogItemPgm = (canViewAuditLog(currentUser) && !canViewSettings(currentUser))
+    ? [{ id: 'audit-log', label: 'Audit Log', icon: 'clipboard-list' }]
+    : [];
   return [
     { id: 'home',           label: 'Dashboard',      icon: 'home' },
     { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
@@ -2983,6 +2995,7 @@ function navForRole(role, currentUser) {
     ...finItem,
     { id: 'contractors',    label: 'Contractors',    icon: 'hard-hat' },
     { id: 'reports',        label: 'Reports',        icon: 'file-text' },
+    ...auditLogItemPgm,
     ...settingsItem,
   ];
 }
@@ -5749,6 +5762,8 @@ function PageFinancials({ projects, fin }) {
                     </div>
                   ))}
                 </div>
+                {/* R15 #4: Cash Flow chart demo caption */}
+                <p className="text-xs text-slate-500 italic mt-2">Curve shown is a representative trend; live cumulative data populates post-integration with the accounting system.</p>
               </div>
               <div>
                 <SectionTitle title="Aging buckets" subtitle="Outstanding receivables by age" />
@@ -6298,7 +6313,31 @@ Object.assign(window, { PageReports });
 <script type="text/babel">
 // Page 8 — Settings / Admin (with R2 tabs: Lifecycle, Statuses, Custom Fields, Milestones)
 
-function PageSettings({ currentUser }) {
+function PageSettings({ currentUser, auditLogOnly = false }) {
+  // R15 #1: auditLogOnly bypasses the Settings gate and renders only the Audit Log
+  // for users with canViewAuditLog who don't have full Settings access
+  // (VP, Operations Manager, Program Manager).
+  if (auditLogOnly) {
+    if (!canViewAuditLog(currentUser)) {
+      return (
+        <div className="p-6">
+          <div className="bg-red-50 border border-red-300 rounded-md p-4 text-sm text-red-800">
+            Access denied — Audit Log is restricted.
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="p-6 space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold ink-on-dark">Audit Log</h1>
+          <p className="text-xs text-ink-500 ink-muted-on-dark mt-0.5">Every mutation in the system is recorded here. Read-only.</p>
+        </div>
+        <Card padding="p-5"><AuditTab /></Card>
+      </div>
+    );
+  }
+
   const [tab, setTab] = React.useState('Users');
   const showAudit = canViewAuditLog(currentUser);
   const TABS = [
@@ -8708,6 +8747,7 @@ function AppInner() {
       if (page === 'escalations') return <PageVPDashboard onOpenEscalation={openEsc} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
       if (page === 'reports')     return <PageReportsZamil projects={projects} />;
+      if (page === 'audit-log')   return <PageSettings currentUser={currentUser} auditLogOnly={true} />;
       return <PageVPDashboard onOpenEscalation={openEsc} />;
     }
 
@@ -8724,7 +8764,8 @@ function AppInner() {
     // Material planning (M5: my-escalations route added)
     if (role === 'Material planning') {
       if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      // R15 #2: Projects now routes to a read-only programs list (was duplicating Dashboard).
+      if (page === 'projects')  return <PageVPPrograms projects={projects} onOpen={openProject} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
@@ -8735,7 +8776,8 @@ function AppInner() {
     // Coordinator (M5: my-escalations route added)
     if (role === 'Coordinator') {
       if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      // R15 #2: Projects now routes to a read-only programs list (was duplicating Dashboard).
+      if (page === 'projects')  return <PageVPPrograms projects={projects} onOpen={openProject} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
@@ -8758,6 +8800,9 @@ function AppInner() {
       }
       return <PageSettings currentUser={currentUser} />;
     }
+    // R15 #1: dedicated Audit Log route for Operations Manager / Program Manager
+    // (Managers reach the same view via Settings → Audit Log tab).
+    if (page === 'audit-log') return <PageSettings currentUser={currentUser} auditLogOnly={true} />;
     return <PagePMDashboard projects={projects} currentUser={currentUser} onOpenEscalation={openEsc} onNewEscalation={() => onNewEscalation({})} />;
   };
 

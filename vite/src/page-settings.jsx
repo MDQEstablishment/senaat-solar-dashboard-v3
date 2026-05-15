@@ -1,7 +1,31 @@
 import React from 'react';
 // Page 8 — Settings / Admin (with R2 tabs: Lifecycle, Statuses, Custom Fields, Milestones)
 
-function PageSettings({ currentUser }) {
+function PageSettings({ currentUser, auditLogOnly = false }) {
+  // R15 #1: auditLogOnly bypasses the Settings gate and renders only the Audit Log
+  // for users with canViewAuditLog who don't have full Settings access
+  // (VP, Operations Manager, Program Manager).
+  if (auditLogOnly) {
+    if (!canViewAuditLog(currentUser)) {
+      return (
+        <div className="p-6">
+          <div className="bg-red-50 border border-red-300 rounded-md p-4 text-sm text-red-800">
+            Access denied — Audit Log is restricted.
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="p-6 space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold ink-on-dark">Audit Log</h1>
+          <p className="text-xs text-ink-500 ink-muted-on-dark mt-0.5">Every mutation in the system is recorded here. Read-only.</p>
+        </div>
+        <Card padding="p-5"><AuditTab /></Card>
+      </div>
+    );
+  }
+
   const [tab, setTab] = React.useState('Users');
   const showAudit = canViewAuditLog(currentUser);
   const TABS = [

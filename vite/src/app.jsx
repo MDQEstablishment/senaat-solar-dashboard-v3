@@ -190,6 +190,7 @@ function AppInner() {
       if (page === 'escalations') return <PageVPDashboard onOpenEscalation={openEsc} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
       if (page === 'reports')     return <PageReportsZamil projects={projects} />;
+      if (page === 'audit-log')   return <PageSettings currentUser={currentUser} auditLogOnly={true} />;
       return <PageVPDashboard onOpenEscalation={openEsc} />;
     }
 
@@ -206,7 +207,8 @@ function AppInner() {
     // Material planning (M5: my-escalations route added)
     if (role === 'Material planning') {
       if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      // R15 #2: Projects now routes to a read-only programs list (was duplicating Dashboard).
+      if (page === 'projects')  return <PageVPPrograms projects={projects} onOpen={openProject} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
@@ -217,7 +219,8 @@ function AppInner() {
     // Coordinator (M5: my-escalations route added)
     if (role === 'Coordinator') {
       if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      // R15 #2: Projects now routes to a read-only programs list (was duplicating Dashboard).
+      if (page === 'projects')  return <PageVPPrograms projects={projects} onOpen={openProject} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
@@ -240,6 +243,9 @@ function AppInner() {
       }
       return <PageSettings currentUser={currentUser} />;
     }
+    // R15 #1: dedicated Audit Log route for Operations Manager / Program Manager
+    // (Managers reach the same view via Settings → Audit Log tab).
+    if (page === 'audit-log') return <PageSettings currentUser={currentUser} auditLogOnly={true} />;
     return <PagePMDashboard projects={projects} currentUser={currentUser} onOpenEscalation={openEsc} onNewEscalation={() => onNewEscalation({})} />;
   };
 

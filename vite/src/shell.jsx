@@ -11,6 +11,10 @@ function navForRole(role, currentUser) {
   const finItem = canViewFinancials(currentUser)
     ? [{ id: 'financials', label: 'Financials', icon: 'banknote' }]
     : [];
+  // R15 #1: Audit Log sidebar item for users with canViewAuditLog who don't have full Settings access.
+  const auditLogItem = canViewAuditLog(currentUser)
+    ? [{ id: 'audit-log', label: 'Audit Log', icon: 'clipboard-list' }]
+    : [];
 
   if (role === 'VP') {
     return [
@@ -19,6 +23,7 @@ function navForRole(role, currentUser) {
       { id: 'escalations', label: 'Escalations', icon: 'alert-circle' },
       ...finItem,
       { id: 'reports',     label: 'Reports',     icon: 'file-text' },
+      ...auditLogItem,
     ];
   }
   if (role === 'Project Manager') {
@@ -56,6 +61,12 @@ function navForRole(role, currentUser) {
   const settingsItem = canViewSettings(currentUser)
     ? [{ id: 'settings', label: 'Settings', icon: 'settings' }]
     : [];
+  // R15 #1: show Audit Log direct link for users in the PM group who can view it
+  // but don't have full Settings access (Operations Manager, Program Manager).
+  // Managers reach the same Audit Log via the Settings page's Audit Log tab.
+  const auditLogItemPgm = (canViewAuditLog(currentUser) && !canViewSettings(currentUser))
+    ? [{ id: 'audit-log', label: 'Audit Log', icon: 'clipboard-list' }]
+    : [];
   return [
     { id: 'home',           label: 'Dashboard',      icon: 'home' },
     { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
@@ -64,6 +75,7 @@ function navForRole(role, currentUser) {
     ...finItem,
     { id: 'contractors',    label: 'Contractors',    icon: 'hard-hat' },
     { id: 'reports',        label: 'Reports',        icon: 'file-text' },
+    ...auditLogItemPgm,
     ...settingsItem,
   ];
 }
