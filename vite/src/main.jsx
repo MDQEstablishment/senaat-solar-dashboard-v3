@@ -18,21 +18,44 @@ window.useNavigate = useNavigate;
 window.useLocation = useLocation;
 window.NavLink = NavLink;
 
-// ── Recharts: real module on window for components that read Recharts.* ─────
-// We import it lazily on first chart render via a Promise that resolves into
-// window.Recharts. Components do `const C = window.Recharts || {}` — they
-// gracefully no-op until the chunk arrives.
-window.Recharts = new Proxy({}, {
-  get: () => () => null,  // No-op until real Recharts loads
-});
-async function loadRecharts() {
-  const mod = await import('recharts');
-  window.Recharts = mod;
-  // Force a state ping so consumers re-render with the real module
-  window.dispatchEvent(new Event('recharts-loaded'));
-  return mod;
+// ── Recharts: real module on window. Lazy-loaded on first access. ──────────
+// Components must use the `useRecharts()` hook from window so they re-render
+// once the chunk resolves (otherwise destructured no-ops are captured forever).
+let __rechartsRealModule = null;
+let __rechartsLoading = null;
+function __triggerRechartsLoad() {
+  if (__rechartsLoading) return __rechartsLoading;
+  __rechartsLoading = import('recharts').then(mod => {
+    __rechartsRealModule = mod;
+    window.Recharts = mod;
+    window.dispatchEvent(new Event('recharts-loaded'));
+    return mod;
+  });
+  return __rechartsLoading;
 }
+window.Recharts = new Proxy({}, {
+  get: (_t, prop) => {
+    if (__rechartsRealModule) return __rechartsRealModule[prop];
+    __triggerRechartsLoad();
+    return () => null;
+  }
+});
+async function loadRecharts() { return __triggerRechartsLoad(); }
 window.loadRecharts = loadRecharts;
+
+// Hook: returns the real Recharts module (or null until loaded).
+// Re-renders the component when the chunk arrives.
+window.useRecharts = function useRecharts() {
+  const [mod, setMod] = React.useState(__rechartsRealModule);
+  React.useEffect(() => {
+    if (__rechartsRealModule) { setMod(__rechartsRealModule); return; }
+    __triggerRechartsLoad().then(setMod);
+    const onLoaded = () => setMod(__rechartsRealModule);
+    window.addEventListener('recharts-loaded', onLoaded);
+    return () => window.removeEventListener('recharts-loaded', onLoaded);
+  }, []);
+  return mod;
+};
 
 // ── XLSX: dynamic import on first export action ─────────────────────────────
 window.XLSX = {

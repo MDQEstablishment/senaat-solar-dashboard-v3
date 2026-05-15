@@ -173,7 +173,9 @@ function PageFinancials({ projects, fin }) {
   const { financialEntries, addFinancialEntry, finRollup } = useStore();
   const [tab, setTab] = React.useState('Per Project');
   const [entryModal, setEntryModal] = React.useState(false);
-  const { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend } = window.Recharts;
+  // H2: Use useRecharts() hook so the page re-renders when the recharts chunk arrives.
+  const recharts = (typeof window.useRecharts === 'function' ? window.useRecharts() : window.Recharts) || null;
+  const { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend } = recharts || {};
 
   // Use store entries for rollup KPIs if available, else fall back to static fin
   const hasEntries = financialEntries && financialEntries.length > 0;
@@ -248,23 +250,38 @@ function PageFinancials({ projects, fin }) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2">
                 <SectionTitle title="Cumulative Invoiced vs Received (SAR M)" />
-                <div style={{ width: '100%', height: 260 }}>
-                  <ResponsiveContainer>
-                    <LineChart data={FIN_CURVE}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                      <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
-                      <YAxis stroke="#94A3B8" fontSize={11} />
-                      <Tooltip />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Line type="monotone" dataKey="invoiced" stroke="#0B2545" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="received" stroke="#B8860B" strokeWidth={2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div style={{ width: '100%', height: 260, position: 'relative' }}>
+                  {!recharts && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-ink-400">Loading chart…</div>
+                  )}
+                  {recharts && (FIN_CURVE && FIN_CURVE.length > 0) ? (
+                    <ResponsiveContainer>
+                      <LineChart data={FIN_CURVE}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                        <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
+                        <YAxis stroke="#94A3B8" fontSize={11} />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Line type="monotone" dataKey="invoiced" stroke="#0B2545" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="received" stroke="#B8860B" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (recharts && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10 bg-white/85 rounded-md border border-dashed border-soft">
+                      <div className="text-center px-4">
+                        <Icon name="trending-up" size={28} className="text-ink-200 mb-2 mx-auto" />
+                        <div className="text-sm font-medium text-ink-700">No cash flow data yet</div>
+                        <div className="text-xs text-ink-500 mt-1">Chart will populate as financial entries are recorded.</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
               <div>
                 <SectionTitle title="Aging buckets" subtitle="Outstanding receivables by age" />
-                <div style={{ width: '100%', height: 260 }}>
+                <div style={{ width: '100%', height: 260, position: 'relative' }}>
+                  {!recharts && <div className="absolute inset-0 flex items-center justify-center text-xs text-ink-400">Loading chart…</div>}
+                  {recharts && (
                   <ResponsiveContainer>
                     <BarChart data={aging}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
@@ -273,7 +290,7 @@ function PageFinancials({ projects, fin }) {
                       <Tooltip formatter={v => 'SAR ' + SARfull(v)} />
                       <Bar dataKey="amount" fill="#13315C" radius={[4,4,0,0]} />
                     </BarChart>
-                  </ResponsiveContainer>
+                  </ResponsiveContainer>)}
                 </div>
               </div>
             </div>

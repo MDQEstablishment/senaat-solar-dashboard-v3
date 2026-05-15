@@ -154,6 +154,59 @@ record('Sidebar removes Materials nav item entirely',
 record('Sidebar Financials gated by canViewFinancials',
        /canViewFinancials\(currentUser\)/.test(shellJsx));
 
+// ── J4. Round 13 fixes ────────────────────────────────────────────────────
+const contractorsJsx = read('page-contractors.jsx');
+record('R13 H1: Add Contractor button wired to setContractorModal',
+       /onClick=\{\(\) => setContractorModal\(\{ open: true, initial: null \}\)\}>Add Contractor/.test(contractorsJsx));
+record('R13 H1: addContractor store action exposed',
+       /addContractor, updateContractor, deleteContractor/.test(storeR2Jsx));
+record('R13 H1: addContractor writes CREATE audit',
+       /action: 'CREATE', entityType: 'contractor'/.test(storeR2Jsx));
+record('R13 H1: ContractorModal renders all required fields',
+       /Company name \*/.test(contractorsJsx) &&
+       />Category</.test(contractorsJsx) &&
+       /CR number/.test(contractorsJsx) &&
+       /License number/.test(contractorsJsx) &&
+       /Contact person/.test(contractorsJsx) &&
+       /'Phone'/.test(contractorsJsx) &&
+       /'Email'/.test(contractorsJsx) &&
+       /Default region\(s\)/.test(contractorsJsx));
+record('R13 H1: Add Contractor flow saves a row (state + window.CONTRACTORS sync)',
+       /setContractorsLocal\(ms => \[c, \.\.\.ms\]\)/.test(storeR2Jsx) &&
+       /window\.CONTRACTORS\.unshift\(c\)/.test(storeR2Jsx));
+
+record('R13 H2: page-financials uses useRecharts hook',
+       /window\.useRecharts/.test(read('page-financials.jsx')));
+record('R13 H2: Cash Flow chart wrapped in recharts guard',
+       /recharts &&[\s\S]{0,40}FIN_CURVE/.test(read('page-financials.jsx')));
+record('R13 H2: useRecharts hook defined in main.jsx',
+       /window\.useRecharts = function useRecharts/.test(read('main.jsx')));
+
+record('R13 M1: PageDashboard renders H1 for PM / Material planning / Coordinator',
+       /Material planning dashboard/.test(dashJsx) && /Coordinator dashboard/.test(dashJsx) && /My projects/.test(dashJsx));
+record('R13 M2: countEnergized helper defined + exported',
+       /function countEnergized\(/.test(dataJsx) && /countEnergized,/.test(dataJsx));
+record('R13 M2: PageDashboard uses countEnergized (no schoolDist.slice(8))',
+       /countEnergized\(scopedSchools\)/.test(dashJsx) && !/schoolDist\.slice\(8\)/.test(dashJsx));
+record('R13 M2: PagePMDashboard + PageVPDashboard use countEnergized',
+       (read('pages-r2.jsx').match(/countEnergized\(/g) || []).length >= 2);
+record('R13 M3: Sparkline shows muted preview on flat/zero data',
+       /No trend data yet/.test(read('ui.jsx')) && /strokeDasharray="3 3"/.test(read('ui.jsx')));
+record('R13 M4: PM sidebar uses my-projects + my-schools ids',
+       /id: 'my-projects'/.test(shellJsx) && /id: 'my-schools'/.test(shellJsx));
+record('R13 M4: PM lands on my-projects after sign-in',
+       /role === 'Project Manager' \? 'my-projects' : 'home'/.test(appJsx));
+record('R13 M5: Material planning has my-escalations in sidebar',
+       /'Material planning'[\s\S]{0,400}id: 'my-escalations'/.test(shellJsx));
+record('R13 M5: Coordinator has my-escalations in sidebar',
+       /'Coordinator'[\s\S]{0,400}id: 'my-escalations'/.test(shellJsx));
+record('R13 M5: PageDashboard receives + renders Escalate button',
+       /onNewEscalation \}/.test(dashJsx) && /icon="alert-circle" onClick=\{onNewEscalation\}/.test(dashJsx));
+record('R13 P1: ProjectCard badge uses shrink-0 whitespace-nowrap',
+       /shrink-0 whitespace-nowrap rounded-full/.test(dashJsx));
+record('R13 P1: ProjectCard header has flex-1 min-w-0 + truncate on title',
+       /flex-1 min-w-0/.test(dashJsx) && /truncate/.test(dashJsx));
+
 // ── J3. Round 10 fixes ────────────────────────────────────────────────────
 record('R10 FIX 2: canViewSettings helper exported',
        /canViewSettings/.test(dataJsx) && /SETTINGS_USERS\s*=\s*\['u-mgr1',\s*'u-mgr2'\]/.test(dataJsx));

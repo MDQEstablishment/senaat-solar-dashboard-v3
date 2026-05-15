@@ -68,6 +68,14 @@ function canEscalateToVP(u)   { return !!u && ESCALATE_TO_VP_USERS.indexOf(u.id)
 function canViewAuditLog(u)   { return !!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1; }
 function canViewSettings(u)   { return !!u && SETTINGS_USERS.indexOf(u.id) !== -1; }
 
+// Round 13 M2: single source of truth for "Schools Energized".
+// Both VP dashboard and Manager dashboard MUST use this selector.
+// Energized = stage at STAGE_KEYS index 11 (`energized`) marked done.
+function countEnergized(schools) {
+  if (!schools || !schools.length) return 0;
+  return schools.filter(s => s && s.stages && s.stages[11] && s.stages[11].done).length;
+}
+
 // 15 real Zamil Services users
 const PEOPLE = [
   { id: 'u-vp',    name: 'Olaf Heyns',          role: 'VP',                 region: 'Riyadh',  initials: 'OH', email: 'Olaf.Heyns@coolcare.com.sa' },
@@ -643,6 +651,7 @@ Object.assign(window, {
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
+  countEnergized,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,
   MATERIALS, MATERIALS_CATALOG, MATERIALS_USAGE,
   FIN, FIN_CURVE,

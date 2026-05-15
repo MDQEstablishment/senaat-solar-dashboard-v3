@@ -157,12 +157,27 @@ const EmptyState = ({ icon = 'inbox', title, message, action }) => (
 );
 
 const Sparkline = ({ data, color = 'var(--accent)', width = 80, height = 24 }) => {
-  if (!data || data.length < 2) return null;
+  if (!data || data.length < 2) {
+    // M3: muted "no data" preview rather than null
+    return (
+      <svg width={width} height={height} role="img" aria-label="No trend data yet">
+        <line x1="0" y1={height/2} x2={width} y2={height/2} stroke="#E2E8F0" strokeWidth="1.5" strokeDasharray="3 3" />
+      </svg>
+    );
+  }
   const min = Math.min(...data), max = Math.max(...data);
-  const span = max - min || 1;
+  const span = max - min;
+  // M3: flat-zero or constant-zero series → muted preview
+  if (max === 0 || span === 0) {
+    return (
+      <svg width={width} height={height} role="img" aria-label="No trend data yet">
+        <line x1="0" y1={height/2} x2={width} y2={height/2} stroke="#E2E8F0" strokeWidth="1.5" strokeDasharray="3 3" />
+      </svg>
+    );
+  }
   const pts = data.map((v, i) => `${(i/(data.length-1))*width},${height - ((v-min)/span)*height}`).join(' ');
   return (
-    <svg width={width} height={height}>
+    <svg width={width} height={height} role="img" aria-label="Trend sparkline">
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );

@@ -101,7 +101,68 @@ function useStoreR2(base) {
   const [materials, setMaterials]           = React.useState(() => MATERIALS);
   const [materialsCatalog, setMatCatalog]   = React.useState(() => MATERIALS_CATALOG);
   const [materialUsage, setMaterialUsage]   = React.useState(() => []);  // { id, schoolId, materialNo, qty, unit, date, by }
-  const [contractorsLocal]                  = React.useState(() => CONTRACTORS);
+  const [contractorsLocal, setContractorsLocal] = React.useState(() => CONTRACTORS.map(c => ({ ...c })));
+
+  // Round 13 H1: Add / edit / delete contractors with audit log.
+  const addContractor = (data, currentUser) => {
+    const id = 'c-' + Date.now();
+    const c = {
+      id,
+      name: (data.name || '').trim(),
+      category: data.category || 'EPC',
+      cr: data.cr || '',
+      license: data.license || '',
+      contact: data.contact || '',
+      phone: data.phone || '',
+      email: data.email || '',
+      region: data.region || '',
+      activeSites: 0,
+      schedule: 0, quality: 0, hse: 0, docs: 0,
+      projects: [],
+      trend: [0, 0, 0, 0],
+    };
+    setContractorsLocal(ms => [c, ...ms]);
+    if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS)) {
+      window.CONTRACTORS.unshift(c);
+    }
+    if (currentUser && typeof logAudit === 'function') {
+      setTimeout(() => logAudit({
+        actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+        action: 'CREATE', entityType: 'contractor', entityId: id, entityLabel: c.name,
+        summary: `Created contractor "${c.name}" (${c.category})`,
+      }), 0);
+    }
+    return c;
+  };
+  const updateContractor = (id, patch, currentUser) => {
+    setContractorsLocal(ms => ms.map(c => c.id === id ? { ...c, ...patch } : c));
+    if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS)) {
+      const i = window.CONTRACTORS.findIndex(c => c.id === id);
+      if (i >= 0) window.CONTRACTORS[i] = { ...window.CONTRACTORS[i], ...patch };
+    }
+    if (currentUser && typeof logAudit === 'function') {
+      setTimeout(() => logAudit({
+        actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+        action: 'UPDATE', entityType: 'contractor', entityId: id, entityLabel: patch.name || id,
+        summary: `Updated contractor "${patch.name || id}"`,
+      }), 0);
+    }
+  };
+  const deleteContractor = (id, currentUser) => {
+    let target = null;
+    setContractorsLocal(ms => { target = ms.find(c => c.id === id); return ms.filter(c => c.id !== id); });
+    if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS)) {
+      const i = window.CONTRACTORS.findIndex(c => c.id === id);
+      if (i >= 0) window.CONTRACTORS.splice(i, 1);
+    }
+    if (currentUser && typeof logAudit === 'function') {
+      setTimeout(() => logAudit({
+        actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+        action: 'DELETE', entityType: 'contractor', entityId: id, entityLabel: target?.name || id,
+        summary: `Deleted contractor "${target?.name || id}"`,
+      }), 0);
+    }
+  };
   const [auditLog, setAuditLog]             = React.useState(() => (typeof AUDIT_LOG_SEED !== 'undefined' ? AUDIT_LOG_SEED : []));
 
   // Audit log helper — call from any mutation. Caps at 5000 entries.
@@ -355,7 +416,7 @@ function useStoreR2(base) {
     materials, addMaterial, updateMaterial, deleteMaterial,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
     validateSchool, addSchool, updateSchool, deleteSchool,
-    contractorsLocal,
+    contractorsLocal, addContractor, updateContractor, deleteContractor,
     auditLog, logAudit,
     projectLifecycleState, toggleProjectLifecycleStage, toggleSchoolStage,
   };

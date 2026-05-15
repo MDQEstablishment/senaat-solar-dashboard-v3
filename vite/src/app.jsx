@@ -86,7 +86,8 @@ function AppInner() {
   const themeClass  = tweaks.darkMode ? 'dark-mode' : '';
 
   React.useEffect(() => {
-    setPage('home');
+    // M4: PM lands on /my-projects (not /home) after sign-in / role change.
+    setPage(role === 'Project Manager' ? 'my-projects' : 'home');
     setActiveProjectId(null);
     setActiveSchoolId(null);
     setActiveEscId(null);
@@ -192,34 +193,36 @@ function AppInner() {
       return <PageVPDashboard onOpenEscalation={openEsc} />;
     }
 
-    // Project Manager
+    // Project Manager (M4: home id is 'my-projects', schools id is 'my-schools')
     if (role === 'Project Manager') {
-      if (page === 'home')       return <PageDashboard projects={myProjects} onOpenProject={openProject} />;
-      if (page === 'schools' && primaryProject) return <PageSchoolsList project={primaryProject} currentUser={currentUser} onBack={() => setPage('home')} onOpenSchool={openSchool} onAddTask={onAddTask} />;
+      if (page === 'home' || page === 'my-projects') return <PageDashboard projects={myProjects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({ projectId: primaryProject?.id })} />;
+      if ((page === 'schools' || page === 'my-schools') && primaryProject) return <PageSchoolsList project={primaryProject} currentUser={currentUser} onBack={() => setPage('my-projects')} onOpenSchool={openSchool} onAddTask={onAddTask} />;
       if (page === 'tasks')      return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({ projectId: primaryProject?.id })} />;
       if (page === 'reports')    return <PageReportsZamil projects={myProjects} />;
-      return <PageDashboard projects={myProjects} onOpenProject={openProject} />;
+      return <PageDashboard projects={myProjects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({ projectId: primaryProject?.id })} />;
     }
 
-    // Material planning
+    // Material planning (M5: my-escalations route added)
     if (role === 'Material planning') {
-      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
+      if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
       if (page === 'reports')   return <PageReportsZamil projects={projects} />;
-      return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
     }
 
-    // Coordinator
+    // Coordinator (M5: my-escalations route added)
     if (role === 'Coordinator') {
-      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
+      if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
       if (page === 'reports')   return <PageReportsZamil projects={projects} />;
-      return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
     }
 
     // Program Manager group (Manager, Operations Manager, Program Manager)
@@ -241,7 +244,7 @@ function AppInner() {
   };
 
   const sidebarActive = (page === 'project-detail' || page === 'schools-list' || page === 'school-detail')
-    ? (role === 'Project Manager' ? 'home' : 'projects')
+    ? (role === 'Project Manager' ? 'my-projects' : 'projects')
     : page;
 
   return (

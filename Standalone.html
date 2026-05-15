@@ -588,6 +588,14 @@ function canEscalateToVP(u)   { return !!u && ESCALATE_TO_VP_USERS.indexOf(u.id)
 function canViewAuditLog(u)   { return !!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1; }
 function canViewSettings(u)   { return !!u && SETTINGS_USERS.indexOf(u.id) !== -1; }
 
+// Round 13 M2: single source of truth for "Schools Energized".
+// Both VP dashboard and Manager dashboard MUST use this selector.
+// Energized = stage at STAGE_KEYS index 11 (`energized`) marked done.
+function countEnergized(schools) {
+  if (!schools || !schools.length) return 0;
+  return schools.filter(s => s && s.stages && s.stages[11] && s.stages[11].done).length;
+}
+
 // 15 real Zamil Services users
 const PEOPLE = [
   { id: 'u-vp',    name: 'Olaf Heyns',          role: 'VP',                 region: 'Riyadh',  initials: 'OH', email: 'Olaf.Heyns@coolcare.com.sa' },
@@ -1163,6 +1171,7 @@ Object.assign(window, {
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
+  countEnergized,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,
   MATERIALS, MATERIALS_CATALOG, MATERIALS_USAGE,
   FIN, FIN_CURVE,
@@ -1713,12 +1722,27 @@ const EmptyState = ({ icon = 'inbox', title, message, action }) => (
 );
 
 const Sparkline = ({ data, color = 'var(--accent)', width = 80, height = 24 }) => {
-  if (!data || data.length < 2) return null;
+  if (!data || data.length < 2) {
+    // M3: muted "no data" preview rather than null
+    return (
+      <svg width={width} height={height} role="img" aria-label="No trend data yet">
+        <line x1="0" y1={height/2} x2={width} y2={height/2} stroke="#E2E8F0" strokeWidth="1.5" strokeDasharray="3 3" />
+      </svg>
+    );
+  }
   const min = Math.min(...data), max = Math.max(...data);
-  const span = max - min || 1;
+  const span = max - min;
+  // M3: flat-zero or constant-zero series → muted preview
+  if (max === 0 || span === 0) {
+    return (
+      <svg width={width} height={height} role="img" aria-label="No trend data yet">
+        <line x1="0" y1={height/2} x2={width} y2={height/2} stroke="#E2E8F0" strokeWidth="1.5" strokeDasharray="3 3" />
+      </svg>
+    );
+  }
   const pts = data.map((v, i) => `${(i/(data.length-1))*width},${height - ((v-min)/span)*height}`).join(' ');
   return (
-    <svg width={width} height={height}>
+    <svg width={width} height={height} role="img" aria-label="Trend sparkline">
       <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
@@ -1857,7 +1881,68 @@ function useStoreR2(base) {
   const [materials, setMaterials]           = React.useState(() => MATERIALS);
   const [materialsCatalog, setMatCatalog]   = React.useState(() => MATERIALS_CATALOG);
   const [materialUsage, setMaterialUsage]   = React.useState(() => []);  // { id, schoolId, materialNo, qty, unit, date, by }
-  const [contractorsLocal]                  = React.useState(() => CONTRACTORS);
+  const [contractorsLocal, setContractorsLocal] = React.useState(() => CONTRACTORS.map(c => ({ ...c })));
+
+  // Round 13 H1: Add / edit / delete contractors with audit log.
+  const addContractor = (data, currentUser) => {
+    const id = 'c-' + Date.now();
+    const c = {
+      id,
+      name: (data.name || '').trim(),
+      category: data.category || 'EPC',
+      cr: data.cr || '',
+      license: data.license || '',
+      contact: data.contact || '',
+      phone: data.phone || '',
+      email: data.email || '',
+      region: data.region || '',
+      activeSites: 0,
+      schedule: 0, quality: 0, hse: 0, docs: 0,
+      projects: [],
+      trend: [0, 0, 0, 0],
+    };
+    setContractorsLocal(ms => [c, ...ms]);
+    if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS)) {
+      window.CONTRACTORS.unshift(c);
+    }
+    if (currentUser && typeof logAudit === 'function') {
+      setTimeout(() => logAudit({
+        actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+        action: 'CREATE', entityType: 'contractor', entityId: id, entityLabel: c.name,
+        summary: `Created contractor "${c.name}" (${c.category})`,
+      }), 0);
+    }
+    return c;
+  };
+  const updateContractor = (id, patch, currentUser) => {
+    setContractorsLocal(ms => ms.map(c => c.id === id ? { ...c, ...patch } : c));
+    if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS)) {
+      const i = window.CONTRACTORS.findIndex(c => c.id === id);
+      if (i >= 0) window.CONTRACTORS[i] = { ...window.CONTRACTORS[i], ...patch };
+    }
+    if (currentUser && typeof logAudit === 'function') {
+      setTimeout(() => logAudit({
+        actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+        action: 'UPDATE', entityType: 'contractor', entityId: id, entityLabel: patch.name || id,
+        summary: `Updated contractor "${patch.name || id}"`,
+      }), 0);
+    }
+  };
+  const deleteContractor = (id, currentUser) => {
+    let target = null;
+    setContractorsLocal(ms => { target = ms.find(c => c.id === id); return ms.filter(c => c.id !== id); });
+    if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS)) {
+      const i = window.CONTRACTORS.findIndex(c => c.id === id);
+      if (i >= 0) window.CONTRACTORS.splice(i, 1);
+    }
+    if (currentUser && typeof logAudit === 'function') {
+      setTimeout(() => logAudit({
+        actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+        action: 'DELETE', entityType: 'contractor', entityId: id, entityLabel: target?.name || id,
+        summary: `Deleted contractor "${target?.name || id}"`,
+      }), 0);
+    }
+  };
   const [auditLog, setAuditLog]             = React.useState(() => (typeof AUDIT_LOG_SEED !== 'undefined' ? AUDIT_LOG_SEED : []));
 
   // Audit log helper — call from any mutation. Caps at 5000 entries.
@@ -2111,7 +2196,7 @@ function useStoreR2(base) {
     materials, addMaterial, updateMaterial, deleteMaterial,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
     validateSchool, addSchool, updateSchool, deleteSchool,
-    contractorsLocal,
+    contractorsLocal, addContractor, updateContractor, deleteContractor,
     auditLog, logAudit,
     projectLifecycleState, toggleProjectLifecycleStage, toggleSchoolStage,
   };
@@ -2695,9 +2780,10 @@ function navForRole(role, currentUser) {
     ];
   }
   if (role === 'Project Manager') {
+    // M4: PM's primary route is /my-projects (not /home).
     return [
-      { id: 'home',           label: 'My Projects',    icon: 'home' },
-      { id: 'schools',        label: 'My Schools',     icon: 'school' },
+      { id: 'my-projects',    label: 'My Projects',    icon: 'home' },
+      { id: 'my-schools',     label: 'My Schools',     icon: 'school' },
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },
       ...finItem,
@@ -2706,20 +2792,22 @@ function navForRole(role, currentUser) {
   }
   if (role === 'Material planning') {
     return [
-      { id: 'home',     label: 'Dashboard',  icon: 'home' },
-      { id: 'projects', label: 'Projects',   icon: 'folder-kanban' },
-      { id: 'tasks',    label: 'My Tasks',   icon: 'check-circle' },
+      { id: 'home',           label: 'Dashboard',      icon: 'home' },
+      { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
+      { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
+      { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
-      { id: 'reports',  label: 'Reports',    icon: 'file-text' },
+      { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
   if (role === 'Coordinator') {
     return [
-      { id: 'home',     label: 'Dashboard',  icon: 'home' },
-      { id: 'projects', label: 'Projects',   icon: 'folder-kanban' },
-      { id: 'tasks',    label: 'My Tasks',   icon: 'check-circle' },
+      { id: 'home',           label: 'Dashboard',      icon: 'home' },
+      { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
+      { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
+      { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
-      { id: 'reports',  label: 'Reports',    icon: 'file-text' },
+      { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
   // Program Manager group (Manager / Operations Manager / Program Manager)
@@ -3073,19 +3161,23 @@ function StageStrip({ counts, onClickStage, activeStage }) {
 
 function ProjectCard({ p, onOpen }) {
   const pm = PEOPLE.find(u => u.id === p.pmId);
-  const typeChips = { 'School Program': 'navy', 'University': 'info', 'Building': 'soft', 'Area': 'gold' };
   return (
-    <button onClick={() => onOpen(p.id)}
-      className="text-left surface border border-soft rounded-xl p-4 shadow-card hover:shadow-pop transition w-full">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0">
-          <div className="text-[14px] font-semibold leading-tight ink-on-dark">{p.name}</div>
-          <div className="text-[11px] text-ink-500 ink-muted-on-dark mt-0.5 flex items-center gap-1.5">
+    <button type="button" onClick={() => onOpen(p.id)}
+      className="text-left surface border border-soft rounded-xl shadow-card hover:shadow-pop transition w-full">
+      {/* P1: Round 13 badge alignment fix — flex items-start justify-between gap-3 p-4,
+          title wrapper flex-1 min-w-0 with truncate, badge shrink-0 whitespace-nowrap */}
+      <div className="flex items-start justify-between gap-3 p-4 pb-2">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold leading-tight ink-on-dark truncate">{p.name}</h3>
+          <div className="text-[11px] text-ink-500 ink-muted-on-dark mt-0.5 flex items-center gap-1.5 truncate">
             <Icon name="map-pin" size={11} /> {p.region} · {p.city}
           </div>
         </div>
-        <Pill tone={typeChips[p.type] || 'soft'}>{p.type}</Pill>
+        <span className="shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium bg-slate-900 text-white">
+          {p.type}
+        </span>
       </div>
+      <div className="px-4 pb-4">
 
       <div className="grid grid-cols-2 gap-2 text-xs my-3">
         <div>
@@ -3122,6 +3214,7 @@ function ProjectCard({ p, onOpen }) {
           <Avatar initials={pm.initials} size={20} />
           <span className="text-[11px] text-ink-700 ink-on-dark">{pm.name.split(' ')[0]}</span>
         </div>
+      </div>
       </div>
     </button>
   );
@@ -3201,8 +3294,8 @@ function NewProjectModal({ open, onClose, onCreate, currentUser }) {
   );
 }
 
-function PageDashboard({ projects, onOpenProject, currentUser }) {
-  const { addProject, logAudit } = useStore() || {};
+function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }) {
+  const { addProject, logAudit, schools: allSchools } = useStore() || {};
   const [stageFilter, setStageFilter] = React.useState(null);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
@@ -3210,8 +3303,11 @@ function PageDashboard({ projects, onOpenProject, currentUser }) {
   const openCount = projects.filter(p => p.progress < 100).length;
   const closedCount = projects.length - openCount;
   const totalSchools = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0);
-  const energizedSchools = projects.filter(p => p.schoolDist).reduce((a,p)=>a + p.schoolDist.slice(8).reduce((x,y)=>x+y,0), 0);
-  const overall = Math.round(projects.reduce((a,p)=>a+p.progress,0) / projects.length);
+  // M2: use the shared countEnergized selector, scoped to the projects shown here.
+  const projIds = new Set(projects.map(p => p.id));
+  const scopedSchools = (allSchools || ALL_SCHOOLS).filter(s => projIds.has(s.projectId));
+  const energizedSchools = countEnergized(scopedSchools);
+  const overall = projects.length ? Math.round(projects.reduce((a,p)=>a+p.progress,0) / projects.length) : 0;
 
   const stageCounts = SCHOOL_STAGES.map((_, i) =>
     projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
@@ -3231,8 +3327,30 @@ function PageDashboard({ projects, onOpenProject, currentUser }) {
     { label: 'Overall Progress',     value: overall, suffix: '%', trend: 6.1, spark: [12,18,24,28,32,36,40,44,48,52,56,overall] },
   ];
 
+  // M1: page header w/ H1 for non-exec roles. Exec roles already have the KPI strip below as their header.
+  const role = currentUser?.role;
+  const headerTitle = role === 'Project Manager' ? 'My projects'
+                    : role === 'Material planning' ? 'Material planning dashboard'
+                    : role === 'Coordinator' ? 'Coordinator dashboard'
+                    : null;
+  // M5: Material planning + Coordinator + PM need an Escalate button on their dashboard header.
+  const escTarget = (currentUser && typeof getEscalationTarget === 'function')
+    ? getEscalationTarget(currentUser, null) : null;
+
   return (
     <div className="p-6 space-y-6">
+      {headerTitle && (
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">{role}</div>
+            <h1 className="text-2xl font-semibold">{headerTitle}</h1>
+          </div>
+          {escTarget && onNewEscalation && (
+            <Button variant="accent" icon="alert-circle" onClick={onNewEscalation}>{escTarget.label}</Button>
+          )}
+        </div>
+      )}
+
       {/* KPI strip — visible only to VP + 2 Managers (Anas, Fasiulla) */}
       {canViewFinancials(currentUser) && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
@@ -5367,7 +5485,9 @@ function PageFinancials({ projects, fin }) {
   const { financialEntries, addFinancialEntry, finRollup } = useStore();
   const [tab, setTab] = React.useState('Per Project');
   const [entryModal, setEntryModal] = React.useState(false);
-  const { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend } = window.Recharts;
+  // H2: Use useRecharts() hook so the page re-renders when the recharts chunk arrives.
+  const recharts = (typeof window.useRecharts === 'function' ? window.useRecharts() : window.Recharts) || null;
+  const { LineChart, Line, BarChart, Bar, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, Legend } = recharts || {};
 
   // Use store entries for rollup KPIs if available, else fall back to static fin
   const hasEntries = financialEntries && financialEntries.length > 0;
@@ -5442,23 +5562,38 @@ function PageFinancials({ projects, fin }) {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2">
                 <SectionTitle title="Cumulative Invoiced vs Received (SAR M)" />
-                <div style={{ width: '100%', height: 260 }}>
-                  <ResponsiveContainer>
-                    <LineChart data={FIN_CURVE}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                      <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
-                      <YAxis stroke="#94A3B8" fontSize={11} />
-                      <Tooltip />
-                      <Legend wrapperStyle={{ fontSize: 12 }} />
-                      <Line type="monotone" dataKey="invoiced" stroke="#0B2545" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="received" stroke="#B8860B" strokeWidth={2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div style={{ width: '100%', height: 260, position: 'relative' }}>
+                  {!recharts && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-ink-400">Loading chart…</div>
+                  )}
+                  {recharts && (FIN_CURVE && FIN_CURVE.length > 0) ? (
+                    <ResponsiveContainer>
+                      <LineChart data={FIN_CURVE}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                        <XAxis dataKey="month" stroke="#94A3B8" fontSize={11} />
+                        <YAxis stroke="#94A3B8" fontSize={11} />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        <Line type="monotone" dataKey="invoiced" stroke="#0B2545" strokeWidth={2} dot={false} />
+                        <Line type="monotone" dataKey="received" stroke="#B8860B" strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (recharts && (
+                    <div className="absolute inset-0 flex items-center justify-center z-10 bg-white/85 rounded-md border border-dashed border-soft">
+                      <div className="text-center px-4">
+                        <Icon name="trending-up" size={28} className="text-ink-200 mb-2 mx-auto" />
+                        <div className="text-sm font-medium text-ink-700">No cash flow data yet</div>
+                        <div className="text-xs text-ink-500 mt-1">Chart will populate as financial entries are recorded.</div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
               <div>
                 <SectionTitle title="Aging buckets" subtitle="Outstanding receivables by age" />
-                <div style={{ width: '100%', height: 260 }}>
+                <div style={{ width: '100%', height: 260, position: 'relative' }}>
+                  {!recharts && <div className="absolute inset-0 flex items-center justify-center text-xs text-ink-400">Loading chart…</div>}
+                  {recharts && (
                   <ResponsiveContainer>
                     <BarChart data={aging}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
@@ -5467,7 +5602,7 @@ function PageFinancials({ projects, fin }) {
                       <Tooltip formatter={v => 'SAR ' + SARfull(v)} />
                       <Bar dataKey="amount" fill="#13315C" radius={[4,4,0,0]} />
                     </BarChart>
-                  </ResponsiveContainer>
+                  </ResponsiveContainer>)}
                 </div>
               </div>
             </div>
@@ -5547,11 +5682,24 @@ Object.assign(window, { PageFinancials });
 <script type="text/babel">
 // Page 5 — Contractors (milestone-based auto-scoring from store-r2)
 
-function PageContractors({ contractors, projects }) {
-  const { contractorScore, milestoneTemplates, milestoneEntries, setMilestoneEntry } = useStore();
+function PageContractors({ contractors, projects, currentUser }) {
+  const store = useStore();
+  const { contractorScore, milestoneTemplates, milestoneEntries, setMilestoneEntry,
+          contractorsLocal, addContractor, updateContractor, deleteContractor } = store;
   const [selected, setSelected] = React.useState(null);
-  const [entryModal, setEntryModal] = React.useState(null); // { contractorId, template }
-  const { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } = window.Recharts;
+  const [entryModal, setEntryModal] = React.useState(null);
+  const [contractorModal, setContractorModal] = React.useState({ open: false, initial: null });
+  const [confirmDel, setConfirmDel] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+  React.useEffect(() => {
+    if (toast) { const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t); }
+  }, [toast]);
+
+  // Prefer live store state, fall back to prop
+  const contractorList = (contractorsLocal && contractorsLocal.length) ? contractorsLocal : contractors;
+  // H2/M3: useRecharts hook re-renders when lazy chunk arrives.
+  const recharts = (typeof window.useRecharts === 'function' ? window.useRecharts() : window.Recharts) || null;
+  const { LineChart, Line, ResponsiveContainer, XAxis, YAxis, Tooltip } = recharts || {};
 
   const getScore = (c) => {
     if (contractorScore) {
@@ -5568,8 +5716,14 @@ function PageContractors({ contractors, projects }) {
           <h1 className="text-2xl font-bold ink-on-dark">Contractors</h1>
           <p className="text-xs text-ink-500 ink-muted-on-dark mt-0.5">Performance auto-scored from milestone entries · weekly scorecards across schedule, quality, HSE, docs</p>
         </div>
-        <Button icon="plus" variant="accent">Add Contractor</Button>
+        <Button icon="plus" variant="accent" onClick={() => setContractorModal({ open: true, initial: null })}>Add Contractor</Button>
       </div>
+      {toast && (
+        <div className={cls('rounded-md px-3 py-2 text-xs border',
+          toast.kind === 'error' ? 'bg-red-50 border-red-200 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}>
+          <span className="font-semibold mr-1">{toast.kind === 'error' ? '⚠' : '✓'}</span>{toast.msg}
+        </div>
+      )}
 
       {milestoneTemplates && milestoneTemplates.length > 0 && (
         <div className="text-[11px] text-sky-800 bg-sky-50 border border-sky-200 rounded-md p-2.5">
@@ -5578,9 +5732,9 @@ function PageContractors({ contractors, projects }) {
         </div>
       )}
 
-      {contractors.length === 0 ? (
+      {contractorList.length === 0 ? (
         <EmptyState icon="hard-hat" title="No contractors yet" message="Add your first contractor to start tracking performance."
-          action={<Button icon="plus" variant="accent">Add Contractor</Button>} />
+          action={<Button icon="plus" variant="accent" onClick={() => setContractorModal({ open: true, initial: null })}>Add Contractor</Button>} />
       ) : (
         <Card padding="p-0">
           <div className="overflow-x-auto scrollbar-thin">
@@ -5600,7 +5754,7 @@ function PageContractors({ contractors, projects }) {
                 </tr>
               </thead>
               <tbody>
-                {contractors.map(c => {
+                {contractorList.map(c => {
                   const overall = getScore(c);
                   return (
                     <tr key={c.id} className="border-t border-soft hover-row cursor-pointer" onClick={() => setSelected(c)}>
@@ -5613,7 +5767,14 @@ function PageContractors({ contractors, projects }) {
                       <td className="px-3 py-2 text-right tnum">{c.docs}</td>
                       <td className="px-3 py-2"><ScoreBadge score={overall} /></td>
                       <td className="px-3 py-2"><Sparkline data={c.trend} width={70} height={20} color={overall >= 85 ? '#16A34A' : overall >= 70 ? '#EAB308' : '#DC2626'} /></td>
-                      <td className="px-3 py-2 text-right"><RowActions onEdit={() => {}} onArchive={() => {}} /></td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="inline-flex gap-1 justify-end" onClick={e => e.stopPropagation()}>
+                          <button type="button" aria-label={`Edit ${c.name}`} onClick={() => setContractorModal({ open: true, initial: c })}
+                            className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-ink-900"><Icon name="pencil" size={13} /></button>
+                          <button type="button" aria-label={`Delete ${c.name}`} onClick={() => setConfirmDel(c)}
+                            className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600"><Icon name="trash-2" size={13} /></button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
@@ -5662,15 +5823,26 @@ function PageContractors({ contractors, projects }) {
 
             <div>
               <SectionTitle title="Weekly trend" />
-              <div style={{ width: '100%', height: 160 }}>
-                <ResponsiveContainer>
-                  <LineChart data={selected.trend.map((v, i) => ({ wk: 'W' + (i + 1), v }))}>
-                    <XAxis dataKey="wk" stroke="#94A3B8" fontSize={11} />
-                    <YAxis stroke="#94A3B8" fontSize={11} domain={[50, 100]} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="v" stroke="#B8860B" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+              <div style={{ width: '100%', height: 160, position: 'relative' }}>
+                {!recharts && <div className="absolute inset-0 flex items-center justify-center text-xs text-ink-400">Loading chart…</div>}
+                {recharts && (selected.trend && selected.trend.some(v => v > 0)) ? (
+                  <ResponsiveContainer>
+                    <LineChart data={selected.trend.map((v, i) => ({ wk: 'W' + (i + 1), v }))}>
+                      <XAxis dataKey="wk" stroke="#94A3B8" fontSize={11} />
+                      <YAxis stroke="#94A3B8" fontSize={11} domain={[50, 100]} />
+                      <Tooltip />
+                      <Line type="monotone" dataKey="v" stroke="#B8860B" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (recharts && (
+                  <div className="absolute inset-0 flex items-center justify-center z-10 bg-white/85 rounded-md border border-dashed border-soft">
+                    <div className="text-center px-3">
+                      <Icon name="trending-up" size={20} className="text-ink-200 mb-1 mx-auto" />
+                      <div className="text-xs font-medium text-ink-700">No data yet</div>
+                      <div className="text-[10px] text-ink-500">Trend will populate once weekly scores are recorded.</div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -5713,7 +5885,109 @@ function PageContractors({ contractors, projects }) {
             setEntryModal(null);
           }} />
       )}
+
+      <ContractorModal
+        open={contractorModal.open}
+        initial={contractorModal.initial}
+        onClose={() => setContractorModal({ open: false, initial: null })}
+        onSave={(data) => {
+          if (contractorModal.initial) {
+            updateContractor(contractorModal.initial.id, data, currentUser);
+            setToast({ kind: 'success', msg: `Contractor "${data.name}" updated.` });
+          } else {
+            const c = addContractor(data, currentUser);
+            setToast({ kind: 'success', msg: `Contractor "${c.name}" added.` });
+          }
+        }} />
+
+      <Modal open={!!confirmDel} onClose={() => setConfirmDel(null)} title="Delete contractor"
+        footer={<>
+          <Button variant="ghost" onClick={() => setConfirmDel(null)}>Cancel</Button>
+          <Button variant="danger" icon="trash-2" onClick={() => {
+            deleteContractor(confirmDel.id, currentUser);
+            setToast({ kind: 'success', msg: `Contractor "${confirmDel.name}" deleted.` });
+            setConfirmDel(null);
+          }}>Delete permanently</Button>
+        </>}>
+        <p className="text-sm">Permanently delete <strong>{confirmDel?.name}</strong>?</p>
+        <p className="text-xs text-red-600 mt-2">This cannot be undone.</p>
+      </Modal>
     </div>
+  );
+}
+
+// Round 13 H1: New / Edit Contractor modal — used by row Edit and "+ Add Contractor".
+function ContractorModal({ open, onClose, onSave, initial }) {
+  const [form, setForm] = React.useState({
+    name: '', category: 'EPC', cr: '', license: '', contact: '', phone: '', email: '', region: '',
+  });
+  const [err, setErr] = React.useState({});
+  React.useEffect(() => {
+    if (open) {
+      setForm({
+        name: initial?.name || '',
+        category: initial?.category || 'EPC',
+        cr: initial?.cr || '',
+        license: initial?.license || '',
+        contact: initial?.contact || '',
+        phone: initial?.phone || '',
+        email: initial?.email || '',
+        region: initial?.region || '',
+      });
+      setErr({});
+    }
+  }, [open, initial]);
+
+  if (!open) return null;
+  const submit = () => {
+    const e = {};
+    if (!form.name.trim()) e.name = 'Company name is required';
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Invalid email';
+    setErr(e);
+    if (Object.keys(e).length > 0) return;
+    onSave({ ...form });
+    onClose();
+  };
+  const errCls = (k) => err[k] ? 'border-red-500 ring-1 ring-red-500' : 'border-ink-200';
+  const inp = (k, label, type = 'text', placeholder = '') => (
+    <div>
+      <label className="text-[11px] font-medium text-ink-700 mb-1 block">{label}</label>
+      <input type={type} value={form[k]} onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+        placeholder={placeholder}
+        className={`w-full px-2.5 py-1.5 text-sm rounded-md border bg-white focus:outline-none focus:ring-2 ring-accent ${errCls(k)}`} />
+      {err[k] && <div className="text-[10px] text-red-600 mt-0.5">{err[k]}</div>}
+    </div>
+  );
+
+  return (
+    <Modal open={open} onClose={onClose} title={initial ? `Edit Contractor — ${initial.name}` : 'New Contractor'} wide
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="accent" icon="check" onClick={submit}>{initial ? 'Save changes' : 'Add contractor'}</Button>
+      </>}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          {inp('name', 'Company name *', 'text', 'e.g. Al-Bawani Construction')}
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Category</label>
+            <Select value={form.category} onChange={v => setForm(f => ({ ...f, category: v }))}
+              options={['Civil','Electrical','Mechanical','EPC']} className="w-full" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {inp('cr', 'CR number', 'text', 'Commercial registration')}
+          {inp('license', 'License number', 'text', 'e.g. SCE-12345')}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {inp('contact', 'Contact person', 'text')}
+          {inp('region', 'Default region(s)', 'text', 'e.g. Riyadh, Eastern')}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {inp('phone', 'Phone', 'tel', '+966 …')}
+          {inp('email', 'Email', 'email', 'ops@contractor.sa')}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -7149,7 +7423,7 @@ function PageMyEscalations({ currentUser, onOpen, onNew }) {
 function PageVPDashboard({ onOpenEscalation }) {
   const { projects, escalations, finRollup, auditLog, schools } = useStore();
   const totalSchools = (schools || ALL_SCHOOLS).length;
-  const energizedAll = (schools || ALL_SCHOOLS).filter(s => s.stages[11].done).length;
+  const energizedAll = countEnergized(schools || ALL_SCHOOLS);
   const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages[12].done).length;
   const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
   const open = escalations.filter(e => e.status !== 'Resolved');
@@ -7212,7 +7486,7 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
   const open = mine.filter(e => e.status !== 'Resolved');
   const escTarget = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, null) : null;
   const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
-  const energizedAll = (schools || ALL_SCHOOLS).filter(s => s.stages && s.stages[11] && s.stages[11].done).length;
+  const energizedAll = countEnergized(schools || ALL_SCHOOLS);
   const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages && s.stages[12] && s.stages[12].done).length;
   const totalSchools = (schools || ALL_SCHOOLS).length;
   const isExec = canViewFinancials(currentUser);
@@ -7929,7 +8203,8 @@ function AppInner() {
   const themeClass  = tweaks.darkMode ? 'dark-mode' : '';
 
   React.useEffect(() => {
-    setPage('home');
+    // M4: PM lands on /my-projects (not /home) after sign-in / role change.
+    setPage(role === 'Project Manager' ? 'my-projects' : 'home');
     setActiveProjectId(null);
     setActiveSchoolId(null);
     setActiveEscId(null);
@@ -8035,34 +8310,36 @@ function AppInner() {
       return <PageVPDashboard onOpenEscalation={openEsc} />;
     }
 
-    // Project Manager
+    // Project Manager (M4: home id is 'my-projects', schools id is 'my-schools')
     if (role === 'Project Manager') {
-      if (page === 'home')       return <PageDashboard projects={myProjects} onOpenProject={openProject} />;
-      if (page === 'schools' && primaryProject) return <PageSchoolsList project={primaryProject} currentUser={currentUser} onBack={() => setPage('home')} onOpenSchool={openSchool} onAddTask={onAddTask} />;
+      if (page === 'home' || page === 'my-projects') return <PageDashboard projects={myProjects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({ projectId: primaryProject?.id })} />;
+      if ((page === 'schools' || page === 'my-schools') && primaryProject) return <PageSchoolsList project={primaryProject} currentUser={currentUser} onBack={() => setPage('my-projects')} onOpenSchool={openSchool} onAddTask={onAddTask} />;
       if (page === 'tasks')      return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
       if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({ projectId: primaryProject?.id })} />;
       if (page === 'reports')    return <PageReportsZamil projects={myProjects} />;
-      return <PageDashboard projects={myProjects} onOpenProject={openProject} />;
+      return <PageDashboard projects={myProjects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({ projectId: primaryProject?.id })} />;
     }
 
-    // Material planning
+    // Material planning (M5: my-escalations route added)
     if (role === 'Material planning') {
-      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
+      if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
       if (page === 'reports')   return <PageReportsZamil projects={projects} />;
-      return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
     }
 
-    // Coordinator
+    // Coordinator (M5: my-escalations route added)
     if (role === 'Coordinator') {
-      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} />;
-      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      if (page === 'home')      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
+      if (page === 'projects')  return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
       if (page === 'tasks')     return <PageMyTasks currentUser={currentUser} onAddTask={onAddTask} onOpenTask={onOpenTask} />;
+      if (page === 'my-escalations') return <PageMyEscalations currentUser={currentUser} onOpen={openEsc} onNew={() => onNewEscalation({})} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
       if (page === 'reports')   return <PageReportsZamil projects={projects} />;
-      return <PageDashboard projects={projects} onOpenProject={openProject} />;
+      return <PageDashboard projects={projects} onOpenProject={openProject} currentUser={currentUser} onNewEscalation={() => onNewEscalation({})} />;
     }
 
     // Program Manager group (Manager, Operations Manager, Program Manager)
@@ -8084,7 +8361,7 @@ function AppInner() {
   };
 
   const sidebarActive = (page === 'project-detail' || page === 'schools-list' || page === 'school-detail')
-    ? (role === 'Project Manager' ? 'home' : 'projects')
+    ? (role === 'Project Manager' ? 'my-projects' : 'projects')
     : page;
 
   return (

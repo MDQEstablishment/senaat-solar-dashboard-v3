@@ -44,19 +44,23 @@ function StageStrip({ counts, onClickStage, activeStage }) {
 
 function ProjectCard({ p, onOpen }) {
   const pm = PEOPLE.find(u => u.id === p.pmId);
-  const typeChips = { 'School Program': 'navy', 'University': 'info', 'Building': 'soft', 'Area': 'gold' };
   return (
-    <button onClick={() => onOpen(p.id)}
-      className="text-left surface border border-soft rounded-xl p-4 shadow-card hover:shadow-pop transition w-full">
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0">
-          <div className="text-[14px] font-semibold leading-tight ink-on-dark">{p.name}</div>
-          <div className="text-[11px] text-ink-500 ink-muted-on-dark mt-0.5 flex items-center gap-1.5">
+    <button type="button" onClick={() => onOpen(p.id)}
+      className="text-left surface border border-soft rounded-xl shadow-card hover:shadow-pop transition w-full">
+      {/* P1: Round 13 badge alignment fix — flex items-start justify-between gap-3 p-4,
+          title wrapper flex-1 min-w-0 with truncate, badge shrink-0 whitespace-nowrap */}
+      <div className="flex items-start justify-between gap-3 p-4 pb-2">
+        <div className="flex-1 min-w-0">
+          <h3 className="text-[14px] font-semibold leading-tight ink-on-dark truncate">{p.name}</h3>
+          <div className="text-[11px] text-ink-500 ink-muted-on-dark mt-0.5 flex items-center gap-1.5 truncate">
             <Icon name="map-pin" size={11} /> {p.region} · {p.city}
           </div>
         </div>
-        <Pill tone={typeChips[p.type] || 'soft'}>{p.type}</Pill>
+        <span className="shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium bg-slate-900 text-white">
+          {p.type}
+        </span>
       </div>
+      <div className="px-4 pb-4">
 
       <div className="grid grid-cols-2 gap-2 text-xs my-3">
         <div>
@@ -93,6 +97,7 @@ function ProjectCard({ p, onOpen }) {
           <Avatar initials={pm.initials} size={20} />
           <span className="text-[11px] text-ink-700 ink-on-dark">{pm.name.split(' ')[0]}</span>
         </div>
+      </div>
       </div>
     </button>
   );
@@ -172,8 +177,8 @@ function NewProjectModal({ open, onClose, onCreate, currentUser }) {
   );
 }
 
-function PageDashboard({ projects, onOpenProject, currentUser }) {
-  const { addProject, logAudit } = useStore() || {};
+function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }) {
+  const { addProject, logAudit, schools: allSchools } = useStore() || {};
   const [stageFilter, setStageFilter] = React.useState(null);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
@@ -181,8 +186,11 @@ function PageDashboard({ projects, onOpenProject, currentUser }) {
   const openCount = projects.filter(p => p.progress < 100).length;
   const closedCount = projects.length - openCount;
   const totalSchools = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0);
-  const energizedSchools = projects.filter(p => p.schoolDist).reduce((a,p)=>a + p.schoolDist.slice(8).reduce((x,y)=>x+y,0), 0);
-  const overall = Math.round(projects.reduce((a,p)=>a+p.progress,0) / projects.length);
+  // M2: use the shared countEnergized selector, scoped to the projects shown here.
+  const projIds = new Set(projects.map(p => p.id));
+  const scopedSchools = (allSchools || ALL_SCHOOLS).filter(s => projIds.has(s.projectId));
+  const energizedSchools = countEnergized(scopedSchools);
+  const overall = projects.length ? Math.round(projects.reduce((a,p)=>a+p.progress,0) / projects.length) : 0;
 
   const stageCounts = SCHOOL_STAGES.map((_, i) =>
     projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
@@ -202,8 +210,30 @@ function PageDashboard({ projects, onOpenProject, currentUser }) {
     { label: 'Overall Progress',     value: overall, suffix: '%', trend: 6.1, spark: [12,18,24,28,32,36,40,44,48,52,56,overall] },
   ];
 
+  // M1: page header w/ H1 for non-exec roles. Exec roles already have the KPI strip below as their header.
+  const role = currentUser?.role;
+  const headerTitle = role === 'Project Manager' ? 'My projects'
+                    : role === 'Material planning' ? 'Material planning dashboard'
+                    : role === 'Coordinator' ? 'Coordinator dashboard'
+                    : null;
+  // M5: Material planning + Coordinator + PM need an Escalate button on their dashboard header.
+  const escTarget = (currentUser && typeof getEscalationTarget === 'function')
+    ? getEscalationTarget(currentUser, null) : null;
+
   return (
     <div className="p-6 space-y-6">
+      {headerTitle && (
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <div className="text-xs text-ink-500 uppercase tracking-[0.18em]">{role}</div>
+            <h1 className="text-2xl font-semibold">{headerTitle}</h1>
+          </div>
+          {escTarget && onNewEscalation && (
+            <Button variant="accent" icon="alert-circle" onClick={onNewEscalation}>{escTarget.label}</Button>
+          )}
+        </div>
+      )}
+
       {/* KPI strip — visible only to VP + 2 Managers (Anas, Fasiulla) */}
       {canViewFinancials(currentUser) && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">

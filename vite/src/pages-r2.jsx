@@ -251,7 +251,7 @@ function PageMyEscalations({ currentUser, onOpen, onNew }) {
 function PageVPDashboard({ onOpenEscalation }) {
   const { projects, escalations, finRollup, auditLog, schools } = useStore();
   const totalSchools = (schools || ALL_SCHOOLS).length;
-  const energizedAll = (schools || ALL_SCHOOLS).filter(s => s.stages[11].done).length;
+  const energizedAll = countEnergized(schools || ALL_SCHOOLS);
   const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages[12].done).length;
   const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
   const open = escalations.filter(e => e.status !== 'Resolved');
@@ -314,7 +314,7 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
   const open = mine.filter(e => e.status !== 'Resolved');
   const escTarget = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, null) : null;
   const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
-  const energizedAll = (schools || ALL_SCHOOLS).filter(s => s.stages && s.stages[11] && s.stages[11].done).length;
+  const energizedAll = countEnergized(schools || ALL_SCHOOLS);
   const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages && s.stages[12] && s.stages[12].done).length;
   const totalSchools = (schools || ALL_SCHOOLS).length;
   const isExec = canViewFinancials(currentUser);
