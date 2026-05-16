@@ -167,21 +167,9 @@ function ImportSchoolsModal({ open, onClose }) {
   );
 }
 
-// Map new 13 stage keys to legacy 12 stage names (approx) — used in Stages view
-const LEGACY_STAGE_MAP = [
-  { legacy: 'Surveyed',                key: null },   // surveyed boolean comes from school.survey date
-  { legacy: 'SEC Approvals',           key: null },   // approximated via foundation start
-  { legacy: 'Initial Payment',         key: null },
-  { legacy: 'Final Payment',           key: null },
-  { legacy: 'Fix1 Delivered',          key: 'foundation' },
-  { legacy: 'Fix1 Installed',          key: 'module' },
-  { legacy: 'Fix2 Delivered',          key: 'dccable' },
-  { legacy: 'Fix2 Installed',          key: 'datalogger' },
-  { legacy: 'Energized',               key: 'energized' },
-  { legacy: 'COC Signed',              key: 'coc' },
-  { legacy: 'Handed Over to Zamil',    key: null },
-  { legacy: 'Handed Over to Client',   key: null },
-];
+// R17 hotfix: Stages view now renders the 18 School Execution Stages from data.jsx
+// (was previously the legacy 12 project-lifecycle milestones — financial/contractual
+// phases that don't belong on a per-school construction-progress grid).
 
 function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser }) {
   const { schools, addSchool, deleteSchool, validateSchool, updateSchool, logAudit } = useStore();
@@ -387,25 +375,74 @@ function SchoolsCompactTable({ rows, canAdd, onOpen, onDelete, onContractorChang
   );
 }
 
-// Stages view — legacy 12-stage checkmark columns
+// R17 hotfix: Stages view — one column per School Execution Stage (18 stages,
+// grouped by category in the header). Cell content per school × stage:
+//   blank "—"     → not started
+//   "In Progress" → started but not done (statusId === 'in-progress')
+//   date          → completed (use stage.completedDate, formatted dd MMM)
 function SchoolsStagesTable({ rows, onOpen }) {
+  // Build the header-row category-group spans from the new STAGE_KEYS layout.
+  // Each entry: { category, label, color, span } where span = number of stage
+  // columns this category covers.
+  const categoryGroups = React.useMemo(() => {
+    const groups = [];
+    let current = null;
+    STAGE_KEYS.forEach(k => {
+      const cat = STAGE_CATEGORY[k];
+      if (!current || current.category !== cat) {
+        current = {
+          category: cat,
+          label: STAGE_CATEGORY_LABELS[cat] || cat,
+          color: STAGE_CATEGORY_COLORS[cat] || { dot: '#0B2545', soft: '#F8FAFC', text: '#0F172A' },
+          span: 0,
+        };
+        groups.push(current);
+      }
+      current.span++;
+    });
+    return groups;
+  }, []);
+
   return (
     <Card padding="p-0">
       <div className="overflow-auto scrollbar-thin" style={{ maxHeight: 'calc(100vh - 360px)' }}>
         <table className="w-full text-xs">
           <thead className="surface-2 border-b border-soft sticky top-0">
+            {/* Category band — color-coded background per group */}
+            <tr>
+              <th colSpan={3} className="px-3 py-1.5 surface-2 sticky left-0 z-10" />
+              {categoryGroups.map(g => (
+                <th key={g.category} colSpan={g.span}
+                    className="text-center px-2 py-1.5 font-semibold text-[10px] uppercase tracking-wider border-l border-r border-soft"
+                    style={{ background: g.color.soft, color: g.color.text }}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: g.color.dot }} />
+                    {g.label}
+                  </span>
+                </th>
+              ))}
+              <th className="surface-2" />
+            </tr>
+            {/* Stage names row */}
             <tr>
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap sticky left-0 surface-2 z-10">School ID</th>
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap min-w-[200px]">School name</th>
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">City</th>
-              {LEGACY_STAGE_MAP.map((m, i) => (
-                <th key={i} className="text-center px-2 py-2 font-semibold whitespace-nowrap" title={m.legacy}>
-                  <div className="flex flex-col items-center">
-                    <span className="text-[10px] text-ink-500">{i + 1}</span>
-                    <span className="text-[10px]">{m.legacy.split(' ').slice(0, 2).join(' ')}</span>
-                  </div>
-                </th>
-              ))}
+              {STAGE_KEYS.map((k, i) => {
+                const cat = STAGE_CATEGORY[k];
+                const color = STAGE_CATEGORY_COLORS[cat] || {};
+                return (
+                  <th key={k} className="text-center px-2 py-2 font-semibold whitespace-nowrap min-w-[78px]"
+                      title={SCHOOL_STAGES[i]}>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-ink-500 tnum">{i + 1}</span>
+                      <span className="text-[10px] leading-tight" style={{ color: color.text }}>
+                        {SCHOOL_STAGES[i].split(' ').slice(0, 2).join(' ')}
+                      </span>
+                    </div>
+                  </th>
+                );
+              })}
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Remark</th>
             </tr>
           </thead>
@@ -418,32 +455,23 @@ function SchoolsStagesTable({ rows, onOpen }) {
                   {s.nameAr && <div className="text-[10px] text-ink-500" dir="rtl">{s.nameAr}</div>}
                 </td>
                 <td className="px-3 py-2 text-ink-700">{s.city}</td>
-                {LEGACY_STAGE_MAP.map((m, i) => {
-                  // Map legacy stage to new stage key, or use status heuristics
-                  let done = false, date = null;
-                  if (m.key) {
-                    const idx = STAGE_KEYS.indexOf(m.key);
-                    if (idx >= 0 && s.stages[idx]) {
-                      done = s.stages[idx].done;
-                      date = s.stages[idx].date;
-                    }
-                  } else {
-                    // Heuristic for non-mapped legacy stages
-                    if (m.legacy === 'Surveyed') { done = !!s.survey; date = s.survey; }
-                    else if (m.legacy === 'SEC Approvals') { done = s.stages[0]?.done; date = s.stages[0]?.date; }
-                    else if (m.legacy === 'Initial Payment') { done = s.stages[0]?.done; date = s.stages[0]?.date; }
-                    else if (m.legacy === 'Final Payment') { done = s.status === 'Completed'; }
-                    else if (m.legacy === 'Handed Over to Zamil') { const st = stageByKey(s, 'handover_zamil'); done = st?.done; date = st?.date; }
-                    else if (m.legacy === 'Handed Over to Client') { const st = stageByKey(s, 'handover_client'); done = st?.done; date = st?.date; }
-                  }
+                {STAGE_KEYS.map((k, i) => {
+                  const st = s.stages && s.stages[i];
+                  const done = !!(st && st.done);
+                  const inProgress = !done && st && st.statusId === 'in-progress';
+                  const date = st && (st.completedDate || st.date);
                   return (
-                    <td key={i} className="text-center px-2 py-2">
+                    <td key={k} className="text-center px-2 py-2">
                       {done ? (
                         <div className="flex flex-col items-center">
                           <span className="text-emerald-600"><Icon name="check" size={14} strokeWidth={3} /></span>
                           {date && <span className="text-[9px] text-ink-500">{new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
                         </div>
-                      ) : <span className="text-ink-200">—</span>}
+                      ) : inProgress ? (
+                        <span className="text-[10px] text-sky-600 font-medium">In Progress</span>
+                      ) : (
+                        <span className="text-ink-200">—</span>
+                      )}
                     </td>
                   );
                 })}
@@ -451,12 +479,12 @@ function SchoolsStagesTable({ rows, onOpen }) {
               </tr>
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={LEGACY_STAGE_MAP.length + 4} className="text-center py-8 text-xs text-ink-500 italic">No schools match these filters.</td></tr>
+              <tr><td colSpan={STAGE_KEYS.length + 4} className="text-center py-8 text-xs text-ink-500 italic">No schools match these filters.</td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <div className="px-3 py-2 border-t border-soft text-[11px] text-ink-500">Stages view — {rows.length} schools with 12-stage progress.</div>
+      <div className="px-3 py-2 border-t border-soft text-[11px] text-ink-500">Stages view — {rows.length} schools across 18 School Execution Stages (Mechanical · Electrical · Commissioning · Handover).</div>
     </Card>
   );
 }

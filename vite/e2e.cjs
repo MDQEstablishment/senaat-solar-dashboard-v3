@@ -451,6 +451,23 @@ record('R16 #1: store-r2 schoolStagesList carries category + excelHeader for eac
        /STAGE_CATEGORY\[key\]/.test(storeR16) &&
        /excelHeader: STAGE_EXCEL_HEADERS\[key\]/.test(storeR16));
 
+// ── K4. Round 17 hotfix — Project Detail Stages view renders 18 stages ────
+const schoolsListR17 = read('page-schools-list.jsx');
+record('R17: Project Detail Stages view renders 18 school execution stages columns',
+       /STAGE_KEYS\.map\(\(k, i\)/.test(schoolsListR17) &&
+       /SCHOOL_STAGES\[i\]/.test(schoolsListR17) &&
+       /across 18 School Execution Stages/.test(schoolsListR17));
+record('R17: legacy 12-stage map (Surveyed / SEC Approvals / Fix1 / Fix2 / Handed Over) removed from Stages view',
+       !/const LEGACY_STAGE_MAP/.test(schoolsListR17) &&
+       !/LEGACY_STAGE_MAP\.map/.test(schoolsListR17));
+record('R17: category-band header colour-codes Mechanical / Electrical / Commissioning / Handover',
+       /categoryGroups/.test(schoolsListR17) &&
+       /STAGE_CATEGORY_COLORS/.test(schoolsListR17) &&
+       /STAGE_CATEGORY_LABELS\[cat\]/.test(schoolsListR17));
+record('R17: stage cell shows date for completed, "In Progress" for started, blank for not-started',
+       /In Progress/.test(schoolsListR17) &&
+       /st\.completedDate \|\| st\.date/.test(schoolsListR17));
+
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic
 // to confirm the data flow.
