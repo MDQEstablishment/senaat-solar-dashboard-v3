@@ -3,8 +3,8 @@ function PageVP() {
   const { projects, tasks, notifs } = useStore();
   const totalValue   = projects.reduce((a, p) => a + p.value, 0);
   const totalSchools = projects.reduce((a, p) => a + p.sites, 0);
-  const energizedAll = ALL_SCHOOLS.filter(s => s.stages[11].done).length;
-  const handedAll    = ALL_SCHOOLS.filter(s => s.stages[12].done).length;
+  const energizedAll = countEnergized(ALL_SCHOOLS);
+  const handedAll    = countHandedOver(ALL_SCHOOLS);
   const energizedPct = Math.round(energizedAll / ALL_SCHOOLS.length * 100);
   const handedPct    = Math.round(handedAll    / ALL_SCHOOLS.length * 100);
 
@@ -31,7 +31,9 @@ function PageVP() {
         <KPI label="% Handed Over"          value={`${handedPct}%`}             sub={`${handedAll} of ${ALL_SCHOOLS.length}`} tone="info" />
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      {/* R16 #3: "Recent activity" card removed from this 3-up row — replaced by the Stage
+          Execution KPIs widget further down the page. */}
+      <div className="grid grid-cols-2 gap-3">
         <Card>
           <SectionTitle icon="banknote" title="Financial health" subtitle="Across portfolio" />
           <div className="grid grid-cols-3 gap-3 text-center">
@@ -52,21 +54,10 @@ function PageVP() {
             <RiskCell tone="danger" count={delayed}   label="Delayed" />
           </div>
         </Card>
-        <Card>
-          <SectionTitle icon="bell" title="Recent activity" />
-          <ul className="space-y-2 text-xs">
-            {notifs.slice(0, 5).map(n => (
-              <li key={n.id} className="flex items-start gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 shrink-0" />
-                <div className="flex-1">
-                  <div>{n.text}</div>
-                  <div className="text-[10px] text-ink-500">{n.when}</div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </Card>
       </div>
+
+      {/* R16 #3: Stage Execution KPIs (18 cards grouped by category). */}
+      <StageExecutionKPIs schools={ALL_SCHOOLS} />
 
       <Card padding="p-0">
         <div className="px-4 py-3 border-b border-soft">

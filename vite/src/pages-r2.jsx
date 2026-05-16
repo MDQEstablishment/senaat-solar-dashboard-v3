@@ -1,6 +1,43 @@
 import React from 'react';
 // Round 2 pages — escalations, VP programs, recycle bin, settings extensions
 
+// R16 #4: Filter escalations to those directed at the current user.
+// "Directed at" = currently with this user, OR raised to this user's role,
+// OR explicitly assigned to this user. Status must still be open (not Resolved).
+function filterEscalationsDirectedTo(escalations, user) {
+  if (!user) return [];
+  return (escalations || []).filter(e =>
+    e.status !== 'Resolved' && (
+      e.currentlyWith === user.id ||
+      e.toUserId === user.id ||
+      e.assignedTo === user.id ||
+      e.toRole === user.role ||
+      e.raisedTo === user.role
+    )
+  );
+}
+// Heading varies per role so the widget reads naturally on each dashboard.
+function escalationsDirectedHeading(user) {
+  if (!user) return 'Escalations awaiting your action';
+  const r = user.role;
+  if (r === 'VP')                                         return 'Escalations awaiting your decision';
+  if (r === 'Manager')                                    return 'Escalations awaiting your action';
+  if (r === 'Operations Manager' || r === 'Program Manager') return 'Escalations I need to resolve';
+  if (r === 'Project Manager')                            return 'My open escalations';
+  return 'Escalations awaiting your action';
+}
+function NoDirectedEscalations() {
+  return (
+    <Card>
+      <div className="flex flex-col items-center justify-center py-8 text-center">
+        <Icon name="check-circle" size={28} className="text-emerald-500 mb-2" />
+        <div className="text-sm font-medium text-ink-700">No escalations awaiting your action.</div>
+        <div className="text-xs text-ink-500 mt-1">You're all clear — nice work.</div>
+      </div>
+    </Card>
+  );
+}
+
 // ───────── Escalation modal & detail ─────────
 function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, onCreate }) {
   const [title, setTitle] = React.useState('');
@@ -248,13 +285,16 @@ function PageMyEscalations({ currentUser, onOpen, onNew }) {
 }
 
 // ───────── VP — Executive dashboard ─────────
-function PageVPDashboard({ onOpenEscalation }) {
-  const { projects, escalations, finRollup, auditLog, schools } = useStore();
+function PageVPDashboard({ onOpenEscalation, currentUser }) {
+  const { projects, escalations, finRollup, schools } = useStore();
+  // currentUser is plumbed in R16; fall back to the canonical VP record so older callers still work.
+  const me = currentUser || PEOPLE.find(p => p.id === 'u-vp') || { id: 'u-vp', role: 'VP' };
   const totalSchools = (schools || ALL_SCHOOLS).length;
   const energizedAll = countEnergized(schools || ALL_SCHOOLS);
-  const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages[12].done).length;
+  const handedAll    = countHandedOver(schools || ALL_SCHOOLS);
   const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
-  const open = escalations.filter(e => e.status !== 'Resolved');
+  // R16 #4: "Top risks & escalations" now shows only escalations directed at the current user.
+  const directed = filterEscalationsDirectedTo(escalations, me);
   return (
     <div className="p-6 space-y-4">
       <div>
@@ -264,9 +304,12 @@ function PageVPDashboard({ onOpenEscalation }) {
       <ExecutiveKPIStrip projects={projects} totalSchools={totalSchools} energizedAll={energizedAll} handedAll={handedAll} avgProgress={avgProgress} />
       <ExecutiveProgressTrend />
       <ExecutiveFinancialSummary finRollup={finRollup} />
-      <SectionTitle icon="alert-circle" title="Top risks & escalations awaiting my support" subtitle={`${open.length} open · click any row for full thread`} />
-      <EscalationsTable items={open.slice(0, 6)} onOpen={onOpenEscalation} />
-      <ExecutiveAuditPanel auditLog={auditLog} />
+      {/* R16 #3: Stage Execution KPIs replace the prior "Recent activity" panel on VP + Manager dashboards. */}
+      <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />
+      <SectionTitle icon="alert-circle" title={escalationsDirectedHeading(me)} subtitle={`${directed.length} open · click any row for full thread`} />
+      {directed.length === 0
+        ? <NoDirectedEscalations />
+        : <EscalationsTable items={directed.slice(0, 6)} onOpen={onOpenEscalation} />}
     </div>
   );
 }
@@ -312,10 +355,12 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
   const { escalations, finRollup, financialEntries, schools, auditLog } = useStore();
   const mine = escalations.filter(e => e.fromUserId === currentUser.id);
   const open = mine.filter(e => e.status !== 'Resolved');
+  // R16 #4: items directed at me (currently with / raised to my role / assigned to me).
+  const directed = filterEscalationsDirectedTo(escalations, currentUser);
   const escTarget = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, null) : null;
   const avgProgress = projects.length ? Math.round(projects.reduce((a, p) => a + (p.progress || 0), 0) / projects.length) : 0;
   const energizedAll = countEnergized(schools || ALL_SCHOOLS);
-  const handedAll    = (schools || ALL_SCHOOLS).filter(s => s.stages && s.stages[12] && s.stages[12].done).length;
+  const handedAll    = countHandedOver(schools || ALL_SCHOOLS);
   const totalSchools = (schools || ALL_SCHOOLS).length;
   const isExec = canViewFinancials(currentUser);
 
@@ -347,15 +392,17 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
       {/* Exec: Financial summary card */}
       {isExec && <ExecutiveFinancialSummary finRollup={finRollup} />}
 
-      {/* Top 3 escalations / risks */}
-      <SectionTitle icon="alert-circle"
-        title={isExec ? 'Top risks & escalations' : 'My escalations'}
-        subtitle={`${open.length} awaiting attention`}
-        action={!isExec && <Button size="sm" variant="ghost" icon="alert-circle" onClick={onNewEscalation}>New</Button>} />
-      <EscalationsTable items={isExec ? escalations.filter(e => e.status !== 'Resolved').slice(0, 3) : open} onOpen={onOpenEscalation} showFrom={isExec} />
+      {/* R16 #3: Stage Execution KPIs replace the prior "Recent activity" panel on Manager/PgmMgr dashboards. */}
+      {isExec && <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />}
 
-      {/* Exec: Recent audit activity (last 10) */}
-      {isExec && <ExecutiveAuditPanel auditLog={auditLog} />}
+      {/* R16 #4: Top escalations now filter to items directed at the current user only. */}
+      <SectionTitle icon="alert-circle"
+        title={escalationsDirectedHeading(currentUser)}
+        subtitle={`${directed.length} awaiting attention`}
+        action={!isExec && <Button size="sm" variant="ghost" icon="alert-circle" onClick={onNewEscalation}>New</Button>} />
+      {directed.length === 0
+        ? <NoDirectedEscalations />
+        : <EscalationsTable items={directed.slice(0, isExec ? 6 : 20)} onOpen={onOpenEscalation} showFrom={isExec} />}
     </div>
   );
 }
@@ -403,7 +450,7 @@ function ExecutiveProgressTrend() {
   // Build month buckets — count schools whose energized stage date falls in each month
   const buckets = {};
   ALL_SCHOOLS.forEach(s => {
-    const st = s.stages && s.stages[11];
+    const st = stageByKey(s, 'energized');
     if (st && st.done && st.date) {
       const d = new Date(st.date);
       const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
@@ -498,7 +545,93 @@ function ExecutiveAuditPanel({ auditLog }) {
   );
 }
 
+// ───────── R16 #3 — Stage Execution KPIs ─────────
+// 18 cards, grouped by stage category (Mechanical/Electrical/Commissioning/Handover).
+// Each card shows: category colour dot, stage label, count of schools that completed it,
+// percent of total schools, weekly velocity (Δ over last 7 days), and median time
+// between this stage and the next one.
+function computeStageKpis(schools) {
+  const total = (schools || []).length || 1;
+  const today = new Date('2026-05-16').getTime();
+  const weekAgo = today - 7 * 86400000;
+  return STAGE_KEYS.map((key, idx) => {
+    let count = 0, weekCount = 0;
+    const gaps = [];
+    (schools || []).forEach(s => {
+      const st = s.stages && s.stages[idx];
+      if (!st || !st.done) return;
+      count++;
+      const t = st.completedDate ? new Date(st.completedDate).getTime() : 0;
+      if (t && t >= weekAgo && t <= today) weekCount++;
+      const next = s.stages && s.stages[idx + 1];
+      if (next && next.done && next.completedDate && st.completedDate) {
+        const dt = new Date(next.completedDate).getTime() - t;
+        if (dt > 0) gaps.push(dt);
+      }
+    });
+    gaps.sort((a, b) => a - b);
+    const median = gaps.length ? Math.round(gaps[Math.floor(gaps.length / 2)] / 86400000) : null;
+    return {
+      key, idx, label: SCHOOL_STAGES[idx],
+      category: STAGE_CATEGORY[key],
+      count, pct: Math.round((count / total) * 100), weekCount,
+      medianDays: median,
+    };
+  });
+}
+function StageExecutionKPIs({ schools }) {
+  const data = React.useMemo(() => computeStageKpis(schools), [schools]);
+  const total = (schools || []).length;
+  const totalDoneStages = data.reduce((a, k) => a + k.count, 0);
+  const overallPct = total ? Math.round((totalDoneStages / (data.length * total)) * 100) : 0;
+  const grouped = ['mechanical', 'electrical', 'commissioning', 'handover'].map(cat => ({
+    cat, label: STAGE_CATEGORY_LABELS[cat],
+    items: data.filter(d => d.category === cat),
+    color: STAGE_CATEGORY_COLORS[cat],
+  }));
+  return (
+    <Card>
+      <SectionTitle icon="bar-chart-3" title="Stage Execution KPIs"
+        subtitle={`Across ${total.toLocaleString()} schools — ${overallPct}% overall completion · 18 active stages tracked.`} />
+      <div className="space-y-3">
+        {grouped.map(g => (
+          <div key={g.cat}>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: g.color.dot }} />
+              <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: g.color.text }}>{g.label}</span>
+              <span className="text-[11px] text-ink-500">· {g.items.length} stages</span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+              {g.items.map(k => (
+                <div key={k.key} className="border border-soft rounded-lg p-2.5 surface-2"
+                     style={{ borderLeft: `3px solid ${g.color.dot}` }}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: g.color.dot }} />
+                    <div className="text-[11px] font-medium ink-on-dark truncate" title={k.label}>{k.label}</div>
+                  </div>
+                  <div className="flex items-baseline gap-1.5 mt-1">
+                    <div className="text-lg font-bold tnum">{k.count.toLocaleString()}</div>
+                    <div className="text-[10px] text-ink-500">{k.pct}%</div>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-ink-500 mt-0.5">
+                    <span className={k.weekCount > 0 ? 'text-emerald-600 font-medium' : ''}>
+                      {k.weekCount > 0 ? `↑ ${k.weekCount} this week` : '—'}
+                    </span>
+                    <span title="Median days to next stage">{k.medianDays != null ? `${k.medianDays}d→next` : ''}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 Object.assign(window, {
   EscalationModal, PageEscalationDetail, EscalationsTable,
   PageVPDashboard, PageVPPrograms, PageMyEscalations, PagePMDashboard,
+  StageExecutionKPIs, computeStageKpis,
+  filterEscalationsDirectedTo, escalationsDirectedHeading, NoDirectedEscalations,
 });

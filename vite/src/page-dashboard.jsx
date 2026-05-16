@@ -14,26 +14,30 @@ const KPICard = ({ label, value, trend, spark, accent, suffix }) => (
 );
 
 function StageStrip({ counts, onClickStage, activeStage }) {
+  // R16 #2: 18-stage strip — colour by category, not by hardcoded index.
   const max = Math.max(...counts, 1);
   return (
-    <div className="grid grid-cols-12 gap-1.5">
+    <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-9 lg:grid-cols-9 xl:grid-cols-18 gap-1.5">
       {SCHOOL_STAGES.map((s, i) => {
         const c = counts[i] || 0;
         const h = 28 + (c / max) * 36;
-        const isHandover = i === SCHOOL_STAGES.length - 1;
+        const key = STAGE_KEYS[i];
+        const cat = STAGE_CATEGORY[key] || 'mechanical';
+        const color = STAGE_CATEGORY_COLORS[cat];
         const isActive = activeStage === i;
         return (
           <button key={s} onClick={() => onClickStage(i)}
+            title={`${s} — ${STAGE_CATEGORY_LABELS[cat]}`}
             className={cls('stage-pill text-left rounded-md p-2 border transition',
               isActive ? 'border-accent bg-accent-soft' : 'border-soft hover:border-navy-800')}>
             <div className="flex items-end h-12 mb-1">
               <div className="w-full rounded-t-sm" style={{
                 height: h,
-                background: isHandover ? '#C8102E' : (i < 4 ? '#13315C' : i < 8 ? '#2A5A9A' : '#B8860B'),
+                background: color.dot,
                 opacity: c === 0 ? 0.25 : 1
               }} />
             </div>
-            <div className="text-[10px] text-ink-500 ink-muted-on-dark leading-tight">{i+1}. {s}</div>
+            <div className="text-[10px] text-ink-500 ink-muted-on-dark leading-tight truncate">{i+1}. {s}</div>
             <div className="text-[15px] font-bold text-navy-900 ink-on-dark tnum">{c}</div>
           </button>
         );
@@ -241,20 +245,23 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
         </div>
       )}
 
-      {/* Stage strip */}
+      {/* R16 #2: widget renamed "Project/Program Execution Lifecycle" → "School Execution Stages",
+          18 stages colour-grouped by category (Mechanical/Electrical/Commissioning/Handover). */}
       <Card>
         <SectionTitle
           icon="bar-chart-3"
-          title="School Program Execution Stages — Across All Programs"
-          subtitle="Click any stage to filter the project grid below"
+          title="School Execution Stages"
+          subtitle="18 stages across Mechanical · Electrical · Commissioning · Handover — click any stage to filter the project grid below"
           action={stageFilter != null && <Button variant="ghost" size="sm" icon="x" onClick={() => setStageFilter(null)}>Clear filter</Button>}
         />
         <StageStrip counts={stageCounts} onClickStage={setStageFilter} activeStage={stageFilter} />
-        <div className="mt-3 flex items-center gap-4 text-[11px] text-ink-500 ink-muted-on-dark">
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-navy-800" /> Pre-construction</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm" style={{background:'#2A5A9A'}} /> Materials & Install</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-gold" /> Commissioning</span>
-          <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-ind-red" /> Handover to Client</span>
+        <div className="mt-3 flex items-center gap-4 text-[11px] text-ink-500 ink-muted-on-dark flex-wrap">
+          {Object.keys(STAGE_CATEGORY_LABELS).map(cat => (
+            <span key={cat} className="flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: STAGE_CATEGORY_COLORS[cat].dot }} />
+              {STAGE_CATEGORY_LABELS[cat]}
+            </span>
+          ))}
         </div>
       </Card>
 

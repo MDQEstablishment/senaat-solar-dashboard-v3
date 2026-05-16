@@ -185,13 +185,13 @@ function AppInner() {
 
     // VP
     if (role === 'VP') {
-      if (page === 'home')        return <PageVPDashboard onOpenEscalation={openEsc} />;
+      if (page === 'home')        return <PageVPDashboard onOpenEscalation={openEsc} currentUser={currentUser} />;
       if (page === 'projects')    return <PageVPPrograms projects={projects} onOpen={openProject} />;
-      if (page === 'escalations') return <PageVPDashboard onOpenEscalation={openEsc} />;
+      if (page === 'escalations') return <PageVPDashboard onOpenEscalation={openEsc} currentUser={currentUser} />;
       if (page === 'financials' && canViewFinancials(currentUser)) return <PageFinancials projects={projects} fin={FIN} />;
       if (page === 'reports')     return <PageReportsZamil projects={projects} />;
       if (page === 'audit-log')   return <PageSettings currentUser={currentUser} auditLogOnly={true} />;
-      return <PageVPDashboard onOpenEscalation={openEsc} />;
+      return <PageVPDashboard onOpenEscalation={openEsc} currentUser={currentUser} />;
     }
 
     // Project Manager (M4: home id is 'my-projects', schools id is 'my-schools')

@@ -340,6 +340,117 @@ record('R15 #2: Material Planning Projects route renders different content than 
 record('R15 #4: Cash Flow chart has demo caption below the chart',
        /Curve shown is a representative trend; live cumulative data populates post-integration with the accounting system\./.test(read('page-financials.jsx')));
 
+// ── K3. Round 16 — 18-stage migration, Stage KPIs, directed escalations, import/export ──
+const dataJsxR16    = read('data.jsx');
+const pagesR2R16    = read('pages-r2.jsx');
+const reportsJsxR16 = read('page-reports-zamil.jsx');
+const settingsR16   = read('page-settings.jsx');
+const dashJsxR16    = read('page-dashboard.jsx');
+const vpJsxR16      = read('page-vp.jsx');
+const storeR16      = read('store-r2.jsx');
+
+// R16 #2: 18-stage model present in data.jsx
+record('R16 #2: STAGE_KEYS expanded to 18 stages',
+       /'foundation','pv_mounting','pv_module','earthing'/.test(dataJsxR16) &&
+       /'cable_tray','dc_cables','ac_cables','inverters','smdb','data_logger','digital_meter','breaker','ct'/.test(dataJsxR16) &&
+       /'energized','coc_signed','installation_complete'/.test(dataJsxR16) &&
+       /'handover_zamil','handover_client'/.test(dataJsxR16));
+record('R16 #2: STAGE_EXCEL_HEADERS map preserves client wording',
+       /STAGE_EXCEL_HEADERS\s*=\s*\{/.test(dataJsxR16) &&
+       /'Completion of Foundation'/.test(dataJsxR16) &&
+       /'PV Mounting Structure'/.test(dataJsxR16) &&
+       /'Installation Completion Date'/.test(dataJsxR16) &&
+       /'Handover to Zamil'/.test(dataJsxR16) &&
+       /'Handover to Client'/.test(dataJsxR16));
+record('R16 #2: STAGE_CATEGORY assigns each key to mechanical/electrical/commissioning/handover',
+       /STAGE_CATEGORY\s*=\s*\{/.test(dataJsxR16) &&
+       /STAGE_CATEGORY_COLORS\s*=\s*\{/.test(dataJsxR16) &&
+       /mechanical:/.test(dataJsxR16) && /electrical:/.test(dataJsxR16) &&
+       /commissioning:/.test(dataJsxR16) && /handover:/.test(dataJsxR16));
+record('R16 #2: OLD_TO_NEW_STAGE remap covers legacy seed data',
+       /OLD_TO_NEW_STAGE\s*=\s*\{/.test(dataJsxR16) &&
+       /mounting: 'pv_mounting'/.test(dataJsxR16) &&
+       /datalogger: 'data_logger'/.test(dataJsxR16) &&
+       /coc: 'coc_signed'/.test(dataJsxR16));
+record('R16 #2: stageByKey + countEnergized look up by key (no hardcoded stages[11])',
+       /function stageByKey/.test(dataJsxR16) &&
+       /STAGE_INDEX\[key\]/.test(dataJsxR16) &&
+       !/stages\[11\]\.done/.test(dataJsxR16));
+record('R16 #2: countHandedOver helper defined and exported',
+       /function countHandedOver/.test(dataJsxR16) &&
+       /countHandedOver,/.test(dataJsxR16));
+record('R16 #2: Dashboard widget renamed to "School Execution Stages"',
+       /title="School Execution Stages"/.test(dashJsxR16) &&
+       !/School Program Execution Stages/.test(dashJsxR16));
+record('R16 #2: StageStrip colours by category, not by index range',
+       /STAGE_CATEGORY_COLORS\[cat\]/.test(dashJsxR16) &&
+       /STAGE_CATEGORY\[key\]/.test(dashJsxR16));
+record('R16 #2: hardcoded stages[11]/stages[12] references replaced across components',
+       !/s\.stages\[11\]\.done/.test(read('page-vp.jsx')) &&
+       !/s\.stages\[12\]\.done/.test(read('page-vp.jsx')) &&
+       !/s\.stages\[12\]\.done/.test(pagesR2R16) &&
+       !/s\.stages\[11\]/.test(pagesR2R16));
+record('R16 #2: ALL_SCHOOLS construction remaps legacy keys + synthesizes new stages',
+       /OLD_TO_NEW_STAGE\[oldK\]/.test(dataJsxR16) &&
+       /completedDate/.test(dataJsxR16) &&
+       /handover_zamil/.test(dataJsxR16) && /handover_client/.test(dataJsxR16));
+
+// R16 #3: Stage Execution KPIs render 18 cards, replace Recent activities
+record('R16 #3: Stage Execution KPIs render 18 cards',
+       /function StageExecutionKPIs/.test(pagesR2R16) &&
+       /STAGE_KEYS\.map\(\(key, idx\)/.test(pagesR2R16) &&
+       /18 active stages tracked/.test(pagesR2R16));
+record('R16 #3: VP dashboard renders StageExecutionKPIs',
+       /<StageExecutionKPIs\s+schools=\{schools \|\| ALL_SCHOOLS\}/.test(pagesR2R16));
+record('R16 #3: page-vp.jsx no longer renders Recent activity panel',
+       !/title="Recent activity"/.test(vpJsxR16) &&
+       /<StageExecutionKPIs/.test(vpJsxR16));
+record('R16 #3: PagePMDashboard no longer renders ExecutiveAuditPanel inline',
+       !/\{isExec && <ExecutiveAuditPanel/.test(pagesR2R16));
+record('R16 #3: StageExecutionKPIs summary line counts across all 2,601 schools',
+       /Across \$\{total\.toLocaleString\(\)\} schools/.test(pagesR2R16));
+
+// R16 #4: Top escalations directed filter
+record('R16 #4: filterEscalationsDirectedTo helper defined',
+       /function filterEscalationsDirectedTo/.test(pagesR2R16) &&
+       /e\.currentlyWith === user\.id/.test(pagesR2R16) &&
+       /e\.toRole === user\.role/.test(pagesR2R16));
+record('R16 #4: Top escalations filter shows only items directed at current user',
+       /filterEscalationsDirectedTo\(escalations, me\)/.test(pagesR2R16) &&
+       /filterEscalationsDirectedTo\(escalations, currentUser\)/.test(pagesR2R16));
+record('R16 #4: per-role heading via escalationsDirectedHeading',
+       /function escalationsDirectedHeading/.test(pagesR2R16) &&
+       /Escalations awaiting your decision/.test(pagesR2R16) &&
+       /Escalations awaiting your action/.test(pagesR2R16) &&
+       /Escalations I need to resolve/.test(pagesR2R16) &&
+       /My open escalations/.test(pagesR2R16));
+record('R16 #4: empty state with celebratory icon',
+       /No escalations awaiting your action\./.test(pagesR2R16) &&
+       /icon="check-circle"/.test(pagesR2R16));
+
+// R16 #1: School Stages Workbook (Template / Import / Export)
+record('R16 #1: SchoolStagesWorkbookCard mounts in Reports tab',
+       /<SchoolStagesWorkbookCard\s*\/>/.test(reportsJsxR16) &&
+       /function SchoolStagesWorkbookCard/.test(reportsJsxR16));
+record('R16 #1: Download Template button wired',
+       /downloadTemplate/.test(reportsJsxR16) &&
+       /master_daily_report_template_/.test(reportsJsxR16));
+record('R16 #1: Import xlsx updates school stages and writes audit log',
+       /XLSX\.read\(buf, \{ type: 'array' \}\)/.test(reportsJsxR16) &&
+       /sch\.stages\[i\]\.completedDate = iso/.test(reportsJsxR16) &&
+       /entityType: 'schools\.bulk_import'/.test(reportsJsxR16));
+record('R16 #1: Export xlsx contains all 18 stage columns',
+       /STAGE_KEYS\.map\(k => STAGE_EXCEL_HEADERS\[k\]\)/.test(reportsJsxR16) &&
+       /exportReport/.test(reportsJsxR16) &&
+       /master_daily_report_\$\{/.test(reportsJsxR16));
+record('R16 #1: Settings → School Stages exposes Download Template too',
+       /downloadTemplate/.test(settingsR16) &&
+       /STAGE_EXCEL_HEADERS/.test(settingsR16) &&
+       /master_daily_report_template_/.test(settingsR16));
+record('R16 #1: store-r2 schoolStagesList carries category + excelHeader for each stage',
+       /STAGE_CATEGORY\[key\]/.test(storeR16) &&
+       /excelHeader: STAGE_EXCEL_HEADERS\[key\]/.test(storeR16));
+
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic
 // to confirm the data flow.

@@ -18,14 +18,73 @@ const fmtDate = (d) => {
   return dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-// Stage model used per-school. Each stage is one of: not-started | in-progress | done
-const STAGE_KEYS = ['foundation','mounting','module','earthing','cabletray','dccable','accable','coring','inverter','smdb','datalogger','energized','coc'];
-const SCHOOL_STAGES = [
-  'Foundation', 'PV Mounting', 'PV Module',
-  'Earthing', 'Cable Tray', 'DC Cables', 'AC Cables', 'Coring', 'Inverter', 'SMDB', 'Data Logger',
-  'Energized', 'COC Signed'
+// Round 16: 18-stage model. Keys are the new canonical IDs; OLD_TO_NEW_STAGE remaps
+// legacy seed data (from data-schools.jsx) into the new schema. Excel headers are preserved
+// verbatim so the same workbook doubles as import + export template.
+const STAGE_KEYS = [
+  // Mechanical (0-3)
+  'foundation','pv_mounting','pv_module','earthing',
+  // Electrical (4-12)
+  'cable_tray','dc_cables','ac_cables','inverters','smdb','data_logger','digital_meter','breaker','ct',
+  // Commissioning (13-15)
+  'energized','coc_signed','installation_complete',
+  // Handover (16-17)
+  'handover_zamil','handover_client',
 ];
+const SCHOOL_STAGES = [
+  'Foundation Complete','PV Mounting Installed','PV Modules Installed','Earthing Complete',
+  'Cable Tray Installed','DC Cables Run','LV AC Cables Complete','Inverters Installed',
+  'SMDB Panel Installed','Data Logger Installed','Digital Meter Installed','Breaker Installed','CT Installed',
+  'Energized','COC Signed','Installation Complete',
+  'Handover to Zamil','Handover to Client',
+];
+// Excel column headers (preserved exactly so import/export uses the wording the client expects).
+const STAGE_EXCEL_HEADERS = {
+  foundation:             'Completion of Foundation',
+  pv_mounting:            'PV Mounting Structure',
+  pv_module:              'PV Module Installation',
+  earthing:               'Completion for Earthing',
+  cable_tray:             'Cable Tray Installation',
+  dc_cables:              'Extension DC Cables',
+  ac_cables:              'Completion of LV AC Cables',
+  inverters:              'Inverters Installation',
+  smdb:                   'SMDB panel installation',
+  data_logger:            'Data Logger installation',
+  digital_meter:          'DIGITAL METER',
+  breaker:                'Breaker',
+  ct:                     'CT',
+  energized:              'Energized',
+  coc_signed:             'COC signed',
+  installation_complete:  'Installation Completion Date',
+  handover_zamil:         'Handover to Zamil',
+  handover_client:        'Handover to Client',
+};
+// Category per stage + colour per category (used by KPIs widget, Reports Excel grouping, Settings).
+const STAGE_CATEGORY = {
+  foundation: 'mechanical', pv_mounting: 'mechanical', pv_module: 'mechanical', earthing: 'mechanical',
+  cable_tray: 'electrical', dc_cables: 'electrical', ac_cables: 'electrical', inverters: 'electrical',
+  smdb: 'electrical', data_logger: 'electrical', digital_meter: 'electrical', breaker: 'electrical', ct: 'electrical',
+  energized: 'commissioning', coc_signed: 'commissioning', installation_complete: 'commissioning',
+  handover_zamil: 'handover', handover_client: 'handover',
+};
+const STAGE_CATEGORY_COLORS = {
+  mechanical:    { dot: '#475569', soft: '#E2E8F0', text: '#1e293b', excelBg: 'FFE4D6' },
+  electrical:    { dot: '#D97706', soft: '#FEF3C7', text: '#78350f', excelBg: 'D5F2E3' },
+  commissioning: { dot: '#059669', soft: '#D1FAE5', text: '#064e3b', excelBg: 'B2DFDB' },
+  handover:      { dot: '#7C3AED', soft: '#EDE9FE', text: '#4c1d95', excelBg: 'C5CAE9' },
+};
+const STAGE_CATEGORY_LABELS = { mechanical: 'Mechanical', electrical: 'Electrical', commissioning: 'Commissioning', handover: 'Handover' };
+// Old → new key map so existing seed in data-schools.jsx (foundation/mounting/module/earthing/
+// cabletray/dccable/accable/coring/inverter/smdb/datalogger/energized/coc) still loads.
+// 'coring' is dropped — it was a wall-coring sub-step that is now part of cable trays.
+const OLD_TO_NEW_STAGE = {
+  foundation: 'foundation', mounting: 'pv_mounting', module: 'pv_module', earthing: 'earthing',
+  cabletray: 'cable_tray', dccable: 'dc_cables', accable: 'ac_cables',
+  inverter: 'inverters', smdb: 'smdb', datalogger: 'data_logger',
+  energized: 'energized', coc: 'coc_signed',
+};
 const STAGE_KEY_LABEL = STAGE_KEYS.reduce((a,k,i) => (a[k] = SCHOOL_STAGES[i], a), {});
+const STAGE_INDEX = STAGE_KEYS.reduce((a,k,i) => (a[k] = i, a), {});
 
 const REMARKS = ['Active', 'Access issue', 'Excluded', 'Dismantled', 'Demolished', 'Closed'];
 // Legacy 12-stage names for the "Stages view" toggle in the schools list
@@ -68,12 +127,25 @@ function canEscalateToVP(u)   { return !!u && ESCALATE_TO_VP_USERS.indexOf(u.id)
 function canViewAuditLog(u)   { return !!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1; }
 function canViewSettings(u)   { return !!u && SETTINGS_USERS.indexOf(u.id) !== -1; }
 
-// Round 13 M2: single source of truth for "Schools Energized".
-// Both VP dashboard and Manager dashboard MUST use this selector.
-// Energized = stage at STAGE_KEYS index 11 (`energized`) marked done.
+// Round 13 M2: single source of truth for "Schools Energized" — Round 16 looks up by
+// stage key (STAGE_INDEX.energized) rather than a hardcoded array index so future
+// stage reorderings don't silently break the metric.
+function stageByKey(school, key) {
+  if (!school || !school.stages) return null;
+  const i = STAGE_INDEX[key];
+  return (i != null) ? school.stages[i] : null;
+}
 function countEnergized(schools) {
   if (!schools || !schools.length) return 0;
-  return schools.filter(s => s && s.stages && s.stages[11] && s.stages[11].done).length;
+  return schools.filter(s => { const st = stageByKey(s, 'energized'); return st && st.done; }).length;
+}
+function countHandedOver(schools) {
+  if (!schools || !schools.length) return 0;
+  return schools.filter(s => { const st = stageByKey(s, 'handover_client'); return st && st.done; }).length;
+}
+function countCOCSigned(schools) {
+  if (!schools || !schools.length) return 0;
+  return schools.filter(s => { const st = stageByKey(s, 'coc_signed'); return st && st.done; }).length;
 }
 
 // 15 real Zamil Services users
@@ -453,21 +525,69 @@ const MATERIALS_CATALOG = [
   }
 ];
 
-// Compose ALL_SCHOOLS from the inlined ZAMIL_SCHOOLS dataset (data-schools.jsx loaded first)
+// Compose ALL_SCHOOLS from the inlined ZAMIL_SCHOOLS dataset (data-schools.jsx loaded first).
+// Round 16: remap legacy 13-key seed → 18-key schema and synthesize the new stages
+// (digital_meter / breaker / ct / installation_complete / handover_zamil / handover_client)
+// based on plausible workflow ordering — e.g. a school that's energized has also had its
+// digital meter / breaker / CT installed; handover stages are sparser and deterministic.
+function _hashStr(str) { let h = 0; for (let i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) | 0; } return Math.abs(h); }
 const ALL_SCHOOLS = (typeof ZAMIL_SCHOOLS !== 'undefined' ? ZAMIL_SCHOOLS : []).map(s => {
   // Pre-assign a contractor per project (deterministic) so demos look realistic
   const projContractor = (CONTRACTORS.find(c => c.projects && c.projects.includes(s.projectId)) || {}).id || '';
-  const stagesObj = s.stages || {};
-  // Compute stage progress, last update, and "stages" array for compat with old code (12 booleans approx)
-  const stageArr = STAGE_KEYS.map(k => {
-    const v = stagesObj[k] || 'not-started';
+  const rawStages = s.stages || {};
+  // 1) Re-key legacy stages → new keys
+  const newStages = {};
+  Object.keys(rawStages).forEach(oldK => {
+    const newK = OLD_TO_NEW_STAGE[oldK];
+    if (newK) newStages[newK] = rawStages[oldK];
+  });
+  // 2) Synthesize the new stages from existing signal.
+  const energizedDone = newStages.energized === 'done';
+  const cocDone = newStages.coc_signed === 'done';
+  const h = _hashStr(s.id || '');
+  // Pre-energization electrical: present when AC cables are run.
+  const acDone = newStages.ac_cables === 'done';
+  if (acDone || energizedDone) {
+    newStages.digital_meter = energizedDone ? 'done' : (h % 100 < 65 ? 'done' : 'in-progress');
+    newStages.breaker       = energizedDone ? 'done' : (h % 100 < 70 ? 'done' : 'in-progress');
+    newStages.ct            = energizedDone ? 'done' : (h % 100 < 60 ? 'done' : 'in-progress');
+  } else {
+    newStages.digital_meter = 'not-started';
+    newStages.breaker       = 'not-started';
+    newStages.ct            = 'not-started';
+  }
+  // Installation Complete = paperwork done after COC sign-off (~80% of COC-signed schools).
+  newStages.installation_complete = cocDone && (h % 100 < 80) ? 'done' : 'not-started';
+  // Handover to Zamil = ~30% of Installation Complete schools.
+  newStages.handover_zamil = (newStages.installation_complete === 'done' && (h % 100 < 30)) ? 'done' : 'not-started';
+  // Handover to Client = ~40% of Handover-to-Zamil schools.
+  newStages.handover_client = (newStages.handover_zamil === 'done' && (h % 100 < 12)) ? 'done' : 'not-started';
+
+  const baseDate = s.installStart || s.survey || '2026-01-01';
+  // Build the canonical 18-entry stages array. Each entry carries a completedDate so the
+  // Excel import/export pipeline has a single place to read/write.
+  const stageArr = STAGE_KEYS.map((k, idx) => {
+    const v = newStages[k] || 'not-started';
+    const done = v === 'done';
+    // Stagger completion dates so the timeline chart looks realistic — each completed
+    // stage finishes `idx` days after the install-start anchor.
+    let completedDate = null;
+    if (done) {
+      const d = new Date(baseDate);
+      d.setDate(d.getDate() + idx * 7);
+      completedDate = d.toISOString().slice(0, 10);
+    }
     return {
-      done: v === 'done',
-      date: v === 'done' ? (s.installStart || s.survey || '2026-01-01') : null,
-      by: v === 'done' ? 'u-pm1' : null,
-      statusId: v === 'done' ? 'done' : (v === 'in-progress' ? 'in-progress' : 'not-started'),
+      key: k,
+      done,
+      date: completedDate,
+      completedDate,
+      by: done ? 'u-pm1' : null,
+      statusId: done ? 'done' : (v === 'in-progress' ? 'in-progress' : 'not-started'),
     };
   });
+  // Replace stagesObj so downstream consumers see the new key set.
+  const stagesObj = STAGE_KEYS.reduce((a, k) => (a[k] = newStages[k] || 'not-started', a), {});
   return {
     id: s.id,
     code: s.id,                                    // School ID acts as code
@@ -647,11 +767,12 @@ const ACTIVITY = [
 
 Object.assign(window, {
   SAR, SARfull, fmtDate,
-  SCHOOL_STAGES, STAGE_KEYS, STAGE_KEY_LABEL, LEGACY_SCHOOL_STAGES,
+  SCHOOL_STAGES, STAGE_KEYS, STAGE_KEY_LABEL, STAGE_INDEX, LEGACY_SCHOOL_STAGES,
+  STAGE_EXCEL_HEADERS, STAGE_CATEGORY, STAGE_CATEGORY_COLORS, STAGE_CATEGORY_LABELS, OLD_TO_NEW_STAGE,
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
-  countEnergized,
+  countEnergized, countHandedOver, countCOCSigned, stageByKey,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,
   MATERIALS, MATERIALS_CATALOG, MATERIALS_USAGE,
   FIN, FIN_CURVE,

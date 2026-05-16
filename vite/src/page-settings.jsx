@@ -144,13 +144,43 @@ function SchoolStagesTab() {
   const { schoolStagesList, addSchoolStage, updateSchoolStage_, deleteSchoolStage, reorderSchoolStage } = useStore();
   const [editId, setEditId] = React.useState(null);
   const [addOpen, setAddOpen] = React.useState(false);
+  const [downloading, setDownloading] = React.useState(false);
   const sorted = [...(schoolStagesList || [])].sort((a, b) => a.order - b.order);
+
+  // R16 #1: same template the Reports tab exposes, surfaced here for admins who configure
+  // stages and want to send the workbook to contractors.
+  const downloadTemplate = async () => {
+    setDownloading(true);
+    try {
+      const idCols = ['School ID', 'School Name (Arabic)', 'School Name (English)', 'Region', 'Project', 'Contractor'];
+      const stageCols = STAGE_KEYS.map(k => STAGE_EXCEL_HEADERS[k]);
+      const header = [...idCols, ...stageCols];
+      const rows = [header];
+      (window.ALL_SCHOOLS || []).forEach(s => {
+        const proj = (window.PROJECTS || []).find(p => p.id === s.projectId);
+        const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
+        rows.push([s.id, s.nameAr || '', s.nameEn || '', s.region || '', proj?.name || '', contractor?.name || '',
+                   ...STAGE_KEYS.map(() => '')]);
+      });
+      if (typeof window.loadXLSX === 'function') await window.loadXLSX();
+      const wb = window.XLSX.utils.book_new();
+      const ws = window.XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = header.map(h => ({ wch: Math.max(14, (h || '').length + 2) }));
+      window.XLSX.utils.book_append_sheet(wb, ws, 'School Stages');
+      window.XLSX.writeFile(wb, `master_daily_report_template_${new Date().toISOString().slice(0,10)}.xlsx`);
+    } finally { setDownloading(false); }
+  };
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <SectionTitle title="School Execution Stages" subtitle="Editable per-school stage list — rename, reorder, change color, add or delete" className="!mb-0" />
-        <Button size="sm" icon="plus" variant="accent" onClick={() => setAddOpen(true)}>Add Stage</Button>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <SectionTitle title="School Execution Stages" subtitle="18 stages grouped by category (Mechanical/Electrical/Commissioning/Handover) — rename, reorder, change color, add or delete" className="!mb-0" />
+        <div className="flex gap-2">
+          <Button size="sm" variant="ghost" icon="file-plus-2" onClick={downloadTemplate} disabled={downloading} className="border border-soft">
+            {downloading ? 'Building…' : 'Download Template'}
+          </Button>
+          <Button size="sm" icon="plus" variant="accent" onClick={() => setAddOpen(true)}>Add Stage</Button>
+        </div>
       </div>
       <div className="text-[11px] text-ink-500 bg-amber-50 border border-amber-200 rounded-md p-2.5">
         ↕ Use arrows to reorder. Edit name and color per stage. Deleting permanently removes the stage. This action cannot be undone.
@@ -168,6 +198,12 @@ function SchoolStagesTab() {
                 <div className="w-3 h-3 rounded-full shrink-0" style={{ background: s.color }} />
                 <span className="text-xs text-ink-500 tnum w-6">{i + 1}</span>
                 <span className="text-sm flex-1 font-medium">{s.name}</span>
+                {s.category && (
+                  <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
+                        style={{ background: STAGE_CATEGORY_COLORS[s.category]?.soft, color: STAGE_CATEGORY_COLORS[s.category]?.text }}>
+                    {STAGE_CATEGORY_LABELS[s.category] || s.category}
+                  </span>
+                )}
                 <div className="flex gap-1">
                   <button onClick={() => setEditId(s.id)} className="p-1 rounded hover:bg-ink-100 text-ink-500" title="Edit"><Icon name="pencil" size={13} /></button>
                   <button onClick={() => deleteSchoolStage(s.id)} className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600" title="Delete"><Icon name="trash-2" size={13} /></button>

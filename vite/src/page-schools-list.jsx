@@ -433,8 +433,8 @@ function SchoolsStagesTable({ rows, onOpen }) {
                     else if (m.legacy === 'SEC Approvals') { done = s.stages[0]?.done; date = s.stages[0]?.date; }
                     else if (m.legacy === 'Initial Payment') { done = s.stages[0]?.done; date = s.stages[0]?.date; }
                     else if (m.legacy === 'Final Payment') { done = s.status === 'Completed'; }
-                    else if (m.legacy === 'Handed Over to Zamil') { done = s.stages[12]?.done; date = s.stages[12]?.date; }
-                    else if (m.legacy === 'Handed Over to Client') { done = s.status === 'Completed' && s.stages[12]?.done; date = s.stages[12]?.date; }
+                    else if (m.legacy === 'Handed Over to Zamil') { const st = stageByKey(s, 'handover_zamil'); done = st?.done; date = st?.date; }
+                    else if (m.legacy === 'Handed Over to Client') { const st = stageByKey(s, 'handover_client'); done = st?.done; date = st?.date; }
                   }
                   return (
                     <td key={i} className="text-center px-2 py-2">

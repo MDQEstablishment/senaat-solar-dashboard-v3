@@ -14,6 +14,10 @@ function PageReportsZamil({ projects }) {
         <p className="text-xs text-ink-500 mt-0.5">Three report types — all export to Excel matching the original Zamil templates.</p>
       </div>
 
+      {/* R16 #1: School Stages Workbook — one Excel file is both the import template
+          (download → fill → upload) and the live report (export). */}
+      <SchoolStagesWorkbookCard />
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <ReportCard icon="file-spreadsheet"
           title="Master Daily Report"
@@ -330,4 +334,187 @@ function ZamilReportPanel({ projects, onClose }) {
   );
 }
 
-Object.assign(window, { PageReportsZamil });
+// ── R16 #1 — School Stages Workbook ────────────────────────────────────────
+// Single template doubles as import format AND report format:
+//   • Identity columns: School ID, School Name (AR), School Name (EN), Region, Project, Contractor
+//   • 18 stage date columns (one per execution stage), grouped by category
+// Three actions:
+//   1) Download Template — blank file with all 2,601 schools pre-populated in identity columns + empty date cells
+//   2) Import Updates    — file picker; parses each row by School ID; for every non-empty date cell
+//                          updates school.stages[stageKey].completedDate, flips stage to Done,
+//                          shows summary modal, and writes an audit entry
+//   3) Export Report     — same template structure with current completion dates filled in
+function _buildStagesAOA(includeData) {
+  // Identity columns first, then 18 stage columns using STAGE_EXCEL_HEADERS verbatim
+  const idCols = ['School ID', 'School Name (Arabic)', 'School Name (English)', 'Region', 'Project', 'Contractor'];
+  const stageCols = STAGE_KEYS.map(k => STAGE_EXCEL_HEADERS[k]);
+  const header = [...idCols, ...stageCols];
+  const rows = [header];
+  if (includeData) {
+    (window.ALL_SCHOOLS || []).forEach(s => {
+      const proj = (window.PROJECTS || []).find(p => p.id === s.projectId);
+      const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
+      const idCells = [s.id, s.nameAr || '', s.nameEn || '', s.region || '', proj?.name || '', contractor?.name || ''];
+      const stageCells = STAGE_KEYS.map((k, i) => {
+        const st = s.stages && s.stages[i];
+        return (st && st.done && st.completedDate) ? st.completedDate : '';
+      });
+      rows.push([...idCells, ...stageCells]);
+    });
+  } else {
+    // Blank template: identity columns filled, stage cells empty
+    (window.ALL_SCHOOLS || []).forEach(s => {
+      const proj = (window.PROJECTS || []).find(p => p.id === s.projectId);
+      const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
+      const idCells = [s.id, s.nameAr || '', s.nameEn || '', s.region || '', proj?.name || '', contractor?.name || ''];
+      rows.push([...idCells, ...STAGE_KEYS.map(() => '')]);
+    });
+  }
+  return rows;
+}
+async function _writeStagesWorkbook(rows, filename) {
+  if (typeof window.loadXLSX === 'function') await window.loadXLSX();
+  if (!window.XLSX || !window.XLSX.utils.aoa_to_sheet) { alert('XLSX library failed to load.'); return; }
+  const wb = window.XLSX.utils.book_new();
+  const ws = window.XLSX.utils.aoa_to_sheet(rows);
+  // Auto-width columns based on header length so headers don't truncate
+  const header = rows[0] || [];
+  ws['!cols'] = header.map(h => ({ wch: Math.max(14, (h || '').length + 2) }));
+  window.XLSX.utils.book_append_sheet(wb, ws, 'School Stages');
+  window.XLSX.writeFile(wb, filename);
+}
+function _parseCellDate(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (typeof v === 'number') {
+    // Excel serial date → JS Date (1900-based, with the famous 1900 leap-year bug offset)
+    const ms = Math.round((v - 25569) * 86400 * 1000);
+    return new Date(ms).toISOString().slice(0, 10);
+  }
+  const d = new Date(String(v));
+  if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  return null;
+}
+
+function SchoolStagesWorkbookCard() {
+  const store = useStore();
+  const fileRef = React.useRef(null);
+  const [busy, setBusy] = React.useState(null);  // 'template' | 'import' | 'export' | null
+  const [summary, setSummary] = React.useState(null);  // { rowsRead, stagesUpdated, skipped }
+
+  const downloadTemplate = async () => {
+    setBusy('template');
+    try {
+      const rows = _buildStagesAOA(false);
+      await _writeStagesWorkbook(rows, `master_daily_report_template_${new Date().toISOString().slice(0,10)}.xlsx`);
+    } finally { setBusy(null); }
+  };
+  const exportReport = async () => {
+    setBusy('export');
+    try {
+      const rows = _buildStagesAOA(true);
+      await _writeStagesWorkbook(rows, `master_daily_report_${new Date().toISOString().slice(0,10)}.xlsx`);
+    } finally { setBusy(null); }
+  };
+  const onPickFile = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy('import');
+    try {
+      if (typeof window.loadXLSX === 'function') await window.loadXLSX();
+      const buf = await file.arrayBuffer();
+      const wb = window.XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const aoa = window.XLSX.utils.sheet_to_json(ws, { header: 1, raw: false });
+      if (!aoa || aoa.length < 2) { setSummary({ rowsRead: 0, stagesUpdated: 0, skipped: 0 }); return; }
+      const header = aoa[0].map(h => String(h || '').trim());
+      // Build a header-name → stage-key map using STAGE_EXCEL_HEADERS
+      const stageColIdx = {};
+      STAGE_KEYS.forEach(k => {
+        const wanted = STAGE_EXCEL_HEADERS[k];
+        const i = header.findIndex(h => h && h.toLowerCase() === wanted.toLowerCase());
+        if (i !== -1) stageColIdx[k] = i;
+      });
+      const idIdx = header.findIndex(h => h && /school\s*id/i.test(h));
+      if (idIdx === -1) { alert('Could not find a "School ID" column in the uploaded workbook.'); return; }
+      const schoolsById = {};
+      (window.ALL_SCHOOLS || []).forEach(s => { schoolsById[s.id] = s; });
+      let rowsRead = 0, stagesUpdated = 0, skipped = 0;
+      for (let r = 1; r < aoa.length; r++) {
+        const row = aoa[r];
+        if (!row || !row[idIdx]) { skipped++; continue; }
+        const id = String(row[idIdx]).trim();
+        const sch = schoolsById[id];
+        if (!sch) { skipped++; continue; }
+        rowsRead++;
+        Object.keys(stageColIdx).forEach(k => {
+          const v = row[stageColIdx[k]];
+          const iso = _parseCellDate(v);
+          if (iso) {
+            const i = STAGE_INDEX[k];
+            if (sch.stages && sch.stages[i]) {
+              const before = sch.stages[i].done;
+              sch.stages[i].done = true;
+              sch.stages[i].statusId = 'done';
+              sch.stages[i].completedDate = iso;
+              sch.stages[i].date = iso;
+              if (!before) stagesUpdated++;
+              else if (sch.stages[i].completedDate !== iso) stagesUpdated++;
+            }
+          }
+        });
+      }
+      if (store.logAudit) store.logAudit({
+        actorId: 'u-sys', actorName: 'Import', actorRole: 'System',
+        action: 'UPDATE', entityType: 'schools.bulk_import', entityId: 'import-' + Date.now(),
+        entityLabel: file.name,
+        summary: `Imported ${rowsRead} rows from "${file.name}" — ${stagesUpdated} stages updated, ${skipped} rows skipped`,
+      });
+      setSummary({ rowsRead, stagesUpdated, skipped, filename: file.name });
+    } catch (err) {
+      console.error('Import failed', err);
+      alert('Import failed: ' + (err.message || err));
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <Card>
+      <SectionTitle icon="file-spreadsheet"
+        title="School Stages Workbook"
+        subtitle="One Excel file: download as template → fill in completion dates → upload to update progress, or export as live report" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <Button variant="accent" icon="file-plus-2" onClick={downloadTemplate} disabled={busy != null} className="!justify-center">
+          {busy === 'template' ? 'Building…' : 'Download Template'}
+        </Button>
+        <Button variant="ghost" icon="upload" onClick={() => fileRef.current?.click()} disabled={busy != null} className="!justify-center border border-soft">
+          {busy === 'import' ? 'Importing…' : 'Import Updates (.xlsx)'}
+        </Button>
+        <Button variant="ghost" icon="file-spreadsheet" onClick={exportReport} disabled={busy != null} className="!justify-center border border-soft">
+          {busy === 'export' ? 'Exporting…' : 'Export Report'}
+        </Button>
+      </div>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+             className="hidden" onChange={onPickFile} />
+      <div className="text-[11px] text-ink-500 mt-3">
+        Identity columns (6): School ID · Name (AR/EN) · Region · Project · Contractor.
+        Stage columns (18): grouped by Mechanical · Electrical · Commissioning · Handover.
+        All 2,601 schools are pre-populated; leave a date cell blank to skip that stage.
+      </div>
+      {summary && (
+        <Modal open={true} onClose={() => setSummary(null)} title="Import complete" width="max-w-md">
+          <div className="space-y-2 text-sm">
+            <div>File: <span className="font-mono text-xs">{summary.filename}</span></div>
+            <div className="flex justify-between border-b border-soft py-1.5"><span>Rows read</span><span className="font-bold tnum">{summary.rowsRead}</span></div>
+            <div className="flex justify-between border-b border-soft py-1.5"><span>Stages updated</span><span className="font-bold tnum text-emerald-600">{summary.stagesUpdated}</span></div>
+            <div className="flex justify-between border-b border-soft py-1.5"><span>Rows skipped (unknown School ID / no data)</span><span className="font-bold tnum text-amber-600">{summary.skipped}</span></div>
+            <div className="text-[11px] text-ink-500">A record of this import was written to the Audit Log.</div>
+            <div className="text-right pt-2"><Button variant="accent" onClick={() => setSummary(null)}>OK</Button></div>
+          </div>
+        </Modal>
+      )}
+    </Card>
+  );
+}
+
+Object.assign(window, { PageReportsZamil, SchoolStagesWorkbookCard });

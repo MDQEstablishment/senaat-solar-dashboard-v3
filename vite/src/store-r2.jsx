@@ -89,10 +89,17 @@ function useStoreR2(base) {
       }, 0);
     }
   };
-  const [schoolStagesList, setSchoolStagesList] = React.useState(() => SCHOOL_STAGES.map((name, i) => ({
-    id: 'ss' + (i + 1), name, order: i, archived: false,
-    color: i < 3 ? '#13315C' : i < 11 ? '#2A5A9A' : '#B8860B',
-  })));
+  // R16 #2: per-stage category drives the colour swatch in Settings → School Stages.
+  const [schoolStagesList, setSchoolStagesList] = React.useState(() => SCHOOL_STAGES.map((name, i) => {
+    const key = STAGE_KEYS[i];
+    const cat = STAGE_CATEGORY[key];
+    return {
+      id: 'ss' + (i + 1), name, order: i, archived: false,
+      key, category: cat,
+      excelHeader: STAGE_EXCEL_HEADERS[key],
+      color: STAGE_CATEGORY_COLORS[cat]?.dot || '#0B2545',
+    };
+  }));
   const [customFields, setCustomFields]     = React.useState(() => CUSTOM_FIELDS_DEFAULT);
   const [milestoneTemplates, setMTemplates] = React.useState(() => MILESTONE_TEMPLATES_DEFAULT);
   const [milestoneEntries, setMEntries]     = React.useState(() => MILESTONE_ENTRIES_DEFAULT);
