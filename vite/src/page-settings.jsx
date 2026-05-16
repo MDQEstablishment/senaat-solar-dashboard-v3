@@ -147,27 +147,15 @@ function SchoolStagesTab() {
   const [downloading, setDownloading] = React.useState(false);
   const sorted = [...(schoolStagesList || [])].sort((a, b) => a.order - b.order);
 
-  // R16 #1: same template the Reports tab exposes, surfaced here for admins who configure
-  // stages and want to send the workbook to contractors.
+  // R16 #1 / R18 #2: same template the Reports tab exposes, surfaced here for admins
+  // who configure stages and want to send the workbook to contractors. Uses the shared
+  // builder so identity columns, stage headers, and category banding stay in lock-step
+  // across all three call sites (Settings, Reports, Project Detail).
   const downloadTemplate = async () => {
     setDownloading(true);
     try {
-      const idCols = ['School ID', 'School Name (Arabic)', 'School Name (English)', 'Region', 'Project', 'Contractor'];
-      const stageCols = STAGE_KEYS.map(k => STAGE_EXCEL_HEADERS[k]);
-      const header = [...idCols, ...stageCols];
-      const rows = [header];
-      (window.ALL_SCHOOLS || []).forEach(s => {
-        const proj = (window.PROJECTS || []).find(p => p.id === s.projectId);
-        const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
-        rows.push([s.id, s.nameAr || '', s.nameEn || '', s.region || '', proj?.name || '', contractor?.name || '',
-                   ...STAGE_KEYS.map(() => '')]);
-      });
-      if (typeof window.loadXLSX === 'function') await window.loadXLSX();
-      const wb = window.XLSX.utils.book_new();
-      const ws = window.XLSX.utils.aoa_to_sheet(rows);
-      ws['!cols'] = header.map(h => ({ wch: Math.max(14, (h || '').length + 2) }));
-      window.XLSX.utils.book_append_sheet(wb, ws, 'School Stages');
-      window.XLSX.writeFile(wb, `master_daily_report_template_${new Date().toISOString().slice(0,10)}.xlsx`);
+      const built = window.buildSchoolStagesAOA(null, { includeData: false });
+      await window.writeSchoolStagesWorkbook(built, `master_daily_report_template_${new Date().toISOString().slice(0,10)}.xlsx`);
     } finally { setDownloading(false); }
   };
 

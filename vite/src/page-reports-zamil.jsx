@@ -344,17 +344,53 @@ function ZamilReportPanel({ projects, onClose }) {
 //                          updates school.stages[stageKey].completedDate, flips stage to Done,
 //                          shows summary modal, and writes an audit entry
 //   3) Export Report     — same template structure with current completion dates filled in
-function _buildStagesAOA(includeData) {
-  // Identity columns first, then 18 stage columns using STAGE_EXCEL_HEADERS verbatim
-  const idCols = ['School ID', 'School Name (Arabic)', 'School Name (English)', 'Region', 'Project', 'Contractor'];
-  const stageCols = STAGE_KEYS.map(k => STAGE_EXCEL_HEADERS[k]);
+// R18 #2: shared workbook builder used by:
+//   • Reports tab → Download Template / Export Report
+//   • Project Detail → Export to Excel
+// Both call sites produce an xlsx with identical column structure so the workbook
+// always round-trips through the importer. Layout:
+//   Row 0 (category band) : identity span, then 4 merged cells — Mechanical /
+//                           Electrical / Commissioning / Handover — coloured per
+//                           STAGE_CATEGORY_COLORS.excelBg (community sheetjs strips
+//                           cell styles, so the colour shows only in styled forks;
+//                           merge widths still group the columns visibly).
+//   Row 1 (header)        : identity column names, then "N. Excel header" per stage
+//                           (e.g. "1. Completion of Foundation").
+//   Row 2+ (data)         : one row per school. Stage cells = completedDate when
+//                           the stage is done, blank otherwise.
+function buildSchoolStagesAOA(schools, opts) {
+  const includeData = !opts || opts.includeData !== false;
+  const list = Array.isArray(schools) ? schools : (window.ALL_SCHOOLS || []);
+  const idCols = ['School ID', 'School Name (Arabic)', 'School Name (English)', 'Region', 'City', 'Project', 'Contractor', 'SEC Meter', 'Status'];
+  // Stage headers preserve the client's Master Daily Report wording verbatim.
+  // The numeric prefix gives readers a quick reference to the canonical order.
+  const stageCols = STAGE_KEYS.map((k, i) => `${i + 1}. ${STAGE_EXCEL_HEADERS[k]}`);
+
+  // Build the category band: one cell per category spanning N stage columns.
+  const cats = ['mechanical', 'electrical', 'commissioning', 'handover'];
+  const catRow = new Array(idCols.length + stageCols.length).fill('');
+  const merges = [];
+  let cursor = idCols.length;
+  cats.forEach(cat => {
+    const span = STAGE_KEYS.filter(k => STAGE_CATEGORY[k] === cat).length;
+    if (span === 0) return;
+    catRow[cursor] = STAGE_CATEGORY_LABELS[cat];
+    merges.push({ s: { r: 0, c: cursor }, e: { r: 0, c: cursor + span - 1 } });
+    cursor += span;
+  });
+
   const header = [...idCols, ...stageCols];
-  const rows = [header];
+  const rows = [catRow, header];
   if (includeData) {
-    (window.ALL_SCHOOLS || []).forEach(s => {
+    list.forEach(s => {
       const proj = (window.PROJECTS || []).find(p => p.id === s.projectId);
       const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
-      const idCells = [s.id, s.nameAr || '', s.nameEn || '', s.region || '', proj?.name || '', contractor?.name || ''];
+      const idCells = [
+        s.id, s.nameAr || '', s.nameEn || '',
+        s.region || '', s.city || '',
+        proj?.name || '', contractor?.name || '',
+        s.meter || '', s.status || '',
+      ];
       const stageCells = STAGE_KEYS.map((k, i) => {
         const st = s.stages && s.stages[i];
         return (st && st.done && st.completedDate) ? st.completedDate : '';
@@ -363,24 +399,53 @@ function _buildStagesAOA(includeData) {
     });
   } else {
     // Blank template: identity columns filled, stage cells empty
-    (window.ALL_SCHOOLS || []).forEach(s => {
+    list.forEach(s => {
       const proj = (window.PROJECTS || []).find(p => p.id === s.projectId);
       const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
-      const idCells = [s.id, s.nameAr || '', s.nameEn || '', s.region || '', proj?.name || '', contractor?.name || ''];
-      rows.push([...idCells, ...STAGE_KEYS.map(() => '')]);
+      rows.push([
+        s.id, s.nameAr || '', s.nameEn || '',
+        s.region || '', s.city || '',
+        proj?.name || '', contractor?.name || '',
+        s.meter || '', s.status || '',
+        ...STAGE_KEYS.map(() => ''),
+      ]);
     });
   }
-  return rows;
+  return { rows, merges, idColCount: idCols.length };
 }
-async function _writeStagesWorkbook(rows, filename) {
+async function writeSchoolStagesWorkbook(builtOrRows, filename, opts) {
   if (typeof window.loadXLSX === 'function') await window.loadXLSX();
   if (!window.XLSX || !window.XLSX.utils.aoa_to_sheet) { alert('XLSX library failed to load.'); return; }
   const wb = window.XLSX.utils.book_new();
-  const ws = window.XLSX.utils.aoa_to_sheet(rows);
-  // Auto-width columns based on header length so headers don't truncate
-  const header = rows[0] || [];
-  ws['!cols'] = header.map(h => ({ wch: Math.max(14, (h || '').length + 2) }));
-  window.XLSX.utils.book_append_sheet(wb, ws, 'School Stages');
+  // Accept either the rich {rows,merges,idColCount} or a bare rows array (legacy).
+  const built = Array.isArray(builtOrRows) ? { rows: builtOrRows, merges: [], idColCount: 0 } : builtOrRows;
+  const ws = window.XLSX.utils.aoa_to_sheet(built.rows);
+  if (built.merges && built.merges.length) ws['!merges'] = built.merges;
+  // Auto-width columns based on the *header* row (row index 1 — row 0 is the category band).
+  const headerRow = built.rows[1] || built.rows[0] || [];
+  ws['!cols'] = headerRow.map(h => ({ wch: Math.max(14, String(h || '').length + 2) }));
+  // Attempt cell styling for the category band — community sheetjs strips this, but
+  // a styled fork (xlsx-js-style) would render the peach/mint/teal/teal banding. The
+  // merges above always group the columns so the categories remain legible either way.
+  if (built.idColCount && opts && opts.styleBand !== false) {
+    const cats = ['mechanical', 'electrical', 'commissioning', 'handover'];
+    let cursor = built.idColCount;
+    cats.forEach(cat => {
+      const span = STAGE_KEYS.filter(k => STAGE_CATEGORY[k] === cat).length;
+      if (span === 0) return;
+      const bg = STAGE_CATEGORY_COLORS[cat]?.excelBg || 'EEEEEE';
+      const addr = window.XLSX.utils.encode_cell({ r: 0, c: cursor });
+      if (ws[addr]) {
+        ws[addr].s = {
+          fill: { patternType: 'solid', fgColor: { rgb: bg } },
+          font: { bold: true },
+          alignment: { horizontal: 'center', vertical: 'center' },
+        };
+      }
+      cursor += span;
+    });
+  }
+  window.XLSX.utils.book_append_sheet(wb, ws, opts?.sheetName || 'School Stages');
   window.XLSX.writeFile(wb, filename);
 }
 function _parseCellDate(v) {
@@ -405,15 +470,15 @@ function SchoolStagesWorkbookCard() {
   const downloadTemplate = async () => {
     setBusy('template');
     try {
-      const rows = _buildStagesAOA(false);
-      await _writeStagesWorkbook(rows, `master_daily_report_template_${new Date().toISOString().slice(0,10)}.xlsx`);
+      const built = buildSchoolStagesAOA(null, { includeData: false });
+      await writeSchoolStagesWorkbook(built, `master_daily_report_template_${new Date().toISOString().slice(0,10)}.xlsx`);
     } finally { setBusy(null); }
   };
   const exportReport = async () => {
     setBusy('export');
     try {
-      const rows = _buildStagesAOA(true);
-      await _writeStagesWorkbook(rows, `master_daily_report_${new Date().toISOString().slice(0,10)}.xlsx`);
+      const built = buildSchoolStagesAOA(null, { includeData: true });
+      await writeSchoolStagesWorkbook(built, `master_daily_report_${new Date().toISOString().slice(0,10)}.xlsx`);
     } finally { setBusy(null); }
   };
   const onPickFile = async (e) => {
@@ -433,7 +498,15 @@ function SchoolStagesWorkbookCard() {
       const stageColIdx = {};
       STAGE_KEYS.forEach(k => {
         const wanted = STAGE_EXCEL_HEADERS[k];
-        const i = header.findIndex(h => h && h.toLowerCase() === wanted.toLowerCase());
+        // Match both the bare header ("Handover to Zamil") and the prefixed
+        // form we now emit ("17. Handover to Zamil") so workbooks exported by
+        // either the Reports tab or the Project Detail page round-trip cleanly.
+        const i = header.findIndex(h => {
+          if (!h) return false;
+          const s = String(h).trim().toLowerCase();
+          const w = wanted.toLowerCase();
+          return s === w || s.endsWith('. ' + w) || s.endsWith(' ' + w);
+        });
         if (i !== -1) stageColIdx[k] = i;
       });
       const idIdx = header.findIndex(h => h && /school\s*id/i.test(h));
@@ -517,4 +590,4 @@ function SchoolStagesWorkbookCard() {
   );
 }
 
-Object.assign(window, { PageReportsZamil, SchoolStagesWorkbookCard });
+Object.assign(window, { PageReportsZamil, SchoolStagesWorkbookCard, buildSchoolStagesAOA, writeSchoolStagesWorkbook });

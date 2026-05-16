@@ -440,12 +440,12 @@ record('R16 #1: Import xlsx updates school stages and writes audit log',
        /sch\.stages\[i\]\.completedDate = iso/.test(reportsJsxR16) &&
        /entityType: 'schools\.bulk_import'/.test(reportsJsxR16));
 record('R16 #1: Export xlsx contains all 18 stage columns',
-       /STAGE_KEYS\.map\(k => STAGE_EXCEL_HEADERS\[k\]\)/.test(reportsJsxR16) &&
+       /STAGE_KEYS\.map\(\(k, i\) => `\$\{i \+ 1\}\. \$\{STAGE_EXCEL_HEADERS\[k\]\}`\)/.test(reportsJsxR16) &&
        /exportReport/.test(reportsJsxR16) &&
        /master_daily_report_\$\{/.test(reportsJsxR16));
 record('R16 #1: Settings → School Stages exposes Download Template too',
        /downloadTemplate/.test(settingsR16) &&
-       /STAGE_EXCEL_HEADERS/.test(settingsR16) &&
+       /buildSchoolStagesAOA\(null, \{ includeData: false \}\)/.test(settingsR16) &&
        /master_daily_report_template_/.test(settingsR16));
 record('R16 #1: store-r2 schoolStagesList carries category + excelHeader for each stage',
        /STAGE_CATEGORY\[key\]/.test(storeR16) &&
@@ -467,6 +467,42 @@ record('R17: category-band header colour-codes Mechanical / Electrical / Commiss
 record('R17: stage cell shows date for completed, "In Progress" for started, blank for not-started',
        /In Progress/.test(schoolsListR17) &&
        /st\.completedDate \|\| st\.date/.test(schoolsListR17));
+
+// ── K5. Round 18 — shorter handover labels + Project Detail export uses 18 stages ──
+const dataJsxR18    = read('data.jsx');
+const reportsJsxR18 = read('page-reports-zamil.jsx');
+const schoolsR18    = read('page-schools-list.jsx');
+const settingsR18   = read('page-settings.jsx');
+
+// R18 #1: Handover labels use short form in UI; excelHeaders preserved verbatim.
+record('R18 #1: Handover labels use short form in UI',
+       /'Zamil Handover','Client Handover'/.test(dataJsxR18) &&
+       !/SCHOOL_STAGES =[\s\S]{0,600}'Handover to Zamil','Handover to Client'/.test(dataJsxR18));
+record('R18 #1: STAGE_EXCEL_HEADERS still carry the long-form names for import/export',
+       /handover_zamil:\s*'Handover to Zamil'/.test(dataJsxR18) &&
+       /handover_client:\s*'Handover to Client'/.test(dataJsxR18));
+record('R18 #1: importer matches BOTH the bare and numeric-prefixed Excel header forms',
+       /s\.endsWith\('\. ' \+ w\)/.test(reportsJsxR18));
+
+// R18 #2: shared builder used by Reports + Project Detail; Project Detail export uses 18 columns.
+record('R18 #2: shared buildSchoolStagesAOA helper exposed on window',
+       /function buildSchoolStagesAOA/.test(reportsJsxR18) &&
+       /buildSchoolStagesAOA, writeSchoolStagesWorkbook/.test(reportsJsxR18));
+record('R18 #2: Project Detail Export to Excel contains 18 stage columns',
+       /window\.buildSchoolStagesAOA\(filtered/.test(schoolsR18) &&
+       /window\.writeSchoolStagesWorkbook/.test(schoolsR18) &&
+       !/const headers = \['School ID','School Name \(Arabic\)','School Name \(English\)','Level'/.test(schoolsR18));
+record('R18 #2: filename = {projectName}_schools_stages_YYYY-MM-DD.xlsx',
+       /_schools_stages_\$\{new Date\(\)\.toISOString\(\)\.slice\(0, 10\)\}\.xlsx/.test(schoolsR18));
+record('R18 #2: Settings Download Template also routes through the shared builder',
+       /window\.buildSchoolStagesAOA\(null, \{ includeData: false \}\)/.test(settingsR18));
+record('R18 #2: workbook builder includes category band row + merges',
+       /catRow\[cursor\] = STAGE_CATEGORY_LABELS\[cat\]/.test(reportsJsxR18) &&
+       /merges\.push\(\{ s: \{ r: 0, c: cursor \}/.test(reportsJsxR18));
+record('R18 #2: stage header prefixed with numeric index (1. … 18. …)',
+       /`\$\{i \+ 1\}\. \$\{STAGE_EXCEL_HEADERS\[k\]\}`/.test(reportsJsxR18));
+record('R18 #2: identity columns include School ID + AR/EN names + Region + City + Project + Contractor + SEC Meter + Status',
+       /'School ID', 'School Name \(Arabic\)', 'School Name \(English\)', 'Region', 'City', 'Project', 'Contractor', 'SEC Meter', 'Status'/.test(reportsJsxR18));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

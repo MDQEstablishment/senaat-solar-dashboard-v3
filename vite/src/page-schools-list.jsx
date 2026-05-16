@@ -200,19 +200,15 @@ function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser
     return true;
   }), [projSchools, q, statusFilter, remarkFilter, cityFilter]);
 
+  // R18 #2: project-detail export now uses the shared 18-stage workbook builder
+  // (same one as Reports tab → Export Report) so column structure stays identical
+  // across both call sites. Workbook covers identity + 18 stage date columns,
+  // scoped to the filtered school set on screen.
   const exportToExcel = async () => {
-    if (typeof window.loadXLSX === 'function') { await window.loadXLSX(); }
-    if (!window.XLSX || !window.XLSX.utils || !window.XLSX.utils.book_new) return;
-    const headers = ['School ID','School Name (Arabic)','School Name (English)','Level','Gender','City','SEC Meter','Contractor','Status','Remark'];
-    const rows = filtered.map(s => [
-      s.id, s.nameAr, s.nameEn, s.level, s.gender, s.city, s.meter,
-      (CONTRACTORS.find(c => c.id === s.contractor) || {}).name || '',
-      s.status, s.remark,
-    ]);
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    XLSX.utils.book_append_sheet(wb, ws, project.tag || 'Schools');
-    XLSX.writeFile(wb, `${project.tag || project.id}-schools.xlsx`);
+    const built = window.buildSchoolStagesAOA(filtered, { includeData: true });
+    const safeName = (project.name || project.tag || project.id).replace(/[^A-Za-z0-9._-]+/g, '_');
+    const filename = `${safeName}_schools_stages_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    await window.writeSchoolStagesWorkbook(built, filename, { sheetName: project.tag || 'Schools' });
   };
 
   const completed = projSchools.filter(s => s.status === 'Completed').length;

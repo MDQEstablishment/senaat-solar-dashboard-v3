@@ -36,7 +36,11 @@ const SCHOOL_STAGES = [
   'Cable Tray Installed','DC Cables Run','LV AC Cables Complete','Inverters Installed',
   'SMDB Panel Installed','Data Logger Installed','Digital Meter Installed','Breaker Installed','CT Installed',
   'Energized','COC Signed','Installation Complete',
-  'Handover to Zamil','Handover to Client',
+  // R18 #1: shorter UI labels for handover stages. Excel headers below stay verbatim
+  // ('Handover to Zamil' / 'Handover to Client') because the import pipeline matches
+  // by excelHeader, not by UI label — keeps the round-trip with the client's Master
+  // Daily Report column names intact.
+  'Zamil Handover','Client Handover',
 ];
 // Excel column headers (preserved exactly so import/export uses the wording the client expects).
 const STAGE_EXCEL_HEADERS = {
