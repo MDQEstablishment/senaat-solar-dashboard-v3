@@ -46,6 +46,188 @@ function StageStrip({ counts, onClickStage, activeStage }) {
   );
 }
 
+// ── Round 19: tint config + data seeds for redesigned stage section ──────────
+const CAT_TINTS = {
+  mechanical:    { bg: '#f1f5f9', border: '#cbd5e1' },
+  electrical:    { bg: '#fffbeb', border: '#fde68a' },
+  commissioning: { bg: '#ecfdf5', border: '#a7f3d0' },
+  handover:      { bg: '#faf5ff', border: '#ddd6fe' },
+};
+const VEL_SEED   = [47,52,41,38,29,33,21,18,14,11,8,6,3,1,0,0,0,0];
+const DWELL_SEED = [9,7,8,6,11,8,9,7,8,6,7,5,14,21,14,10,7,0];
+
+function DashStageCard({ stageObj, total, isBottleneck, isActive, onClick }) {
+  const catColors = STAGE_CATEGORY_COLORS[stageObj.cat] || {};
+  const catLabel  = STAGE_CATEGORY_LABELS[stageObj.cat] || '';
+  const velColor  = stageObj.week > 30 ? '#059669' : stageObj.week > 0 ? '#374151' : '#9CA3AF';
+  return (
+    <div onClick={onClick} style={{
+      position: 'relative', background: '#fff', cursor: 'pointer',
+      border: isActive ? '1px solid #0B2545' : '1px solid #E5E7EB',
+      boxShadow: isActive ? '0 0 0 1px #0B2545' : 'none',
+      borderRadius: 8, padding: '12px 12px 11px',
+      display: 'flex', flexDirection: 'column', gap: 8,
+    }}>
+      {isBottleneck && (
+        <div style={{ position: 'absolute', top: -7, right: 10, fontSize: 9, fontWeight: 700,
+          letterSpacing: '.05em', background: '#fff', color: '#BE123C',
+          border: '1px solid #BE123C', padding: '1px 6px', borderRadius: 4 }}>BOTTLENECK</div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#64748B', fontWeight: 600 }}>
+          S{String(stageObj.n).padStart(2, '0')}
+        </span>
+        <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 600, color: catColors.text || '#64748B' }}>
+          {stageObj.pct}%
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -4 }}>
+        <span style={{ width: 6, height: 6, borderRadius: 2, background: catColors.dot, display: 'inline-block', flexShrink: 0 }} />
+        <span style={{ fontSize: 10, color: catColors.text, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+          {catLabel}
+        </span>
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', lineHeight: 1.25,
+        height: '2.5em', overflow: 'hidden', display: '-webkit-box',
+        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+        {stageObj.name}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 22, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+          {stageObj.count.toLocaleString()}
+        </span>
+        <span style={{ fontSize: 10, color: '#64748B' }}>/ {(total || 2601).toLocaleString()}</span>
+      </div>
+      <div style={{ position: 'relative', height: 6, background: '#F1F2F5', borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, borderRadius: 99,
+          background: catColors.dot, width: Math.max(stageObj.pct, 0.4) + '%' }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: '#64748B' }}>
+        <span style={{ color: velColor, fontWeight: 600 }}>
+          {stageObj.week > 0 ? `▲ ${stageObj.week} /wk` : '— 0 /wk'}
+        </span>
+        {stageObj.days > 0 && <span>⏱ {stageObj.days}d dwell</span>}
+      </div>
+    </div>
+  );
+}
+
+function DashCategoryPanel({ catKey, stages, total, bottleneckIdx, activeStage, onStageClick }) {
+  const tint      = CAT_TINTS[catKey] || { bg: '#F8FAFC', border: '#E2E8F0' };
+  const catColors = STAGE_CATEGORY_COLORS[catKey] || {};
+  const catLabel  = STAGE_CATEGORY_LABELS[catKey] || catKey;
+  const avg       = stages.length ? Math.round(stages.reduce((a, s) => a + s.pct, 0) / stages.length) : 0;
+  const firstCount = stages[0]?.count || 0;
+  return (
+    <div style={{ background: tint.bg, border: `1px solid ${tint.border}`,
+      borderRadius: 12, padding: '14px 14px 14px', display: 'flex', gap: 14, alignItems: 'stretch' }}>
+      <div style={{ width: 160, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8,
+        paddingRight: 8, borderRight: `1px solid ${tint.border}` }}>
+        <div style={{ fontSize: 10, color: catColors.text, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' }}>Category</div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.01em', lineHeight: 1.1 }}>{catLabel}</div>
+        <div style={{ fontSize: 11, color: '#64748B' }}>{stages.length} stages · {firstCount.toLocaleString()} schools past 1st</div>
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>Avg completion</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 20, fontWeight: 600, color: catColors.text, fontVariantNumeric: 'tabular-nums' }}>{avg}</span>
+            <span style={{ fontSize: 11, color: '#64748B' }}>%</span>
+          </div>
+          <div style={{ height: 4, background: '#fff', border: `1px solid ${tint.border}`, borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ height: '100%', background: catColors.dot, width: avg + '%' }} />
+          </div>
+        </div>
+      </div>
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${stages.length}, minmax(0,1fr))`, gap: 8 }}>
+        {stages.map(s => (
+          <DashStageCard key={s.n} stageObj={s} total={total}
+            isBottleneck={s.n - 1 === bottleneckIdx}
+            isActive={activeStage === s.n - 1}
+            onClick={() => onStageClick && onStageClick(s.n - 1)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashTransitionsChart({ stages }) {
+  const maxWk = Math.max(...stages.map(s => s.week), 1);
+  const total  = stages.reduce((a, s) => a + s.week, 0);
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '16px 18px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.01em' }}>Stage transitions this week</div>
+          <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Schools that crossed into each stage · last 7 days</div>
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#0B2545', background: '#EEF2F7', padding: '3px 8px', borderRadius: 99 }}>
+          {total} crossings
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 6, alignItems: 'flex-end', height: 124 }}>
+        {stages.map(s => {
+          const catColors = STAGE_CATEGORY_COLORS[s.cat] || {};
+          const h = Math.max((s.week / maxWk) * 108, s.week > 0 ? 3 : 1);
+          return (
+            <div key={s.n} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 4 }}>
+              <div style={{ position: 'relative', width: '100%', borderRadius: '3px 3px 0 0', height: h, background: catColors.dot || '#CBD5E1', opacity: s.week > 0 ? 1 : 0.18 }}>
+                {s.week > 0 && <span style={{ position: 'absolute', top: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 9, color: '#0F172A', fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{s.week}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '1px solid #EEF0F4' }}>
+        {stages.map(s => (
+          <div key={s.n} style={{ fontSize: 9, color: '#64748B', textAlign: 'center', fontFamily: 'monospace', letterSpacing: '.04em' }}>
+            S{String(s.n).padStart(2, '0')}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 12, fontSize: 11, color: '#64748B', alignItems: 'center', flexWrap: 'wrap' }}>
+        {Object.keys(STAGE_CATEGORY_LABELS).map(cat => (
+          <span key={cat} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, display: 'inline-block', background: STAGE_CATEGORY_COLORS[cat].dot }} />
+            {STAGE_CATEGORY_LABELS[cat]}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashBottlenecksSidebar({ bottlenecks, maxDrop }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '16px 18px 14px' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', marginBottom: 4 }}>Top bottlenecks</div>
+      <div style={{ fontSize: 11, color: '#64748B', marginBottom: 14 }}>Stages with the largest school drop-off from the prior stage</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {bottlenecks.map(b => {
+          const catColors = STAGE_CATEGORY_COLORS[b.cat] || {};
+          return (
+            <div key={b.n}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ flex: '0 0 28px', fontFamily: 'monospace', fontSize: 10, color: '#64748B', fontWeight: 600 }}>
+                  S{String(b.n).padStart(2, '0')}
+                </span>
+                <span style={{ width: 6, height: 6, borderRadius: 2, background: catColors.dot, flexShrink: 0 }} />
+                <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 12, color: '#0F172A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {b.name}
+                </span>
+                <span style={{ fontSize: 11, color: '#BE123C', fontFamily: 'monospace', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                  −{b.drop.toLocaleString()}
+                </span>
+              </div>
+              <div style={{ height: 4, borderRadius: 99, background: '#F1F2F5', overflow: 'hidden', marginTop: 4 }}>
+                <div style={{ height: '100%', background: '#BE123C', width: (b.drop / maxDrop * 100) + '%' }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ProjectCard({ p, onOpen }) {
   const pm = PEOPLE.find(u => u.id === p.pmId);
   return (
@@ -200,6 +382,29 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
     projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
   );
 
+  // R19: cumulative counts + bottleneck data for redesigned stage section
+  const totalS = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0) || 2601;
+  const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a,c)=>a+c,0));
+  const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i-1]) - c);
+  const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
+  const stageData = STAGE_KEYS.map((key, i) => ({
+    n: i+1, key, name: SCHOOL_STAGES[i], cat: STAGE_CATEGORY[key],
+    count: cumCounts[i], pct: Math.round(cumCounts[i] / totalS * 100),
+    week: VEL_SEED[i] || 0, days: DWELL_SEED[i] || 0,
+  }));
+  const bottlenecks = stageData
+    .map((s, i) => ({ ...s, drop: drops[i] }))
+    .filter((_, i) => i >= 1)
+    .sort((a, b) => b.drop - a.drop)
+    .slice(0, 4);
+  const maxDrop = bottlenecks.length ? Math.max(...bottlenecks.map(b => b.drop)) : 1;
+  const stagesByCat = {
+    mechanical:    stageData.filter(s => s.cat === 'mechanical'),
+    electrical:    stageData.filter(s => s.cat === 'electrical'),
+    commissioning: stageData.filter(s => s.cat === 'commissioning'),
+    handover:      stageData.filter(s => s.cat === 'handover'),
+  };
+
   const filteredProjects = stageFilter == null
     ? projects
     : projects.filter(p => p.schoolDist && p.schoolDist[stageFilter] > 0);
@@ -245,25 +450,29 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
         </div>
       )}
 
-      {/* R16 #2: widget renamed "Project/Program Execution Lifecycle" → "School Execution Stages",
-          18 stages colour-grouped by category (Mechanical/Electrical/Commissioning/Handover). */}
-      <Card>
+      {/* R19: Transitions chart + Bottlenecks sidebar (VP/Managers only) */}
+      {canViewFinancials(currentUser) && (
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'minmax(0,1fr) 300px' }}>
+          <DashTransitionsChart stages={stageData} />
+          <DashBottlenecksSidebar bottlenecks={bottlenecks} maxDrop={maxDrop} />
+        </div>
+      )}
+
+      {/* R19 / R16 #2: School Execution Stages — 18 cards in 4 tinted category panels */}
+      <div>
         <SectionTitle
           icon="bar-chart-3"
           title="School Execution Stages"
-          subtitle="18 stages across Mechanical · Electrical · Commissioning · Handover — click any stage to filter the project grid below"
+          subtitle="18 stages grouped by category · click any card to filter the project grid below"
           action={stageFilter != null && <Button variant="ghost" size="sm" icon="x" onClick={() => setStageFilter(null)}>Clear filter</Button>}
         />
-        <StageStrip counts={stageCounts} onClickStage={setStageFilter} activeStage={stageFilter} />
-        <div className="mt-3 flex items-center gap-4 text-[11px] text-ink-500 ink-muted-on-dark flex-wrap">
-          {Object.keys(STAGE_CATEGORY_LABELS).map(cat => (
-            <span key={cat} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: STAGE_CATEGORY_COLORS[cat].dot }} />
-              {STAGE_CATEGORY_LABELS[cat]}
-            </span>
-          ))}
+        <div className="space-y-3 mt-3">
+          <DashCategoryPanel catKey="mechanical"    stages={stagesByCat.mechanical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
+          <DashCategoryPanel catKey="electrical"    stages={stagesByCat.electrical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
+          <DashCategoryPanel catKey="commissioning" stages={stagesByCat.commissioning} total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
+          <DashCategoryPanel catKey="handover"      stages={stagesByCat.handover}      total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
         </div>
-      </Card>
+      </div>
 
       {/* Project grid */}
       <div>

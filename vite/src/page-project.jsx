@@ -163,6 +163,7 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
 
   const [openStage, setOpenStage] = React.useState(null);
   const [tab, setTab] = React.useState('Overview');
+  const [activeFunnelStage, setActiveFunnelStage] = React.useState(null);
   const [lifecycleEditOpen, setLifecycleEditOpen] = React.useState(false);
   const store = (typeof useStore === 'function') ? useStore() : null;
   const {
@@ -260,31 +261,109 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           onClose={() => setLifecycleEditOpen(false)} />
       )}
 
-      {/* School stage distribution */}
-      {project.schoolDist && (
-        <Card>
-          <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`} />
-          <div className="grid grid-cols-13 gap-1.5" style={{ gridTemplateColumns: 'repeat(13, minmax(0, 1fr))' }}>
-            {SCHOOL_STAGES.map((s, i) => {
-              const c = project.schoolDist[i] || 0;
-              const max = Math.max(...project.schoolDist, 1);
-              return (
-                <div key={s} className="border border-soft rounded-md p-2">
-                  <div className="flex items-end h-10 mb-1">
-                    <div className="w-full rounded-t-sm" style={{
-                      height: 12 + (c / max) * 34,
-                      background: i < 3 ? '#13315C' : i < 11 ? '#2A5A9A' : '#B8860B',
-                      opacity: c === 0 ? 0.25 : 1,
-                    }} />
+      {/* R19: School stage distribution — horizontal funnel + 18-cell scrub strip */}
+      {project.schoolDist && (() => {
+        const totalFunnel = projSchoolCount;
+        const distSum = project.schoolDist.reduce((a,c)=>a+c,0);
+        const notStartedCount = Math.max(0, totalFunnel - distSum);
+        const funnelSegs = [
+          { n: null, label: 'Not started', cat: 'none', count: notStartedCount, bg: '#E5E7EB', fg: '#475569' },
+          ...STAGE_KEYS.map((key, i) => {
+            const cat = STAGE_CATEGORY[key];
+            const cc  = STAGE_CATEGORY_COLORS[cat] || {};
+            return { n: i, label: SCHOOL_STAGES[i], cat, count: project.schoolDist[i] || 0, bg: cc.dot || '#94A3B8', fg: '#fff' };
+          }),
+        ];
+        return (
+          <Card>
+            <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11, color: '#64748B' }}>
+              <span>← Earlier in pipeline</span>
+              <span>Later in pipeline →</span>
+            </div>
+
+            {/* Horizontal funnel */}
+            <div style={{ display: 'flex', height: 42, borderRadius: 6, overflow: 'hidden', background: '#F1F2F5' }}>
+              {funnelSegs.map((seg, si) => {
+                const w = totalFunnel > 0 ? (seg.count / totalFunnel) * 100 : 0;
+                if (w < 0.5) return null;
+                const isActive = seg.n !== null && activeFunnelStage === seg.n;
+                return (
+                  <div key={si}
+                    style={{ width: w + '%', background: seg.bg, borderRight: '1px solid rgba(255,255,255,0.5)',
+                      position: 'relative', cursor: seg.n !== null ? 'pointer' : 'default',
+                      outline: isActive ? '2px solid #0B2545' : 'none',
+                      outlineOffset: isActive ? '-2px' : 0, zIndex: isActive ? 2 : 1 }}
+                    onClick={() => seg.n !== null && setActiveFunnelStage(seg.n)}
+                    title={seg.label + ' · ' + seg.count + ' schools'}>
+                    {w > 4 && (
+                      <span style={{ position: 'absolute', top: '50%', left: '50%',
+                        transform: 'translate(-50%,-50%)', color: seg.fg, fontSize: 11,
+                        fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                        {seg.count}
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[9px] text-ink-500 leading-tight">{i + 1}. {s}</div>
-                  <div className="text-[13px] font-bold tnum">{c}</div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
+                );
+              })}
+            </div>
+
+            {/* 18-cell mini strip */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 4, marginTop: 12 }}>
+              {STAGE_KEYS.map((key, i) => {
+                const cat    = STAGE_CATEGORY[key];
+                const cc     = STAGE_CATEGORY_COLORS[cat] || {};
+                const count  = project.schoolDist[i] || 0;
+                const pct    = totalFunnel > 0 ? Math.round(count / totalFunnel * 100) : 0;
+                const isActive = activeFunnelStage === i;
+                return (
+                  <div key={key}
+                    style={{ background: isActive ? '#fff' : '#FAFAFA',
+                      border: isActive ? '1px solid #0B2545' : '1px solid #EAECEF',
+                      borderRadius: 6, padding: '8px 6px 6px', cursor: 'pointer' }}
+                    onClick={() => setActiveFunnelStage(isActive ? null : i)}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#64748B', fontWeight: 600 }}>{i + 1}</span>
+                      <span style={{ width: 6, height: 6, borderRadius: 2, background: cc.dot, display: 'inline-block' }} />
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', lineHeight: 1, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{count}</div>
+                    <div style={{ fontSize: 9, color: '#64748B', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</div>
+                    <div style={{ height: 3, borderRadius: 99, background: '#EAECEF', overflow: 'hidden', marginTop: 6 }}>
+                      <div style={{ height: '100%', background: cc.dot, width: Math.max(pct, 0.4) + '%' }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Filter chip */}
+            {activeFunnelStage !== null && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px 6px 12px', background: '#EFF6FF', border: '1px solid #BFDBFE',
+                  borderRadius: 99, fontSize: 11, color: '#1E40AF', fontWeight: 500 }}>
+                  Filtered:
+                  <span style={{ fontWeight: 600, marginLeft: 2 }}>
+                    S{String(activeFunnelStage + 1).padStart(2, '0')} · {SCHOOL_STAGES[activeFunnelStage]}
+                  </span>
+                  <span style={{ width: 14, height: 14, borderRadius: 99, background: '#BFDBFE',
+                    color: '#1E3A8A', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+                    onClick={() => setActiveFunnelStage(null)}>×</span>
+                </span>
+                <span style={{ fontSize: 11, color: '#64748B' }}>
+                  {project.schoolDist[activeFunnelStage] || 0} schools at this stage ·{' '}
+                  <button onClick={() => onOpenSchools && onOpenSchools(project.id)}
+                    style={{ color: '#1E40AF', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, padding: 0 }}>
+                    View all schools →
+                  </button>
+                </span>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* Tabs */}
       <Card padding="p-0">
