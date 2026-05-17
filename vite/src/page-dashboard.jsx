@@ -19,13 +19,15 @@ const KPICard = ({ label, value, trend, spark, accent, suffix, deltaSuffix }) =>
       <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent ? 'var(--accent)' : '#0B2545' }} />
       <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500 ink-muted-on-dark">{label}</div>
       {hasDelta && (
-        <div className="mt-1" style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
-          fontSize: 10, fontWeight: 600,
+        <div className="mt-1" style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontSize: 11, fontWeight: 600,
           background: chipBg, color: chipText, border: `1px solid ${chipBorder}`,
-          padding: '1px 6px', borderRadius: 99 }}>
-          <span>{up ? '▲' : '▼'}</span>
+          padding: '2px 6px', borderRadius: 99, lineHeight: 1.1,
+        }}>
+          <span aria-hidden="true">{up ? '▲' : '▼'}</span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>
-            {up ? '+' : '−'}{Math.abs(trend)}{typeof trend === 'number' && Number.isFinite(trend) && !Number.isInteger(trend) ? '' : ''}
+            {up ? '+' : '−'}{Math.abs(trend)}
             {deltaSuffix ? ` ${deltaSuffix}` : ''}
           </span>
         </div>
@@ -88,6 +90,38 @@ const DWELL_SEED = [9,7,8,6,11,8,9,7,8,6,7,5,14,21,14,10,7,0];
 // R19 Item #3 — DashStageCard is now a thin adapter that forwards to the reusable
 // window.StageCard (src/components/StageCard.jsx) so the Dashboard and the Project
 // Detail render identical tiles from a single source.
+// R19.1 — shared helper so VP / Manager / Material dashboards all derive the same
+// stage data, bottlenecks, and per-category groups from one place. The dashboard
+// renders this via PageDashboard; PageVPDashboard + PagePMDashboard reach in via
+// window.computeDashStageData.
+function computeDashStageData(projects) {
+  const stageCounts = SCHOOL_STAGES.map((_, i) =>
+    projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
+  );
+  const totalS = projects.filter(p => p.schoolDist).reduce((a, p) => a + p.sites, 0) || 2601;
+  const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a, c) => a + c, 0));
+  const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i - 1]) - c);
+  const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
+  const stageData = STAGE_KEYS.map((key, i) => ({
+    n: i + 1, key, name: SCHOOL_STAGES[i], cat: STAGE_CATEGORY[key],
+    count: cumCounts[i], pct: Math.round(cumCounts[i] / totalS * 100),
+    week: VEL_SEED[i] || 0, days: DWELL_SEED[i] || 0,
+  }));
+  const bottlenecks = stageData
+    .map((s, i) => ({ ...s, drop: drops[i] }))
+    .filter((_, i) => i >= 1)
+    .sort((a, b) => b.drop - a.drop)
+    .slice(0, 4);
+  const maxDrop = bottlenecks.length ? Math.max(...bottlenecks.map(b => b.drop)) : 1;
+  const stagesByCat = {
+    mechanical:    stageData.filter(s => s.cat === 'mechanical'),
+    electrical:    stageData.filter(s => s.cat === 'electrical'),
+    commissioning: stageData.filter(s => s.cat === 'commissioning'),
+    handover:      stageData.filter(s => s.cat === 'handover'),
+  };
+  return { stageCounts, totalS, cumCounts, drops, bottleneckIdx, stageData, bottlenecks, maxDrop, stagesByCat };
+}
+
 function DashStageCard({ stageObj, total, isBottleneck, isActive, onClick }) {
   const SC = window.StageCard;
   if (!SC) return null;
@@ -142,75 +176,134 @@ function DashCategoryPanel({ catKey, stages, total, bottleneckIdx, activeStage, 
   );
 }
 
+// R19.1 — 18-bar transitions chart per Claude Design mockup.
+// White card · 0.5px slate-200 border · rounded-md (8px) · padding 16px.
+// Bars: 24-32px wide each (flex-1 with min-width 18), height proportional to value,
+// max 180px tall. Value labels above each bar (11px). SXX labels below each bar.
+// Bottom-right caption: "Peak: <stage> · <N>/wk".
 function DashTransitionsChart({ stages }) {
   const maxWk = Math.max(...stages.map(s => s.week), 1);
   const total  = stages.reduce((a, s) => a + s.week, 0);
+  const peak   = stages.reduce((p, s) => s.week > p.week ? s : p, stages[0]);
+  const nfmt   = new Intl.NumberFormat('en-US');
   return (
-    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '16px 18px 14px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+    <div data-testid="dash-transitions-chart" style={{
+      background: '#fff', border: '0.5px solid #E2E8F0', borderRadius: 8, padding: 16,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.01em' }}>Stage transitions this week</div>
           <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Schools that crossed into each stage · last 7 days</div>
         </div>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#0B2545', background: '#EEF2F7', padding: '3px 8px', borderRadius: 99 }}>
-          {total} crossings
+        <div data-testid="dash-transitions-total" style={{
+          fontSize: 11, fontWeight: 600, color: '#0B2545', background: '#EEF2F7',
+          padding: '3px 10px', borderRadius: 99, whiteSpace: 'nowrap',
+        }}>
+          {nfmt.format(total)} crossings
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 6, alignItems: 'flex-end', height: 124 }}>
+
+      {/* Bar row — flex with even distribution; bars 24-32px wide, max 180px tall. */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 200, paddingTop: 18 }}>
         {stages.map(s => {
           const catColors = STAGE_CATEGORY_COLORS[s.cat] || {};
-          const h = Math.max((s.week / maxWk) * 108, s.week > 0 ? 3 : 1);
+          const h = Math.max((s.week / maxWk) * 180, s.week > 0 ? 4 : 2);
           return (
-            <div key={s.n} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 4 }}>
-              <div style={{ position: 'relative', width: '100%', borderRadius: '3px 3px 0 0', height: h, background: catColors.dot || '#CBD5E1', opacity: s.week > 0 ? 1 : 0.18 }}>
-                {s.week > 0 && <span style={{ position: 'absolute', top: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 9, color: '#0F172A', fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{s.week}</span>}
-              </div>
+            <div key={s.n} data-testid={`dash-transitions-bar-S${String(s.n).padStart(2, '0')}`}
+              style={{ flex: '1 1 0', minWidth: 18, maxWidth: 32,
+                display: 'flex', flexDirection: 'column', alignItems: 'center',
+                justifyContent: 'flex-end', height: '100%', position: 'relative' }}>
+              {s.week > 0 && (
+                <span style={{
+                  position: 'absolute', top: -16, left: '50%', transform: 'translateX(-50%)',
+                  fontSize: 11, color: '#0F172A', fontWeight: 600,
+                  whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+                }}>{s.week}</span>
+              )}
+              <div style={{
+                width: '100%', borderRadius: '3px 3px 0 0', height: h,
+                background: catColors.dot || '#CBD5E1',
+                opacity: s.week > 0 ? 1 : 0.18,
+              }} />
             </div>
           );
         })}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '1px solid #EEF0F4' }}>
+
+      {/* SXX labels under each bar */}
+      <div style={{ display: 'flex', gap: 6, marginTop: 6, paddingTop: 8, borderTop: '1px solid #EEF0F4' }}>
         {stages.map(s => (
-          <div key={s.n} style={{ fontSize: 9, color: '#64748B', textAlign: 'center', fontFamily: 'monospace', letterSpacing: '.04em' }}>
+          <div key={s.n} style={{
+            flex: '1 1 0', minWidth: 18, maxWidth: 32, textAlign: 'center',
+            fontSize: 10, color: '#64748B', fontFamily: 'monospace', letterSpacing: '.04em',
+          }}>
             S{String(s.n).padStart(2, '0')}
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 14, marginTop: 12, fontSize: 11, color: '#64748B', alignItems: 'center', flexWrap: 'wrap' }}>
-        {Object.keys(STAGE_CATEGORY_LABELS).map(cat => (
-          <span key={cat} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, display: 'inline-block', background: STAGE_CATEGORY_COLORS[cat].dot }} />
-            {STAGE_CATEGORY_LABELS[cat]}
-          </span>
-        ))}
+
+      {/* Category legend + peak caption */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 14, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#64748B', alignItems: 'center', flexWrap: 'wrap' }}>
+          {Object.keys(STAGE_CATEGORY_LABELS).map(cat => (
+            <span key={cat} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, display: 'inline-block', background: STAGE_CATEGORY_COLORS[cat].dot }} />
+              {STAGE_CATEGORY_LABELS[cat]}
+            </span>
+          ))}
+        </div>
+        {peak && peak.week > 0 && (
+          <div data-testid="dash-transitions-peak" style={{ fontSize: 11, color: '#475569' }}>
+            Peak: <span style={{ color: '#0F172A', fontWeight: 600 }}>{peak.name}</span>
+            <span style={{ marginLeft: 6, fontVariantNumeric: 'tabular-nums' }}>· {peak.week}/wk</span>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+// R19.1 — Top bottlenecks panel per Claude Design mockup.
+// 4 rows: SXX chip (slate background, 11px) · category dot · stage label (truncated)
+// · red negative number on the right. Thin 2px red bar underneath, width proportional
+// to drop magnitude.
 function DashBottlenecksSidebar({ bottlenecks, maxDrop }) {
+  const nfmt = new Intl.NumberFormat('en-US');
   return (
-    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '16px 18px 14px' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', marginBottom: 4 }}>Top bottlenecks</div>
-      <div style={{ fontSize: 11, color: '#64748B', marginBottom: 14 }}>Stages with the largest school drop-off from the prior stage</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div data-testid="dash-bottlenecks-sidebar" style={{
+      background: '#fff', border: '0.5px solid #E2E8F0', borderRadius: 8, padding: 16,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.01em' }}>Top bottlenecks</div>
+      <div style={{ fontSize: 11, color: '#64748B', marginTop: 2, marginBottom: 14 }}>Stages with the largest school drop-off from the prior stage</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {bottlenecks.map(b => {
           const catColors = STAGE_CATEGORY_COLORS[b.cat] || {};
           return (
-            <div key={b.n}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ flex: '0 0 28px', fontFamily: 'monospace', fontSize: 10, color: '#64748B', fontWeight: 600 }}>
+            <div key={b.n} data-testid={`dash-bottleneck-row-S${String(b.n).padStart(2, '0')}`}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{
+                  flex: '0 0 auto', fontFamily: 'monospace', fontSize: 11, fontWeight: 600,
+                  background: '#F1F5F9', color: '#475569',
+                  padding: '2px 6px', borderRadius: 4,
+                }}>
                   S{String(b.n).padStart(2, '0')}
                 </span>
-                <span style={{ width: 6, height: 6, borderRadius: 2, background: catColors.dot, flexShrink: 0 }} />
-                <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 12, color: '#0F172A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ width: 6, height: 6, borderRadius: 99, background: catColors.dot, flexShrink: 0 }} />
+                <span style={{
+                  flex: '1 1 auto', minWidth: 0, fontSize: 12, color: '#0F172A', fontWeight: 500,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
                   {b.name}
                 </span>
-                <span style={{ fontSize: 11, color: '#BE123C', fontFamily: 'monospace', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
-                  −{b.drop.toLocaleString()}
+                <span style={{
+                  fontSize: 12, color: '#BE123C', fontFamily: 'monospace', fontWeight: 600,
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  −{nfmt.format(b.drop)}
                 </span>
               </div>
-              <div style={{ height: 4, borderRadius: 99, background: '#F1F2F5', overflow: 'hidden', marginTop: 4 }}>
+              {/* 2px red bar — width proportional to drop magnitude */}
+              <div style={{ height: 2, borderRadius: 99, background: '#FECACA', overflow: 'hidden', marginTop: 6 }}>
                 <div style={{ height: '100%', background: '#BE123C', width: (b.drop / maxDrop * 100) + '%' }} />
               </div>
             </div>
@@ -443,11 +536,12 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
         </div>
       )}
 
-      {/* R19: Transitions chart + Bottlenecks sidebar (VP/Managers only) */}
+      {/* R19.1: Transitions chart + Bottlenecks sidebar (VP/Managers only).
+          Layout: flex-3 left (chart) + flex-1 right (bottlenecks). Stacks on mobile. */}
       {canViewFinancials(currentUser) && (
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'minmax(0,1fr) 300px' }}>
-          <DashTransitionsChart stages={stageData} />
-          <DashBottlenecksSidebar bottlenecks={bottlenecks} maxDrop={maxDrop} />
+        <div data-testid="dash-transitions-row" className="flex flex-col lg:flex-row gap-4">
+          <div className="lg:flex-[3] min-w-0"><DashTransitionsChart stages={stageData} /></div>
+          <div className="lg:flex-1 min-w-0"><DashBottlenecksSidebar bottlenecks={bottlenecks} maxDrop={maxDrop} /></div>
         </div>
       )}
 
@@ -494,4 +588,10 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
   );
 }
 
-Object.assign(window, { PageDashboard, NewProjectModal });
+// R19.1: expose chart + bottlenecks + data helper so PageVPDashboard /
+// PagePMDashboard render the same widgets without duplicating logic.
+Object.assign(window, {
+  PageDashboard, NewProjectModal,
+  DashTransitionsChart, DashBottlenecksSidebar, DashCategoryPanel, DashStageCard,
+  computeDashStageData,
+});

@@ -302,10 +302,10 @@ function PageVPDashboard({ onOpenEscalation, currentUser }) {
         <h1 className="text-2xl font-semibold">Portfolio at a glance</h1>
       </div>
       <ExecutiveKPIStrip projects={projects} totalSchools={totalSchools} energizedAll={energizedAll} handedAll={handedAll} avgProgress={avgProgress} />
-      {/* R19 Item #1: the empty "Program progress trend" chart is removed entirely —
-          its slot is filled by the "Stage transitions this week" + Top bottlenecks
-          pair (rendered inside PageDashboard for VP/Managers). The cumulative
-          progress curve was a placeholder that never carried real data. */}
+      {/* R19.1: Stage transitions this week + Top bottlenecks pair — the same widgets
+          PageDashboard renders for non-exec views, now surfaced on the VP dashboard
+          too. Both come from window.* so the data computation lives in one place. */}
+      <DashStageInsights projects={projects} />
       <ExecutiveFinancialSummary finRollup={finRollup} />
       {/* R16 #3 → R19: Stage Execution KPIs (now redesigned with tinted category panels). */}
       <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />
@@ -313,6 +313,23 @@ function PageVPDashboard({ onOpenEscalation, currentUser }) {
       {directed.length === 0
         ? <NoDirectedEscalations />
         : <EscalationsTable items={directed.slice(0, 6)} onOpen={onOpenEscalation} />}
+    </div>
+  );
+}
+
+// R19.1 — shared insights row used by VP + Manager dashboards. Pulls the
+// chart, bottlenecks panel, and stage-data helper off window (set by
+// page-dashboard.jsx) so the logic isn't duplicated.
+function DashStageInsights({ projects }) {
+  const Chart = window.DashTransitionsChart;
+  const Sidebar = window.DashBottlenecksSidebar;
+  const compute = window.computeDashStageData;
+  if (!Chart || !Sidebar || !compute) return null;
+  const { stageData, bottlenecks, maxDrop } = compute(projects);
+  return (
+    <div data-testid="dash-transitions-row-exec" className="flex flex-col lg:flex-row gap-4">
+      <div className="lg:flex-[3] min-w-0"><Chart stages={stageData} /></div>
+      <div className="lg:flex-1 min-w-0"><Sidebar bottlenecks={bottlenecks} maxDrop={maxDrop} /></div>
     </div>
   );
 }
@@ -389,9 +406,8 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
         </div>
       )}
 
-      {/* Exec: Progress trend chart */}
-      {/* R19: ExecutiveProgressTrend removed from Manager dashboard too — replaced by
-          the Stage transitions chart (in PageDashboard, exec-gated). */}
+      {/* R19.1: Stage transitions + Top bottlenecks pair (Manager exec view). */}
+      {isExec && <DashStageInsights projects={projects} />}
 
       {/* Exec: Financial summary card */}
       {isExec && <ExecutiveFinancialSummary finRollup={finRollup} />}

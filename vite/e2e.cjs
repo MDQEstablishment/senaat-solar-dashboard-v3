@@ -271,7 +271,8 @@ record('BUG 1: Settings Add Project button onClick set',
 record('BUG 1: Settings Add Project gated by canCreateProject',
        /canCreateProject\(currentUser\)/.test(settingsJsx));
 record('BUG 1: Settings reuses NewProjectModal (shared with dashboard)',
-       /typeof NewProjectModal === 'function'/.test(settingsJsx) && /Object\.assign\(window, \{ PageDashboard, NewProjectModal \}\)/.test(dashJsx));
+       /typeof NewProjectModal === 'function'/.test(settingsJsx) &&
+       /PageDashboard, NewProjectModal/.test(dashJsx));
 record('BUG 1: Settings ProjectsTab writes CREATE audit',
        /entityType: 'project'/.test(settingsJsx) && /Created project/.test(settingsJsx));
 record('BUG 1: Settings ProjectsTab DELETE audit on remove',
@@ -530,8 +531,9 @@ record('R19 Item #1: KPI cards show a delta chip below the label when trend != 0
 record('R19 Item #1: Dashboard renders 18 stage transitions bars',
        /function DashTransitionsChart/.test(dashJsxR19) &&
        /Stage transitions this week/.test(dashJsxR19) &&
-       /gridTemplateColumns: 'repeat\(18, 1fr\)'/.test(dashJsxR19) &&
-       /crossings/.test(dashJsxR19));
+       /stages\.map\(s => \{/.test(dashJsxR19) &&
+       /crossings/.test(dashJsxR19) &&
+       /Peak:/.test(dashJsxR19));
 record('R19 Item #1: Dashboard renders Top bottlenecks panel',
        /function DashBottlenecksSidebar/.test(dashJsxR19) &&
        /Top bottlenecks/.test(dashJsxR19) &&
@@ -571,6 +573,49 @@ record('R19 Item #3: main.jsx imports components/StageCard.jsx',
 record('R19 Item #3: Dashboard DashStageCard delegates to the reusable StageCard',
        /const SC = window\.StageCard/.test(dashJsxR19) &&
        /<SC[\s\S]{0,200}weeklyDelta=\{stageObj\.week\}/.test(dashJsxR19));
+
+// ── K7. Round 19.1 hotfix — chart + bottlenecks now render on VP + Manager,
+//                            visible sparklines, clearer progress bars ───────
+const dashR191    = read('page-dashboard.jsx');
+const pagesR191   = read('pages-r2.jsx');
+const uiR191      = read('ui.jsx');
+const stageR191   = read('components/StageCard.jsx');
+
+record('R19.1 A: Stage transitions chart renders 18 bars with values',
+       /data-testid="dash-transitions-chart"/.test(dashR191) &&
+       /data-testid=\{`dash-transitions-bar-S\$\{String\(s\.n\)\.padStart\(2, '0'\)\}`\}/.test(dashR191) &&
+       /VEL_SEED\s*=\s*\[47,52,41,38,29,33,21,18,14,11,8,6,3,1,0,0,0,0\]/.test(dashR191) &&
+       /Peak:/.test(dashR191));
+record('R19.1 A: chart layout is flex 3 (chart) + flex 1 (bottlenecks)',
+       /lg:flex-\[3\][\s\S]{0,200}DashTransitionsChart/.test(dashR191) &&
+       /lg:flex-1[\s\S]{0,200}DashBottlenecksSidebar/.test(dashR191));
+record('R19.1 B: Top bottlenecks panel renders 4 rows with SXX chip + red drop bar',
+       /data-testid="dash-bottlenecks-sidebar"/.test(dashR191) &&
+       /data-testid=\{`dash-bottleneck-row-S\$\{String\(b\.n\)\.padStart\(2, '0'\)\}`\}/.test(dashR191) &&
+       /\.slice\(0, 4\)/.test(dashR191) &&
+       /background: '#BE123C'/.test(dashR191));
+record('R19.1 A+B: VP + Manager dashboards now embed the transitions+bottlenecks insights row',
+       /<DashStageInsights projects=\{projects\}/.test(pagesR191) &&
+       /function DashStageInsights/.test(pagesR191) &&
+       /window\.DashTransitionsChart/.test(pagesR191) &&
+       /window\.DashBottlenecksSidebar/.test(pagesR191) &&
+       /window\.computeDashStageData/.test(pagesR191));
+record('R19.1 A+B: chart components + helper exposed on window from page-dashboard.jsx',
+       /DashTransitionsChart, DashBottlenecksSidebar, DashCategoryPanel, DashStageCard,\s+computeDashStageData/.test(dashR191));
+record('R19.1 C: Sparkline visible — slate-500 stroke, 1.25 width, flat-zero gets synthetic wave',
+       /color = '#64748B'/.test(uiR191) &&
+       /strokeWidth="1\.25"/.test(uiR191) &&
+       /synthesize a low-amplitude wave/.test(uiR191) &&
+       /viewBox=\{`0 0 \$\{width\} \$\{height\}`\}/.test(uiR191));
+record('R19.1 C: KPI sparkline path has visible points (no horizontal "---" fallback for real data)',
+       /amp \* Math\.sin/.test(uiR191));
+record('R19.1 C: KPI delta chip is 11px font, 2px 6px padding, rounded-full with ▲/▼',
+       /fontSize: 11, fontWeight: 600,[\s\S]{0,200}padding: '2px 6px', borderRadius: 99/.test(dashR191) &&
+       /up \? '▲' : '▼'/.test(dashR191));
+record('R19.1 D: StageCard progress bar visible — height 4, slate-100 bg, category-coloured fill',
+       /data-testid="stage-card-progress"/.test(stageR191) &&
+       /height: 4, background: '#F1F5F9'/.test(stageR191) &&
+       /background: catColors\.dot \|\| '#0B2545'/.test(stageR191));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

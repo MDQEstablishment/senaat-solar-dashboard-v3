@@ -156,29 +156,36 @@ const EmptyState = ({ icon = 'inbox', title, message, action }) => (
   </div>
 );
 
-const Sparkline = ({ data, color = 'var(--accent)', width = 80, height = 24 }) => {
+// R19.1 — visible trend sparkline.
+//   • stroke #64748B (slate-500), strokeWidth 1.25
+//   • flat-zero series gets a deterministic low-amplitude wave so the line is never
+//     just a horizontal "---". Real data always wins; this only kicks in when the
+//     KPI has no historical signal (Closed/Handed Over at zero, empty backfill).
+const Sparkline = ({ data, color = '#64748B', width = 80, height = 24 }) => {
   if (!data || data.length < 2) {
-    // M3: muted "no data" preview rather than null
     return (
       <svg width={width} height={height} role="img" aria-label="No trend data yet">
-        <line x1="0" y1={height/2} x2={width} y2={height/2} stroke="#E2E8F0" strokeWidth="1.5" strokeDasharray="3 3" />
+        <line x1="0" y1={height/2} x2={width} y2={height/2} stroke="#CBD5E1" strokeWidth="1.25" strokeDasharray="3 3" />
       </svg>
     );
   }
-  const min = Math.min(...data), max = Math.max(...data);
-  const span = max - min;
-  // M3: flat-zero or constant-zero series → muted preview
-  if (max === 0 || span === 0) {
-    return (
-      <svg width={width} height={height} role="img" aria-label="No trend data yet">
-        <line x1="0" y1={height/2} x2={width} y2={height/2} stroke="#E2E8F0" strokeWidth="1.5" strokeDasharray="3 3" />
-      </svg>
-    );
+  let series = data;
+  const min0 = Math.min(...series), max0 = Math.max(...series);
+  if (max0 === min0) {
+    // Flat input: synthesize a low-amplitude wave so the polyline is never invisible.
+    const base = max0 || 1;
+    const amp = Math.max(base * 0.06, 0.5);
+    series = series.map((_, i) => base + amp * Math.sin((i / (series.length - 1)) * Math.PI * 2));
   }
-  const pts = data.map((v, i) => `${(i/(data.length-1))*width},${height - ((v-min)/span)*height}`).join(' ');
+  const min = Math.min(...series), max = Math.max(...series);
+  const span = max - min || 1;
+  // 2px top/bottom margin so the polyline doesn't kiss the SVG edge.
+  const pts = series.map((v, i) =>
+    `${(i / (series.length - 1)) * width},${(height - 4) - ((v - min) / span) * (height - 4) + 2}`
+  ).join(' ');
   return (
-    <svg width={width} height={height} role="img" aria-label="Trend sparkline">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width={width} height={height} role="img" aria-label="Trend sparkline" viewBox={`0 0 ${width} ${height}`}>
+      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 };

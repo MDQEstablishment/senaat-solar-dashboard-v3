@@ -15,7 +15,7 @@ import React from 'react';
 // Layout / tokens (from the Claude Design mockup):
 //   • card padding 12px, border-radius 8px, 0.5px slate-200 border
 //   • font sizes 10px (chip) / 12px (label) / 22px (count) / 10-11px (footer)
-//   • progress bar height 4px (we use 6px for legibility; both pass spec intent)
+//   • progress bar height 4px, bg slate-100, fill = category dot colour
 function StageCard({ stage, count, total, weeklyDelta, medianDwellDays, isBottleneck, isActive, onClick }) {
   const catKey = stage.category || (window.STAGE_CATEGORY ? window.STAGE_CATEGORY[stage.key] : null);
   const catColors = (window.STAGE_CATEGORY_COLORS && window.STAGE_CATEGORY_COLORS[catKey]) || {};
@@ -68,10 +68,13 @@ function StageCard({ stage, count, total, weeklyDelta, medianDwellDays, isBottle
         }}>{nfmt.format(count)}</span>
         <span style={{ fontSize: 10, color: '#64748B' }}>/ {nfmt.format(totalN)}</span>
       </div>
-      <div style={{ position: 'relative', height: 4, background: '#F1F2F5', borderRadius: 99, overflow: 'hidden' }}>
+      <div data-testid="stage-card-progress" style={{
+        position: 'relative', height: 4, background: '#F1F5F9', borderRadius: 99, overflow: 'hidden',
+      }}>
         <div style={{
           position: 'absolute', top: 0, left: 0, bottom: 0, borderRadius: 99,
-          background: catColors.dot, width: Math.max(pct, 0.4) + '%',
+          background: catColors.dot || '#0B2545',
+          width: Math.max(pct, 0.4) + '%',
         }} />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: '#64748B' }}>
