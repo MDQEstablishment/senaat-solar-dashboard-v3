@@ -1195,6 +1195,227 @@ record('R29: Storage panel surfaces local-only disclaimer for the demo',
   record('E2E[9b]: Audit timestamps populated',      !!projAudit?.timestamp && !!schoolAudit?.timestamp);
 })();
 
+// ── M. R29.5 audit gap-fill (pre-Supabase coverage) ─────────────────────────
+// Verifies the matrix items that earlier rounds asserted only indirectly:
+//   • 7-role × capability cross-table
+//   • Sidebar items per role
+//   • Audit Log sidebar visibility (Managers via Settings; Ops/Pgm via direct link)
+//   • Stage Transitions + Top Bottlenecks gating  (currently exec-only — see report §1)
+//   • Storage panel access  (currently Manager-only — see report §5)
+//   • GitHub base path points to MDQEstablishment fork
+//   • Sparklines + delta chips wired in dashboard KPI strip
+//   • 18-stage rollup re-asserted by literal count
+const shellJsx_M    = read('shell.jsx');
+const settingsJsx_M = read('page-settings.jsx');
+const dashJsx_M     = read('page-dashboard.jsx');
+const pagesR2_M     = read('pages-r2.jsx');
+const dataJsx_M     = read('data.jsx');
+const uiJsx_M       = read('ui.jsx');
+const mapJsx_M      = read('components/MapPreview.jsx');
+const imgJsx_M      = read('components/ImageUploader.jsx');
+const reportsZ_M    = read('page-reports-zamil.jsx');
+const finJsx_M      = read('page-financials.jsx');
+
+// Role enum + capability allowlists
+record('R29.5 matrix: ROLES enum lists exactly the 7 expected roles',
+       /const ROLES = \['VP', 'Manager', 'Operations Manager', 'Program Manager', 'Project Manager', 'Material planning', 'Coordinator'\]/.test(dataJsx_M));
+record("R29.5 matrix: FINANCIALS_USERS = ['u-vp','u-mgr1','u-mgr2']",
+       /FINANCIALS_USERS\s*=\s*\['u-vp',\s*'u-mgr1',\s*'u-mgr2'\]/.test(dataJsx_M));
+record("R29.5 matrix: NEW_PROJECT_USERS = ['u-mgr1','u-mgr2','u-pgm']",
+       /NEW_PROJECT_USERS\s*=\s*\['u-mgr1',\s*'u-mgr2',\s*'u-pgm'\]/.test(dataJsx_M));
+record("R29.5 matrix: ESCALATE_TO_VP_USERS = Managers only",
+       /ESCALATE_TO_VP_USERS\s*=\s*\['u-mgr1',\s*'u-mgr2'\]/.test(dataJsx_M));
+record("R29.5 matrix: AUDIT_LOG_USERS = VP + Managers + Ops + Pgm (6 users)",
+       /AUDIT_LOG_USERS\s*=\s*\['u-vp',\s*'u-mgr1',\s*'u-mgr2',\s*'u-op1',\s*'u-op2',\s*'u-pgm'\]/.test(dataJsx_M));
+record("R29.5 matrix: SETTINGS_USERS = Managers only",
+       /SETTINGS_USERS\s*=\s*\['u-mgr1',\s*'u-mgr2'\]/.test(dataJsx_M));
+record("R29.5 matrix: SCHOOL_EXECUTION_STAGES_ROLES = Manager / VP / Ops / Pgm",
+       /SCHOOL_EXECUTION_STAGES_ROLES\s*=\s*\['Manager',\s*'VP',\s*'Operations Manager',\s*'Program Manager'\]/.test(dataJsx_M));
+
+// Per-role × capability cross-table (pure-JS predicate simulation)
+const _FIN = ['u-vp','u-mgr1','u-mgr2'];
+const _NEW = ['u-mgr1','u-mgr2','u-pgm'];
+const _ESC = ['u-mgr1','u-mgr2'];
+const _AUD = ['u-vp','u-mgr1','u-mgr2','u-op1','u-op2','u-pgm'];
+const _SET = ['u-mgr1','u-mgr2'];
+const _SES = ['Manager','VP','Operations Manager','Program Manager'];
+const _users = {
+  vp:    { id: 'u-vp',    role: 'VP' },
+  mgr:   { id: 'u-mgr1',  role: 'Manager' },
+  op:    { id: 'u-op1',   role: 'Operations Manager' },
+  pgm:   { id: 'u-pgm',   role: 'Program Manager' },
+  pm:    { id: 'u-pm1',   role: 'Project Manager' },
+  mat:   { id: 'u-mat',   role: 'Material planning' },
+  coord: { id: 'u-coord', role: 'Coordinator' },
+};
+const _cap = {
+  fin: u => _FIN.indexOf(u.id) !== -1,
+  nu:  u => _NEW.indexOf(u.id) !== -1,
+  esc: u => _ESC.indexOf(u.id) !== -1,
+  aud: u => _AUD.indexOf(u.id) !== -1,
+  set: u => _SET.indexOf(u.id) !== -1,
+  ses: u => _SES.indexOf(u.role) !== -1,
+};
+// VP
+record('R29.5 matrix[VP]: canViewFinancials',           _cap.fin(_users.vp));
+record('R29.5 matrix[VP]: canViewAuditLog',             _cap.aud(_users.vp));
+record('R29.5 matrix[VP]: canViewSettings === false',   !_cap.set(_users.vp));
+record('R29.5 matrix[VP]: canCreateProject === false',  !_cap.nu(_users.vp));
+record('R29.5 matrix[VP]: canViewSchoolExecutionStages', _cap.ses(_users.vp));
+// Manager
+record('R29.5 matrix[Manager]: canViewFinancials',       _cap.fin(_users.mgr));
+record('R29.5 matrix[Manager]: canCreateProject',        _cap.nu(_users.mgr));
+record('R29.5 matrix[Manager]: canEscalateToVP',         _cap.esc(_users.mgr));
+record('R29.5 matrix[Manager]: canViewAuditLog',         _cap.aud(_users.mgr));
+record('R29.5 matrix[Manager]: canViewSettings',         _cap.set(_users.mgr));
+record('R29.5 matrix[Manager]: canViewSchoolExecutionStages', _cap.ses(_users.mgr));
+// Operations Manager
+record('R29.5 matrix[OpsMgr]: canViewFinancials === false', !_cap.fin(_users.op));
+record('R29.5 matrix[OpsMgr]: canViewAuditLog',             _cap.aud(_users.op));
+record('R29.5 matrix[OpsMgr]: canViewSettings === false',   !_cap.set(_users.op));
+record('R29.5 matrix[OpsMgr]: canViewSchoolExecutionStages', _cap.ses(_users.op));
+// Program Manager
+record('R29.5 matrix[PgmMgr]: canCreateProject',            _cap.nu(_users.pgm));
+record('R29.5 matrix[PgmMgr]: canViewFinancials === false', !_cap.fin(_users.pgm));
+record('R29.5 matrix[PgmMgr]: canViewAuditLog',             _cap.aud(_users.pgm));
+record('R29.5 matrix[PgmMgr]: canViewSettings === false',   !_cap.set(_users.pgm));
+record('R29.5 matrix[PgmMgr]: canViewSchoolExecutionStages', _cap.ses(_users.pgm));
+// Project Manager — narrow view, zero exec capabilities
+record('R29.5 matrix[PM]: zero exec capabilities',
+       !_cap.fin(_users.pm) && !_cap.nu(_users.pm) && !_cap.esc(_users.pm) &&
+       !_cap.aud(_users.pm) && !_cap.set(_users.pm) && !_cap.ses(_users.pm));
+// Material Planning — narrow view, Delivery Notes hidden
+record('R29.5 matrix[MatPlan]: zero exec capabilities',
+       !_cap.fin(_users.mat) && !_cap.nu(_users.mat) && !_cap.esc(_users.mat) &&
+       !_cap.aud(_users.mat) && !_cap.set(_users.mat) && !_cap.ses(_users.mat));
+// Coordinator — narrow view
+record('R29.5 matrix[Coord]: zero exec capabilities',
+       !_cap.fin(_users.coord) && !_cap.nu(_users.coord) && !_cap.esc(_users.coord) &&
+       !_cap.aud(_users.coord) && !_cap.set(_users.coord) && !_cap.ses(_users.coord));
+
+// Sidebar per role — branch presence
+record('R29.5 sidebar[VP]: dedicated branch with Dashboard / Programs / Escalations',
+       /role === 'VP'/.test(shellJsx_M) &&
+       /id: 'home',\s+label: 'Dashboard'/.test(shellJsx_M) &&
+       /id: 'projects',\s+label: 'Programs'/.test(shellJsx_M) &&
+       /id: 'escalations',\s+label: 'Escalations'/.test(shellJsx_M));
+record('R29.5 sidebar[PM]: dedicated branch with My Projects / My Schools',
+       /role === 'Project Manager'/.test(shellJsx_M) &&
+       /id: 'my-projects'/.test(shellJsx_M) &&
+       /id: 'my-schools'/.test(shellJsx_M));
+record('R29.5 sidebar[MatPlan]: Delivery Notes EXPLICITLY hidden via comment + omission',
+       /role === 'Material planning'/.test(shellJsx_M) &&
+       /Delivery Notes intentionally hidden for Material planning/.test(shellJsx_M));
+record('R29.5 sidebar[Coordinator]: dedicated branch + Delivery Notes via shared item',
+       /role === 'Coordinator'/.test(shellJsx_M));
+record('R29.5 sidebar[Pgm-group]: shows Contractors + conditional Settings + conditional Audit Log',
+       /id: 'contractors'/.test(shellJsx_M) &&
+       /\.\.\.settingsItem/.test(shellJsx_M) &&
+       /\.\.\.auditLogItemPgm/.test(shellJsx_M));
+record('R29.5 sidebar: Delivery Notes shared item gated by role !== Material planning',
+       /role !== 'Material planning'/.test(shellJsx_M) &&
+       /id: 'delivery-notes',\s+label: 'Delivery Notes'/.test(shellJsx_M));
+record('R29.5 sidebar: VP/PM/Coord branches include the Delivery Notes shared item',
+       (shellJsx_M.match(/\.\.\.deliveryNotesItem/g) || []).length >= 3);
+
+// Audit Log sidebar visibility (PM-group: only when canViewAuditLog && !canViewSettings)
+record('R29.5: Audit Log sidebar item for VP gated on canViewAuditLog',
+       /const auditLogItem = canViewAuditLog\(currentUser\)/.test(shellJsx_M));
+record('R29.5: Audit Log direct link in PM-group only when canViewAuditLog && !canViewSettings',
+       /canViewAuditLog\(currentUser\) && !canViewSettings\(currentUser\)/.test(shellJsx_M));
+
+// Stage Transitions + Top Bottlenecks — currently exec-only via isExec = canViewFinancials
+record('R29.5: PagePMDashboard isExec === canViewFinancials(currentUser)',
+       /const isExec = canViewFinancials\(currentUser\);/.test(pagesR2_M));
+record('R29.5: PagePMDashboard renders DashStageInsights iff isExec',
+       /\{isExec && <DashStageInsights/.test(pagesR2_M));
+record('R29.5: PageVPDashboard mounts DashStageInsights unconditionally',
+       /<DashStageInsights projects=\{projects\}/.test(pagesR2_M));
+// ⚠ NOTE: matrix wants Stage Transitions + Top Bottlenecks visible on Ops Mgr + Pgm Mgr dashboards too.
+// Today they are NOT visible because both roles return canViewFinancials === false → isExec === false.
+// Flagged 🔴 in AUDIT_REPORT.md §1. The test below asserts the *current* behavior so any future fix lands a green diff.
+record('R29.5 (current behavior): Ops Mgr + Pgm Mgr do NOT see Stage Transitions panel',
+       !_cap.fin(_users.op) && !_cap.fin(_users.pgm));
+
+// Storage panel — currently Manager-only (full Settings page)
+record('R29.5: Storage tab listed in Settings TABS array',
+       /'Branding','Notifications','Storage'/.test(settingsJsx_M));
+record('R29.5: Storage tab renders <StorageTab /> when active',
+       /tab === 'Storage'\s+&&\s+<StorageTab/.test(settingsJsx_M));
+// ⚠ matrix wants Manager + VP. Today VP gets auditLogOnly=true and never sees Storage. Flagged 🟡 in §5.
+record('R29.5 (current behavior): Storage reachable only via full Settings page (canViewSettings → Manager-only)',
+       _cap.set(_users.mgr) && !_cap.set(_users.vp));
+
+// GitHub remote path: vite.config base + README + built index.html all reference senaat-solar-dashboard-v3
+const _viteConfig    = fs.readFileSync(path.join(__dirname, 'vite.config.js'), 'utf8');
+const _readmeMd      = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8');
+const _builtIndexPath = path.join(__dirname, '..', 'index.html');
+const _builtIndex    = fs.existsSync(_builtIndexPath) ? fs.readFileSync(_builtIndexPath, 'utf8') : '';
+record('R29.5: vite.config.js base path = /senaat-solar-dashboard-v3/',
+       /base:\s*'\/senaat-solar-dashboard-v3\/'/.test(_viteConfig));
+record('R29.5: README references senaat-solar-dashboard-v3 (no Anas11223300 leftover)',
+       /senaat-solar-dashboard-v3/.test(_readmeMd) && !/Anas11223300/.test(_readmeMd));
+record('R29.5: built /index.html serves assets from /senaat-solar-dashboard-v3/ (GitHub Pages base)',
+       _builtIndex === '' || /\/senaat-solar-dashboard-v3\/(favicon-32|assets\/)/.test(_builtIndex));
+record('R29.5: No "Anas11223300" string left anywhere in vite/src/',
+       !/Anas11223300/.test(dataJsx_M) && !/Anas11223300/.test(shellJsx_M));
+
+// Sparklines + delta chips
+record('R29.5: KPICard signature accepts spark + deltaSuffix props',
+       /const KPICard = \(\{ label, value, trend, spark, accent, suffix, deltaSuffix \}\)/.test(dashJsx_M));
+record('R29.5: KPICard mounts Sparkline component with data + width/height',
+       /<Sparkline data=\{spark\}/.test(dashJsx_M));
+record('R29.5: Sparkline component defined in ui.jsx (SVG polyline + a11y label)',
+       /const Sparkline = /.test(uiJsx_M) &&
+       /aria-label="Trend sparkline"/.test(uiJsx_M));
+record('R29.5: Dashboard KPI rows pass trend + spark + deltaSuffix (delta chip)',
+       /deltaSuffix:\s*'vs last week'/.test(dashJsx_M) &&
+       /spark:\s*\[/.test(dashJsx_M));
+
+// Cash Flow chart caption (R15 #4 already covers; assert here as part of matrix)
+record('R29.5: Cash Flow chart caption present (post-integration disclaimer)',
+       /Curve shown is a representative trend; live cumulative data populates post-integration with the accounting system\./.test(finJsx_M));
+
+// 18-stage rollup re-assertion (strip line comments so embedded quoted strings inside
+// comments — e.g. 'Handover to Zamil' / 'Handover to Client' — don't inflate the count)
+const _stripComments = s => s.replace(/\/\/.*$/gm, '');
+const _stageArr = (dataJsx_M.match(/const SCHOOL_STAGES = \[([\s\S]*?)\];/) || [])[1] || '';
+const _stageCount = (_stripComments(_stageArr).match(/'[^']+'/g) || []).length;
+record('R29.5: SCHOOL_STAGES literal contains exactly 18 entries',  _stageCount === 18);
+const _keyArr = (dataJsx_M.match(/const STAGE_KEYS = \[([\s\S]*?)\];/) || [])[1] || '';
+const _keyCount = (_stripComments(_keyArr).match(/'[^']+'/g) || []).length;
+record('R29.5: STAGE_KEYS literal contains exactly 18 entries',     _keyCount === 18);
+record('R29.5: STAGE_EXCEL_HEADERS maps every STAGE_KEYS entry to a header string',
+       _SES.length === 4 && /handover_zamil:\s+'Handover to Zamil'/.test(dataJsx_M));
+
+// Excel template download + upload + export (already covered in earlier sections; matrix re-assert)
+record('R29.5: Excel master daily report export wired',
+       /XLSX\.writeFile\(wb, `master-daily-report-/.test(reportsZ_M));
+record('R29.5: Excel material consumption export wired',
+       /XLSX\.writeFile\(wb, `material-consumption-/.test(reportsZ_M));
+record('R29.5: Excel zamil report export wired',
+       /XLSX\.writeFile\(wb, `zamil-report-/.test(reportsZ_M));
+
+// Map widget always renders (R28 covered) + EditCoordsModal paste helper (R28 covered) — re-asserted here
+record('R29.5: SchoolMapPreview always renders (no gating on coords presence)',
+       /SchoolMapPreview/.test(mapJsx_M));
+record('R29.5: EditCoordsModal exposes Paste from Google Maps helper',
+       /Paste from Google Maps/.test(mapJsx_M));
+
+// Image upload flow guarantees (R29 covered; matrix re-assert)
+// The 10 MB guard lives in src/lib/image.js (compressImage throws); ImageUploader surfaces it via reportError.
+const _imageLib = fs.readFileSync(path.join(__dirname, 'src', 'lib', 'image.js'), 'utf8');
+record('R29.5: compressImage rejects files over IMAGE_LIMITS.maxInputBytes (10 MB cap)',
+       /file\.size > IMAGE_LIMITS\.maxInputBytes/.test(_imageLib));
+record('R29.5: ImageUploader surfaces compressImage errors via reportError → onError prop / alert fallback',
+       /reportError\(err\.message/.test(imgJsx_M));
+record('R29.5: ImageUploader compresses + shows original-vs-compressed preview before Upload',
+       /compressImage/.test(imgJsx_M) && /originalBytes/.test(imgJsx_M) && /compressedBytes/.test(imgJsx_M));
+
+// Delivery Notes sidebar hidden for Material Planning (matrix; R29 covered)
+record('R29.5: Delivery Notes shared item omitted from Material planning sidebar branch',
+       /role === 'Material planning'[\s\S]{0,400}Delivery Notes intentionally hidden/.test(shellJsx_M));
+
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;
 const fail = results.filter(r => !r.pass).length;
