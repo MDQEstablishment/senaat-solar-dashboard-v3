@@ -553,11 +553,14 @@ record('R19 Item #1: Tinted category panels (mechanical/electrical/commissioning
        /catKey="commissioning"/.test(dashJsxR19) &&
        /catKey="handover"/.test(dashJsxR19));
 
-// R19 Item #2 — Project Detail Stages view funnel + 18-cell strip + filter chip.
-record('R19 Item #2: Project Detail Stages view renders funnel + 18-cell strip',
+// R19 Item #2 → R20: Project Detail Stages view surfaces all 18 stages in a
+// clickable form with a filter chip. R19 used a horizontal funnel + scrub strip;
+// R20 swapped to a vertical list because real distributions cluster at 3-4 stages
+// and the horizontal funnel collapsed empty segments into invisible slivers.
+record('R19 Item #2 → R20: Project Detail Stages view surfaces all 18 stages',
        /Schools at each stage/.test(schoolsR19) &&
-       /data-testid="stages-view-scrub-strip"/.test(schoolsR19) &&
-       /gridTemplateColumns: 'repeat\(18, 1fr\)'/.test(schoolsR19));
+       (/data-testid="stages-view-vertical"/.test(schoolsR19) ||
+        /data-testid="stages-view-scrub-strip"/.test(schoolsR19)));
 record('R19 Item #2: Stages view shows a removable filter chip when a stage is selected',
        /Filtered by stage:/.test(schoolsR19) &&
        /Clear stage filter/.test(schoolsR19));
@@ -616,6 +619,37 @@ record('R19.1 D: StageCard progress bar visible — height 4, slate-100 bg, cate
        /data-testid="stage-card-progress"/.test(stageR191) &&
        /height: 4, background: '#F1F5F9'/.test(stageR191) &&
        /background: catColors\.dot \|\| '#0B2545'/.test(stageR191));
+
+// ── K8. Round 20 — Project Detail Stages view goes VERTICAL ─────────────
+const schoolsR20 = read('page-schools-list.jsx');
+
+record('R20: Project Detail Vertical stage list component defined',
+       /function SchoolsStagesVertical/.test(schoolsR20) &&
+       /data-testid="stages-view-vertical"/.test(schoolsR20) &&
+       /STAGE_KEYS\.map\(\(key, i\)/.test(schoolsR20));
+record('R20: Vertical stage list renders 18 rows (one per stage S01-S18)',
+       /data-testid=\{`stages-view-row-S\$\{String\(i \+ 1\)\.padStart\(2, '0'\)\}`\}/.test(schoolsR20) &&
+       /data-stage-index=\{i\}/.test(schoolsR20));
+record('R20: Active rows visually distinct from empty rows (height + opacity)',
+       /const hasData = count > 0/.test(schoolsR20) &&
+       /const rowHeight = hasData \? 60 : 26/.test(schoolsR20) &&
+       /const rowOpacity = hasData \? 1 : 0\.4/.test(schoolsR20) &&
+       /fontSize: hasData \? 24 : 12/.test(schoolsR20));
+record('R20: Empty rows stay in place (not collapsed) with dashed-line placeholder',
+       /borderTop: '1px dashed #E2E8F0'/.test(schoolsR20) &&
+       /color: hasData \? '#0F172A' : '#94A3B8'/.test(schoolsR20));
+record('R20: Clicking a stage row filters the school table',
+       /onClick=\{\(\) => onSetStage\(isActive \? null : i\)\}/.test(schoolsR20) &&
+       /onSetStage=\{\(i\) => setFunnelStage\(i\)\}/.test(schoolsR20));
+record('R20: Old horizontal funnel + scrub strip removed from Stages view',
+       !/data-testid="stages-view-scrub-strip"/.test(schoolsR20) &&
+       !/Horizontal funnel — single tall row, segments proportional to counts/.test(schoolsR20));
+record('R20: Filter chip + identity school table preserved from R19',
+       /Filtered by stage:/.test(schoolsR20) &&
+       /aria-label="Clear stage filter"/.test(schoolsR20) &&
+       /Current stage/.test(schoolsR20));
+record('R20: SchoolsStagesVertical exposed on window',
+       /SchoolsStagesVertical \}\);/.test(schoolsR20));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

@@ -381,6 +381,116 @@ function SchoolsCompactTable({ rows, canAdd, onOpen, onDelete, onContractorChang
 // Funnel segments are sized by the count at each stage; the 24-px strip below is
 // the click target. A removable filter chip persists the user's selection and
 // narrows the identity table underneath.
+// R20 — Project Detail Stages view, VERTICAL layout (replaces R19's horizontal funnel
+// + 24-px scrub strip). Reasoning: real-world distributions cluster heavily at 3-4
+// stages (e.g. Dammam project: 4 active rows out of 18). Horizontal funnel collapses
+// 14 zero-count segments into invisible slivers; the vertical layout always shows the
+// full pipeline scaffold S01→S18 with empty rows recessed but still labeled.
+function SchoolsStagesVertical({ totalRows, distPerStage, activeStage, onSetStage }) {
+  const nfmt = new Intl.NumberFormat('en-US');
+  return (
+    <div data-testid="stages-view-vertical" style={{ display: 'flex', flexDirection: 'column' }}>
+      {STAGE_KEYS.map((key, i) => {
+        const cat = STAGE_CATEGORY[key];
+        const cc = STAGE_CATEGORY_COLORS[cat] || {};
+        const count = distPerStage[i] || 0;
+        const pct = totalRows > 0 ? Math.round((count / totalRows) * 100) : 0;
+        const isActive = activeStage === i;
+        const hasData = count > 0;
+        // Two visual modes: active rows are tall and prominent; empty rows are
+        // short and dim but still labelled so the full pipeline scaffold is visible.
+        const rowHeight = hasData ? 60 : 26;
+        const rowOpacity = hasData ? 1 : 0.4;
+        return (
+          <button key={key} type="button"
+            data-testid={`stages-view-row-S${String(i + 1).padStart(2, '0')}`}
+            data-stage-index={i}
+            data-stage-active={hasData ? '1' : '0'}
+            data-stage-selected={isActive ? '1' : '0'}
+            onClick={() => onSetStage(isActive ? null : i)}
+            style={{
+              all: 'unset',
+              display: 'flex', alignItems: 'center', gap: 12,
+              height: rowHeight, minHeight: rowHeight,
+              padding: '0 14px',
+              borderTop: i === 0 ? 'none' : '0.5px solid #E2E8F0',
+              background: isActive ? '#F8FAFC' : 'transparent',
+              opacity: rowOpacity,
+              cursor: 'pointer',
+              transition: 'background 0.12s ease',
+            }}
+            onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#F8FAFC'; }}
+            onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+          >
+            {/* SXX chip — slate-100 background, mono 11px. */}
+            <span style={{
+              flex: '0 0 auto',
+              fontFamily: 'monospace', fontSize: 11, fontWeight: 600,
+              background: '#F1F5F9', color: '#475569',
+              padding: '2px 6px', borderRadius: 4,
+            }}>
+              S{String(i + 1).padStart(2, '0')}
+            </span>
+
+            {/* Category dot */}
+            <span style={{
+              flex: '0 0 auto',
+              width: hasData ? 8 : 6, height: hasData ? 8 : 6,
+              borderRadius: 99, background: cc.dot,
+            }} />
+
+            {/* Stage label */}
+            <span style={{
+              flex: '1 1 auto', minWidth: 0,
+              fontSize: hasData ? 13 : 11,
+              fontWeight: hasData ? 600 : 400,
+              color: hasData ? '#0F172A' : '#94A3B8',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {SCHOOL_STAGES[i]}
+            </span>
+
+            {/* Mini progress bar — only when count > 0; empty rows show a thin gray dash placeholder. */}
+            {hasData ? (
+              <div style={{
+                flex: '0 0 auto', width: 260, height: 6,
+                background: '#F1F5F9', borderRadius: 99, overflow: 'hidden',
+              }}>
+                <div style={{
+                  height: '100%', background: cc.dot,
+                  width: Math.max(pct, 0.4) + '%', borderRadius: 99,
+                }} />
+              </div>
+            ) : (
+              <span style={{
+                flex: '0 0 auto', width: 260,
+                borderTop: '1px dashed #E2E8F0',
+              }} />
+            )}
+
+            {/* Count + percent */}
+            <span style={{
+              flex: '0 0 auto', minWidth: 90, textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums', color: hasData ? '#0F172A' : '#94A3B8',
+            }}>
+              <span style={{
+                fontSize: hasData ? 24 : 12,
+                fontWeight: hasData ? 600 : 400,
+                lineHeight: 1,
+              }}>{nfmt.format(count)}</span>
+              <span style={{
+                fontSize: hasData ? 11 : 10,
+                color: '#94A3B8',
+                marginLeft: 8,
+              }}>{pct}%</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function SchoolsStagesTable({ rows, onOpen }) {
   const [funnelStage, setFunnelStage] = React.useState(null);
 
@@ -412,15 +522,6 @@ function SchoolsStagesTable({ rows, onOpen }) {
   const totalRows = rows.length;
   const nfmt = new Intl.NumberFormat('en-US');
 
-  // Build funnel segments including the not-started bucket on the far left.
-  const segs = [
-    { i: -1, label: 'Not started', cat: 'none', count: dist.notStarted, bg: '#E5E7EB', fg: '#475569' },
-    ...STAGE_KEYS.map((key, i) => {
-      const cat = STAGE_CATEGORY[key];
-      const cc = STAGE_CATEGORY_COLORS[cat] || {};
-      return { i, key, label: SCHOOL_STAGES[i], cat, count: dist.perStage[i], bg: cc.dot, fg: '#fff' };
-    }),
-  ];
   const activeStageName = funnelStage != null ? SCHOOL_STAGES[funnelStage] : null;
   const activeKey       = funnelStage != null ? STAGE_KEYS[funnelStage]    : null;
   const activeCat       = activeKey ? STAGE_CATEGORY[activeKey] : null;
@@ -429,65 +530,21 @@ function SchoolsStagesTable({ rows, onOpen }) {
   return (
     <Card padding="p-0">
       <div className="p-4 border-b border-soft">
-        <div className="flex items-baseline justify-between mb-2">
-          <div className="text-sm font-semibold ink-on-dark">Schools at each stage</div>
-          <div className="text-[11px] text-ink-500">{nfmt.format(totalRows)} schools · click any stage to filter</div>
-        </div>
-        {/* Horizontal funnel — single tall row, segments proportional to counts. */}
-        <div style={{ display: 'flex', height: 42, borderRadius: 6, overflow: 'hidden', background: '#F1F2F5' }}>
-          {segs.map(seg => {
-            const w = totalRows > 0 ? (seg.count / totalRows) * 100 : 0;
-            if (w < 0.5) return null;
-            const isActive = seg.i !== -1 && funnelStage === seg.i;
-            return (
-              <div key={seg.i}
-                onClick={() => seg.i !== -1 && setFunnelStage(funnelStage === seg.i ? null : seg.i)}
-                title={seg.label + ' · ' + nfmt.format(seg.count) + ' schools'}
-                style={{
-                  width: w + '%', background: seg.bg, borderRight: '1px solid rgba(255,255,255,0.5)',
-                  position: 'relative', cursor: seg.i !== -1 ? 'pointer' : 'default',
-                  outline: isActive ? '2px solid #0B2545' : 'none',
-                  outlineOffset: isActive ? '-2px' : 0, zIndex: isActive ? 2 : 1,
-                }}>
-                {w > 4 && (
-                  <span style={{ position: 'absolute', top: '50%', left: '50%',
-                    transform: 'translate(-50%,-50%)', color: seg.fg, fontSize: 11, fontWeight: 600,
-                    whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                    {seg.i !== -1 ? 'S' + String(seg.i + 1).padStart(2, '0') + ' · ' : ''}{nfmt.format(seg.count)}
-                  </span>
-                )}
-              </div>
-            );
-          })}
+        <div className="flex items-baseline justify-between mb-3">
+          <div>
+            <div className="text-sm font-semibold ink-on-dark">Schools at each stage</div>
+            <div className="text-[11px] text-ink-500 mt-0.5">Full pipeline S01→S18 · empty rows stay in place · click any row to filter</div>
+          </div>
+          <div className="text-[11px] text-ink-500">{nfmt.format(totalRows)} schools{dist.notStarted ? ` · ${nfmt.format(dist.notStarted)} not started` : ''}</div>
         </div>
 
-        {/* 24-px scrub strip — one mini-cell per stage, click to filter. */}
-        <div data-testid="stages-view-scrub-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 3, marginTop: 10, height: 24 }}>
-          {STAGE_KEYS.map((key, i) => {
-            const cat = STAGE_CATEGORY[key];
-            const cc = STAGE_CATEGORY_COLORS[cat] || {};
-            const isActive = funnelStage === i;
-            const count = dist.perStage[i];
-            return (
-              <button key={key} type="button"
-                onClick={() => setFunnelStage(isActive ? null : i)}
-                title={`S${String(i + 1).padStart(2, '0')} · ${SCHOOL_STAGES[i]} · ${count}`}
-                style={{
-                  border: isActive ? '1px solid #0B2545' : '0.5px solid #E2E8F0',
-                  borderRadius: 4, padding: 0, background: isActive ? '#fff' : '#FAFAFA',
-                  display: 'flex', alignItems: 'stretch', cursor: 'pointer', overflow: 'hidden',
-                }}>
-                <span style={{ width: 4, background: cc.dot, flexShrink: 0 }} />
-                <span style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10, fontVariantNumeric: 'tabular-nums', color: isActive ? '#0B2545' : '#475569', fontWeight: 600 }}>
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        {/* R20: VERTICAL stage list — 18 rows top-to-bottom, active rows prominent,
+            empty rows recessed in place. */}
+        <SchoolsStagesVertical totalRows={totalRows} distPerStage={dist.perStage}
+          activeStage={funnelStage}
+          onSetStage={(i) => setFunnelStage(i)} />
 
-        {/* Filter chip — appears only when a stage is selected. */}
+        {/* Filter chip — unchanged from R19, appears only when a stage is selected. */}
         {funnelStage != null && (
           <div className="mt-3" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{
@@ -568,4 +625,4 @@ function SchoolsStagesTable({ rows, onOpen }) {
   );
 }
 
-Object.assign(window, { PageSchoolsList, SchoolsStagesTable });
+Object.assign(window, { PageSchoolsList, SchoolsStagesTable, SchoolsStagesVertical });
