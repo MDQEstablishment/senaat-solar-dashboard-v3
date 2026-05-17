@@ -110,6 +110,84 @@ function useStoreR2(base) {
   const [materialUsage, setMaterialUsage]   = React.useState(() => []);  // { id, schoolId, materialNo, qty, unit, date, by }
   const [contractorsLocal, setContractorsLocal] = React.useState(() => CONTRACTORS.map(c => ({ ...c })));
 
+  // R29 — project image attachments + Delivery Notes.
+  // projectCover[projectId]   = { path, url, bytes, ... }  (single cover)
+  // projectGallery[projectId] = [{ path, url, bytes, ... }] (up to 50)
+  // schoolStagePhotos[`${sid}|${stageKey}`] = [...]          (up to 5 per stage)
+  // deliveryNotes              = [{ id, projectId, schoolId, ... }]
+  // All four live in memory only; the MemoryImageStorage adapter (lib/storage.js)
+  // holds the actual blobs/dataUrls. Round 30 will replace both layers with
+  // Supabase Postgres rows + Supabase Storage.
+  const [projectCover, setProjectCover]           = React.useState(() => ({}));
+  const [projectGallery, setProjectGallery]       = React.useState(() => ({}));
+  const [schoolStagePhotos, setSchoolStagePhotos] = React.useState(() => ({}));
+  const [deliveryNotes, setDeliveryNotes]         = React.useState(() => (typeof DELIVERY_NOTES_SEED !== 'undefined' ? DELIVERY_NOTES_SEED : []));
+
+  const setProjectCoverFor = (projectId, list) => {
+    setProjectCover(m => ({ ...m, [projectId]: list && list[0] ? list[0] : null }));
+  };
+  const setProjectGalleryFor = (projectId, list) => {
+    setProjectGallery(m => ({ ...m, [projectId]: list || [] }));
+  };
+  const setSchoolStagePhotosFor = (schoolId, stageKey, list) => {
+    setSchoolStagePhotos(m => ({ ...m, [`${schoolId}|${stageKey}`]: list || [] }));
+  };
+  const getSchoolStagePhotos = (schoolId, stageKey) => {
+    return schoolStagePhotos[`${schoolId}|${stageKey}`] || [];
+  };
+
+  // R29 Delivery Notes CRUD
+  const addDeliveryNote = (data, currentUser) => {
+    const id = 'dn-' + Date.now();
+    const note = {
+      id,
+      projectId:  data.projectId  || null,
+      schoolId:   data.schoolId   || null,
+      stageKey:   data.stageKey   || null,
+      deliveryDate: data.deliveryDate || new Date().toISOString().slice(0, 10),
+      supplier:   data.supplier   || '',
+      contractor: data.contractor || '',
+      items:      Array.isArray(data.items) && data.items.length ? data.items : [{ description: '', quantity: '', unit: '' }],
+      receivedBy: data.receivedBy || '',
+      signatureDataUrl: data.signatureDataUrl || null,
+      photos:     Array.isArray(data.photos) ? data.photos : [],
+      notes:      data.notes || '',
+      status:     data.status || 'received',
+      createdAt:  new Date().toISOString(),
+      createdBy:  currentUser?.id || null,
+    };
+    setDeliveryNotes(ns => [note, ...ns]);
+    setTimeout(() => {
+      if (typeof logAudit === 'function') logAudit({
+        actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
+        action: 'CREATE', entityType: 'delivery_note', entityId: id,
+        entityLabel: `${note.supplier || 'supplier'} → ${note.schoolId || 'school'}`,
+        summary: `Created delivery note ${id} for ${note.schoolId || 'a school'} (${note.items.length} item${note.items.length === 1 ? '' : 's'}, status ${note.status})`,
+      });
+    }, 0);
+    return note;
+  };
+  const updateDeliveryNote = (id, patch, currentUser) => {
+    setDeliveryNotes(ns => ns.map(n => n.id === id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n));
+    setTimeout(() => {
+      if (typeof logAudit === 'function') logAudit({
+        actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
+        action: 'UPDATE', entityType: 'delivery_note', entityId: id,
+        entityLabel: id, summary: `Updated delivery note ${id}`,
+      });
+    }, 0);
+  };
+  const deleteDeliveryNote = (id, currentUser) => {
+    setDeliveryNotes(ns => ns.filter(n => n.id !== id));
+    setTimeout(() => {
+      if (typeof logAudit === 'function') logAudit({
+        actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
+        action: 'DELETE', entityType: 'delivery_note', entityId: id,
+        entityLabel: id, summary: `Deleted delivery note ${id}`,
+      });
+    }, 0);
+  };
+
   // Round 13 H1: Add / edit / delete contractors with audit log.
   const addContractor = (data, currentUser) => {
     const id = 'c-' + Date.now();
@@ -587,6 +665,10 @@ function useStoreR2(base) {
     rolePermissions, toggleRolePermission, resetRolePermissions,
     themeColors, themeLogo, updateThemeColor, updateThemeLogo, resetBranding,
     notificationTemplates, updateNotificationTemplate,
+    // R29 — image attachments + Delivery Notes
+    projectCover, projectGallery, schoolStagePhotos, getSchoolStagePhotos,
+    setProjectCoverFor, setProjectGalleryFor, setSchoolStagePhotosFor,
+    deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote,
   };
 }
 

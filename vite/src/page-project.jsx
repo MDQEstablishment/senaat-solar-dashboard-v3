@@ -263,6 +263,8 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
     lifecycleStages, addLifecycleStage, updateLifecycleStage, deleteLifecycleStage, reorderLifecycleStage,
     projectLifecycleState, toggleProjectLifecycleStage,
     tasks: allTasks, schools: allSchools,
+    // R29 — project cover + gallery state (in-memory)
+    projectCover, projectGallery, setProjectCoverFor, setProjectGalleryFor,
   } = store || {};
 
   const sortedLifecycle = React.useMemo(
@@ -289,7 +291,7 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
 
   // Tabs visible to current user
   const TABS = React.useMemo(() => {
-    const t = ['Overview', 'Schools', 'Tasks'];
+    const t = ['Overview', 'Schools', 'Tasks', 'Gallery'];
     if (canViewFinancials(currentUser)) t.push('Financials');
     t.push('Contractors');
     return t;
@@ -331,6 +333,18 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           <div className="text-3xl font-bold tnum text-navy-900">{lifecycleProgress}%</div>
         </div>
       </div>
+
+      {/* R29 — Project cover photo. Always renders the slot: if a cover exists,
+          shows the 16:9 banner with a remove button; otherwise shows an inline
+          Add-cover-photo dropzone. */}
+      {window.ImageUploader && (
+        <window.ImageUploader
+          path={`projects/${project.id}/cover`}
+          maxCount={1}
+          coverMode={true}
+          value={projectCover && projectCover[project.id] ? [projectCover[project.id]] : []}
+          onChange={(list) => setProjectCoverFor && setProjectCoverFor(project.id, list)} />
+      )}
 
       {/* Lifecycle */}
       <Card>
@@ -435,6 +449,19 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
                 {projTasks.length === 0 && <div className="text-xs text-ink-500 italic">No tasks visible to you on this project.</div>}
                 {projTasks.length > 30 && <div className="text-[11px] text-ink-500 italic">+ {projTasks.length - 30} more — see My Tasks for full list.</div>}
               </div>
+            </div>
+          )}
+          {tab === 'Gallery' && (
+            <div>
+              <SectionTitle icon="upload" title={`Project gallery · ${(projectGallery[project.id] || []).length} photos`}
+                subtitle="Up to 50 photos. Each is compressed before upload — large phone photos shrink to ~200-500 KB." />
+              {window.ImageUploader && (
+                <window.ImageUploader
+                  path={`projects/${project.id}/gallery`}
+                  maxCount={50}
+                  value={projectGallery[project.id] || []}
+                  onChange={(list) => setProjectGalleryFor && setProjectGalleryFor(project.id, list)} />
+              )}
             </div>
           )}
           {tab === 'Financials' && canViewFinancials(currentUser) && (

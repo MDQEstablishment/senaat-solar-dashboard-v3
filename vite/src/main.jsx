@@ -104,9 +104,12 @@ import './data.jsx';
 import './data-r2.jsx';
 import './icons.jsx';
 import './ui.jsx';
+import './lib/image.js';
+import './lib/storage.js';
 import './components/StageCard.jsx';
 import './components/StageChecklistTable.jsx';
 import './components/MapPreview.jsx';
+import './components/ImageUploader.jsx';
 import './store-r2.jsx';
 import './store.jsx';
 import './chat-panel.jsx';
@@ -126,6 +129,7 @@ import './page-settings.jsx';
 import './pages-r2.jsx';
 import './page-login.jsx';
 import './page-reports-zamil.jsx';
+import './page-delivery-notes.jsx';
 import './app.jsx';
 
 // ── Session persistence wrapper (H3 / M7) ───────────────────────────────────

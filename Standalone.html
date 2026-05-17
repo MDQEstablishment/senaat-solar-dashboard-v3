@@ -1663,10 +1663,42 @@ const AUDIT_LOG_SEED = (() => {
   return list;
 })();
 
+// ─────── R29 Delivery Notes seed ───────
+// 12 sample notes spread across 6 projects / 6 stages / multiple suppliers
+// so the list view isn't empty on first load. No photos / signatures attached
+// (those need the in-browser image pipeline, which the seed-data layer can't run).
+const DELIVERY_NOTES_SEED = (() => {
+  const samples = [
+    ['p-mad','SS-ZAM-MAD1001','pv_module',     '2026-04-12','SolarTech Arabia',     'TBN',                   'Eng. Sami Hassan · Site Engineer', 'received',  [['PV modules 540W', 36, 'pcs'], ['Cable ties 30cm', 200, 'pcs']]],
+    ['p-mad','SS-ZAM-MAD1004','pv_mounting',   '2026-04-15','Al-Yamamah Steel',     'TBN',                   'Mohammed Al-Qahtani · Foreman',    'received',  [['Mounting rails 4m', 24, 'pcs'], ['L-feet brackets', 96, 'pcs']]],
+    ['p-dam','SS-ZAM-DAM1002','cable_tray',    '2026-04-18','Saudi Cable Group',    'Eastern Solar Co.',     'Ali Hasanain · PM',                'received',  [['Cable tray 200x100', 60, 'm'], ['Tray supports', 30, 'pcs']]],
+    ['p-dam','SS-ZAM-DAM1010','inverters',     '2026-04-22','Huawei MENA',          'Eastern Solar Co.',     'Nasser Alhajri · PM',              'received',  [['SUN2000-100KTL', 4, 'pcs']]],
+    ['p-jaz','SS-ZAM-JAZ1005','dc_cables',     '2026-04-09','Jazan Power Supplies', 'Jazan Power Solutions', 'Waleed Dawood · PM',               'received',  [['DC cable 6mm² red',  500, 'm'], ['DC cable 6mm² black', 500, 'm']]],
+    ['p-hai','SS-ZAM-HAI1008','smdb',          '2026-04-25','ABB Saudi',            'Northern Electrics',    'Muhammad Rafique · PM',            'received',  [['SMDB enclosure 800x600', 6, 'pcs'], ['MCCB 250A', 6, 'pcs']]],
+    ['p-qas','SS-ZAM-QAS1015','data_logger',   '2026-04-28','Schneider Electric',   'Qassim Solar Co.',      'Eng. Khaled Al-Mutairi',           'received',  [['Data logger PAC2200', 8, 'pcs']]],
+    ['p-naj','SS-ZAM-NAJ1003','earthing',      '2026-04-30','Najran Hardware',      'Najran Solar Co.',      'Nashir AlSagoor · PM',             'disputed',  [['Copper rod 1.5m', 40, 'pcs'], ['Earthing clamp', 40, 'pcs']]],
+    ['p-mak1','SS-ZAM-MAK1006','foundation',   '2026-05-01','Holcim Saudi',         'Makkah Building Co.',   'Ali Hasanain · PM',                'received',  [['Cement bags 50kg',  120, 'pcs'], ['Steel rebar 12mm', 80,  'pcs']]],
+    ['p-mak1','SS-ZAM-MAK1009','pv_module',    '2026-05-03','SolarTech Arabia',     'Makkah Building Co.',   'Hassan Mohammed · Foreman',        'received',  [['PV modules 540W', 48, 'pcs']]],
+    ['p-jof','SS-ZAM-JOF1002','ac_cables',     '2026-05-04','Saudi Cable Group',    'Al Jouf Solar',         'Muhammad Rafique · PM',            'draft',     [['AC cable 70mm²', 200, 'm']]],
+    ['p-nb', 'SS-ZAM-NB1005', 'breaker',       '2026-05-05','Schneider Electric',   'Northern Borders Co.',  'Muhammad Rafique · PM',            'received',  [['ACB 800A', 2, 'pcs'], ['MCCB 400A', 4, 'pcs']]],
+  ];
+  return samples.map(([projectId, schoolId, stageKey, deliveryDate, supplier, contractor, receivedBy, status, items], i) => ({
+    id: 'dn-seed-' + (i + 1),
+    projectId, schoolId, stageKey, deliveryDate, supplier, contractor, receivedBy, status,
+    items: items.map(([description, quantity, unit]) => ({ description, quantity, unit })),
+    signatureDataUrl: null,
+    photos: [],
+    notes: '',
+    createdAt: new Date(new Date(deliveryDate).getTime() + 3600000).toISOString(),
+    createdBy: 'u-pgm',
+  }));
+})();
+
 Object.assign(window, {
   STAGE_STATUSES_DEFAULT, LIFECYCLE_STAGES_DEFAULT, CUSTOM_FIELDS_DEFAULT,
   MILESTONE_TEMPLATES_DEFAULT, MILESTONE_ENTRIES_DEFAULT,
   FINANCIAL_ENTRIES_DEFAULT, ESCALATIONS_DEFAULT, AUDIT_LOG_SEED,
+  DELIVERY_NOTES_SEED,
 });
 
 </script>
@@ -1979,6 +2011,201 @@ Object.assign(window, {
   cls, Avatar, Pill, StatusPill, ProgressBar, Card, SectionTitle, Button, TextField, Select,
   Tabs, Modal, SlideOver, EmptyState, Sparkline, TrendArrow, ScoreBadge, RowActions,
 });
+
+</script>
+<script type="text/babel">
+// src/lib/image.js
+// R29 — image compression utilities.
+// Side-effect file. Exposes `window.IMAGE_LIMITS`, `window.compressImage`,
+// `window.formatBytes`. Imported once from main.jsx and inlined in the
+// Standalone bundle by SENAAT Solar Dashboard.html.
+//
+// Compression strategy:
+//   • Validate MIME against IMAGE_LIMITS.acceptedMimes
+//   • Validate raw input size against maxInputBytes (10 MB)
+//   • Resize to fit IMAGE_LIMITS.maxDimension (1920 px) on the long edge
+//     via offscreen canvas (image is read into an <img>, drawn into a
+//     canvas at the target size, exported as JPEG)
+//   • Iterate quality down (0.78 → 0.7 → 0.6 → 0.5 → 0.4) until the
+//     resulting blob is <= IMAGE_LIMITS.maxOutputBytes (500 KB). If even
+//     0.4 quality misses the target, return the smallest version anyway
+//     and let the caller decide.
+//
+// The function returns { blob, dataUrl, width, height, originalBytes,
+// compressedBytes, quality } so the UI can render a preview + before/after
+// size badge without re-reading the file.
+const IMAGE_LIMITS = {
+  maxInputBytes:  10 * 1024 * 1024,
+  maxOutputBytes: 500 * 1024,
+  maxDimension:   1920,
+  jpegQuality:    0.78,
+  acceptedMimes:  ['image/jpeg', 'image/png', 'image/webp', 'image/heic'],
+};
+
+function formatBytes(n) {
+  if (n == null || !Number.isFinite(n)) return '—';
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function _loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e || new Error('Image decode failed')); };
+    img.src = url;
+  });
+}
+
+function _canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve) => {
+    if (canvas.toBlob) {
+      canvas.toBlob(b => resolve(b), type, quality);
+    } else {
+      // Fallback: dataURL → blob (older browsers; not expected in our target env).
+      const dataUrl = canvas.toDataURL(type, quality);
+      const bin = atob(dataUrl.split(',')[1]);
+      const u8  = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      resolve(new Blob([u8], { type }));
+    }
+  });
+}
+
+function _blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(r.error || new Error('FileReader failed'));
+    r.readAsDataURL(blob);
+  });
+}
+
+async function compressImage(file) {
+  if (!file) throw new Error('No file provided');
+  if (IMAGE_LIMITS.acceptedMimes.indexOf(file.type) === -1 && !/image\//.test(file.type || '')) {
+    throw new Error('Unsupported file type. Accepted: JPEG, PNG, WebP, HEIC.');
+  }
+  if (file.size > IMAGE_LIMITS.maxInputBytes) {
+    throw new Error(`File too large (${formatBytes(file.size)} > ${formatBytes(IMAGE_LIMITS.maxInputBytes)}).`);
+  }
+  const img = await _loadImage(file);
+  // Resize so the long edge is <= maxDimension
+  const longEdge = Math.max(img.naturalWidth, img.naturalHeight);
+  const scale   = longEdge > IMAGE_LIMITS.maxDimension ? IMAGE_LIMITS.maxDimension / longEdge : 1;
+  const width   = Math.round(img.naturalWidth * scale);
+  const height  = Math.round(img.naturalHeight * scale);
+  const canvas  = document.createElement('canvas');
+  canvas.width  = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 0, 0, width, height);
+
+  const qualities = [IMAGE_LIMITS.jpegQuality, 0.7, 0.6, 0.5, 0.4];
+  let blob = null;
+  let usedQuality = IMAGE_LIMITS.jpegQuality;
+  for (const q of qualities) {
+    const b = await _canvasToBlob(canvas, 'image/jpeg', q);
+    if (!b) continue;
+    blob = b;
+    usedQuality = q;
+    if (b.size <= IMAGE_LIMITS.maxOutputBytes) break;
+  }
+  if (!blob) throw new Error('Compression failed (no blob produced).');
+  const dataUrl = await _blobToDataUrl(blob);
+  return {
+    blob, dataUrl, width, height,
+    originalBytes: file.size,
+    compressedBytes: blob.size,
+    quality: usedQuality,
+    mime: 'image/jpeg',
+  };
+}
+
+Object.assign(window, { IMAGE_LIMITS, compressImage, formatBytes });
+
+</script>
+<script type="text/babel">
+// src/lib/storage.js
+// R29 — image storage adapter. In-memory backend for the demo; the interface
+// matches what Supabase Storage exposes so Round 30 can swap the implementation
+// without touching call sites.
+//
+// API (all async, mirrors the Supabase Storage client surface):
+//   upload(path, blob, dataUrl, meta?)  → { path, url, uploadedAt }
+//   delete(path)                        → void
+//   list(prefix)                        → [{ path, url, uploadedAt, bytes }]
+//   estimatedBytes()                    → total bytes stored
+//   imageCount()                        → number of objects
+//   topPrefixes(depth, n)               → [{ prefix, bytes, count }]  for the Storage panel
+//
+// The `path` convention is documented in the spec:
+//   projects/{pid}/cover.jpg
+//   projects/{pid}/gallery/{photo_id}.jpg
+//   projects/{pid}/schools/{sid}/stages/{stage_key}/{photo_id}.jpg
+//   delivery-notes/{note_id}/{photo_id}.jpg
+class MemoryImageStorage {
+  constructor() { this.bucket = new Map(); }
+
+  async upload(path, blob, dataUrl, meta) {
+    const rec = {
+      blob,
+      dataUrl,
+      bytes: (blob && blob.size) || 0,
+      uploadedAt: Date.now(),
+      meta: meta || null,
+    };
+    this.bucket.set(path, rec);
+    return { path, url: dataUrl, uploadedAt: rec.uploadedAt, bytes: rec.bytes };
+  }
+
+  async delete(path) {
+    this.bucket.delete(path);
+  }
+
+  async list(prefix) {
+    const out = [];
+    const pfx = prefix || '';
+    for (const [path, v] of this.bucket.entries()) {
+      if (path.startsWith(pfx)) {
+        out.push({ path, url: v.dataUrl, uploadedAt: v.uploadedAt, bytes: v.bytes });
+      }
+    }
+    out.sort((a, b) => b.uploadedAt - a.uploadedAt);
+    return out;
+  }
+
+  estimatedBytes() {
+    let n = 0;
+    for (const v of this.bucket.values()) n += v.bytes || 0;
+    return n;
+  }
+
+  imageCount() {
+    return this.bucket.size;
+  }
+
+  // Group by the first `depth` path segments, return the top `n` by bytes.
+  // Used by the Settings → Storage panel ("top 5 projects by storage").
+  topPrefixes(depth = 2, n = 5) {
+    const groups = new Map();
+    for (const [path, v] of this.bucket.entries()) {
+      const segments = path.split('/').slice(0, depth).join('/');
+      const g = groups.get(segments) || { prefix: segments, bytes: 0, count: 0 };
+      g.bytes += v.bytes || 0;
+      g.count += 1;
+      groups.set(segments, g);
+    }
+    return Array.from(groups.values())
+      .sort((a, b) => b.bytes - a.bytes)
+      .slice(0, n);
+  }
+}
+
+const imageStorage = new MemoryImageStorage();
+Object.assign(window, { MemoryImageStorage, imageStorage });
 
 </script>
 <script type="text/babel">
@@ -2552,6 +2779,239 @@ Object.assign(window, {
 
 </script>
 <script type="text/babel">
+// src/components/ImageUploader.jsx
+// R29 — Reusable ImageUploader.
+//
+// Props:
+//   path        path prefix for uploads, e.g. "projects/p-mad/gallery". Each
+//               photo is written as `${path}/${photoId}.jpg`.
+//   maxCount    maximum stored images (1 for cover, N for gallery/stage).
+//   value       array of { path, url, uploadedAt, bytes } already uploaded.
+//   onChange    (updatedArray) → void. Caller persists to store.
+//   coverMode   true → square 16:9 banner preview; false → grid of thumbnails.
+//   compact     true → smaller dropzone (for tight per-stage rows).
+//   onError     optional (msg) → void. If absent we fall back to alert().
+//
+// Behavior:
+//   1. File picker (single or multi) → for each file:
+//      • Reject non-image MIME → onError
+//      • Reject > IMAGE_LIMITS.maxInputBytes → onError
+//      • compressImage(file) → preview card with original vs compressed badge
+//      • User clicks Upload → imageStorage.upload(path/photoId, blob, dataUrl)
+//      • Append to value, call onChange
+//      • Enforce maxCount: hide Choose-file button when full
+//   2. Each thumbnail has hover Delete button.
+function ImageUploader({ path, maxCount = 5, value = [], onChange, coverMode = false, compact = false, onError }) {
+  const fileRef = React.useRef(null);
+  const [pending, setPending] = React.useState([]);   // [{ id, file, compressing, compressed, error }]
+  const [uploading, setUploading] = React.useState(false);
+  const [lightbox, setLightbox] = React.useState(null);
+
+  const reportError = (msg) => {
+    if (onError) onError(msg);
+    else if (typeof alert === 'function') alert(msg);
+    else console.error(msg);
+  };
+
+  const remaining = Math.max(0, maxCount - value.length);
+  const canAddMore = remaining > 0;
+  const nfmt = formatBytes; // window-global
+
+  const onPick = (e) => {
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
+    const slots = Math.max(0, maxCount - value.length - pending.length);
+    if (slots === 0) { reportError(`Max ${maxCount} image${maxCount === 1 ? '' : 's'} reached.`); return; }
+    const toProcess = files.slice(0, slots);
+    if (files.length > slots) reportError(`Only ${slots} more allowed; ignored ${files.length - slots} file(s).`);
+    const initial = toProcess.map((file, i) => ({
+      id: `p-${Date.now()}-${i}`, file, compressing: true, compressed: null, error: null,
+    }));
+    setPending(prev => [...prev, ...initial]);
+
+    initial.forEach(async (entry) => {
+      try {
+        const result = await compressImage(entry.file);
+        setPending(prev => prev.map(p => p.id === entry.id
+          ? { ...p, compressing: false, compressed: result }
+          : p));
+      } catch (err) {
+        setPending(prev => prev.map(p => p.id === entry.id
+          ? { ...p, compressing: false, error: err.message || String(err) }
+          : p));
+        reportError(err.message || String(err));
+      }
+    });
+  };
+
+  const cancelPending = (id) => {
+    setPending(prev => prev.filter(p => p.id !== id));
+  };
+
+  const uploadOne = async (entry) => {
+    if (!entry.compressed) return;
+    setUploading(true);
+    try {
+      const photoId = `ph-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+      const fullPath = `${path.replace(/\/$/, '')}/${photoId}.jpg`;
+      const meta = {
+        width: entry.compressed.width,
+        height: entry.compressed.height,
+        originalBytes: entry.compressed.originalBytes,
+        compressedBytes: entry.compressed.compressedBytes,
+        quality: entry.compressed.quality,
+      };
+      const rec = await imageStorage.upload(fullPath, entry.compressed.blob, entry.compressed.dataUrl, meta);
+      const next = [...value, { ...rec, ...meta }];
+      onChange && onChange(next);
+      setPending(prev => prev.filter(p => p.id !== entry.id));
+    } catch (err) {
+      reportError(err.message || String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const uploadAll = async () => {
+    const ready = pending.filter(p => p.compressed && !p.error);
+    for (const p of ready) {
+      // eslint-disable-next-line no-await-in-loop
+      await uploadOne(p);
+    }
+  };
+
+  const removeUploaded = async (rec) => {
+    try { await imageStorage.delete(rec.path); } catch (e) { /* ignore */ }
+    onChange && onChange(value.filter(v => v.path !== rec.path));
+  };
+
+  const dropzoneCls = cls(
+    'rounded-md border-dashed border-2 border-soft text-center transition cursor-pointer hover:border-accent surface-2',
+    compact ? 'p-2 text-[11px]' : 'p-5 text-xs'
+  );
+
+  return (
+    <div data-testid="image-uploader" className="space-y-2">
+      {canAddMore && pending.length === 0 && (
+        <div className={dropzoneCls}
+          onClick={() => fileRef.current?.click()}
+          onDrop={e => { e.preventDefault(); fileRef.current && (fileRef.current.files = e.dataTransfer.files); onPick({ target: fileRef.current }); }}
+          onDragOver={e => e.preventDefault()}>
+          <Icon name="upload" size={compact ? 14 : 22} className="text-ink-400 inline-block" />
+          <div className={compact ? 'mt-0.5' : 'mt-1.5 text-ink-700 font-medium'}>
+            {compact ? 'Add photo' : 'Drag photo here or click to choose'}
+          </div>
+          {!compact && (
+            <div className="text-[10px] text-ink-500 mt-0.5">
+              Compressed to fit storage · max {nfmt(IMAGE_LIMITS.maxOutputBytes)} per image · up to {maxCount} image{maxCount === 1 ? '' : 's'}
+            </div>
+          )}
+        </div>
+      )}
+      {!canAddMore && (
+        <div className="text-[11px] text-ink-500 italic">Max {maxCount} image{maxCount === 1 ? '' : 's'} reached.</div>
+      )}
+      <input ref={fileRef} type="file" accept="image/*" multiple={maxCount > 1}
+        className="hidden" onChange={onPick} aria-label="Choose images" data-testid="image-uploader-input" />
+
+      {/* Pending previews */}
+      {pending.length > 0 && (
+        <div className="space-y-2">
+          {pending.map(p => (
+            <div key={p.id} className="border border-soft rounded-md p-2 surface flex gap-3 items-start">
+              <div className="w-20 h-20 shrink-0 bg-ink-100 rounded overflow-hidden flex items-center justify-center">
+                {p.compressed?.dataUrl
+                  ? <img src={p.compressed.dataUrl} alt="" className="w-full h-full object-cover" />
+                  : <Icon name="upload" size={20} className="text-ink-300" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium truncate" title={p.file.name}>{p.file.name}</div>
+                {p.compressing && <div className="text-[11px] text-ink-500 italic">Compressing…</div>}
+                {p.error && <div className="text-[11px] text-red-700">{p.error}</div>}
+                {p.compressed && (
+                  <>
+                    <div className="text-[11px] text-ink-500 tnum">
+                      <span data-testid="upload-preview-size">{nfmt(p.compressed.originalBytes)} → <span className="text-emerald-700 font-medium">{nfmt(p.compressed.compressedBytes)}</span></span>
+                      <span className="ml-2 text-ink-400">{p.compressed.width}×{p.compressed.height}</span>
+                      <span className="ml-2 text-ink-400">q{Math.round(p.compressed.quality * 100)}</span>
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" variant="accent" icon="upload" disabled={uploading} onClick={() => uploadOne(p)}>Upload</Button>
+                      <Button size="sm" variant="ghost" icon="x" onClick={() => cancelPending(p.id)}>Cancel</Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          ))}
+          {pending.filter(p => p.compressed).length > 1 && (
+            <div className="text-right">
+              <Button size="sm" variant="outline" icon="upload" disabled={uploading} onClick={uploadAll}>
+                Upload all ({pending.filter(p => p.compressed).length})
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Uploaded */}
+      {value.length > 0 && (
+        coverMode ? (
+          <div className="relative w-full rounded-md overflow-hidden border border-soft" style={{ aspectRatio: '16/9', background: '#F1F5F9' }}>
+            <img src={value[0].url} alt="" className="w-full h-full object-cover cursor-pointer" onClick={() => setLightbox(value[0])} />
+            <button type="button" onClick={() => removeUploaded(value[0])}
+              className="absolute top-1.5 right-1.5 p-1 rounded bg-white/90 text-ink-700 hover:text-red-600 hover:bg-white border border-soft"
+              aria-label="Remove cover">
+              <Icon name="trash-2" size={13} />
+            </button>
+            <div className="absolute bottom-1.5 left-1.5 text-[10px] bg-white/80 px-1.5 py-0.5 rounded font-mono text-ink-700">
+              {nfmt(value[0].bytes)}
+            </div>
+          </div>
+        ) : (
+          <div className={cls('grid gap-2', compact ? 'grid-cols-3' : 'grid-cols-2 md:grid-cols-4')}>
+            {value.map(rec => (
+              <div key={rec.path}
+                className="group relative w-full rounded border border-soft overflow-hidden bg-ink-50"
+                style={{ aspectRatio: '1/1' }}>
+                <img src={rec.url} alt="" className="w-full h-full object-cover cursor-pointer"
+                  onClick={() => setLightbox(rec)} />
+                <button type="button" onClick={() => removeUploaded(rec)}
+                  className="absolute top-1 right-1 p-1 rounded bg-white/90 text-ink-700 hover:text-red-600 hover:bg-white border border-soft opacity-0 group-hover:opacity-100 transition"
+                  aria-label="Remove">
+                  <Icon name="trash-2" size={12} />
+                </button>
+                <div className="absolute bottom-0 left-0 right-0 text-[9px] bg-black/55 text-white px-1.5 py-0.5 font-mono">
+                  {nfmt(rec.bytes)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setLightbox(null)} role="dialog" aria-modal="true">
+          <img src={lightbox.url} alt="" className="max-w-full max-h-full rounded shadow-pop"
+            onClick={e => e.stopPropagation()} />
+          <button type="button" onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 p-2 rounded bg-white text-ink-700 hover:text-red-600"
+            aria-label="Close">
+            <Icon name="x" size={16} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { ImageUploader });
+
+</script>
+<script type="text/babel">
 // src/store-r2.jsx
 // Round 5 store extensions — composed with the base store
 // Recycle Bin REMOVED (hard-delete with confirmation). Site Engineer removed from targets.
@@ -2663,6 +3123,84 @@ function useStoreR2(base) {
   const [materialsCatalog, setMatCatalog]   = React.useState(() => MATERIALS_CATALOG);
   const [materialUsage, setMaterialUsage]   = React.useState(() => []);  // { id, schoolId, materialNo, qty, unit, date, by }
   const [contractorsLocal, setContractorsLocal] = React.useState(() => CONTRACTORS.map(c => ({ ...c })));
+
+  // R29 — project image attachments + Delivery Notes.
+  // projectCover[projectId]   = { path, url, bytes, ... }  (single cover)
+  // projectGallery[projectId] = [{ path, url, bytes, ... }] (up to 50)
+  // schoolStagePhotos[`${sid}|${stageKey}`] = [...]          (up to 5 per stage)
+  // deliveryNotes              = [{ id, projectId, schoolId, ... }]
+  // All four live in memory only; the MemoryImageStorage adapter (lib/storage.js)
+  // holds the actual blobs/dataUrls. Round 30 will replace both layers with
+  // Supabase Postgres rows + Supabase Storage.
+  const [projectCover, setProjectCover]           = React.useState(() => ({}));
+  const [projectGallery, setProjectGallery]       = React.useState(() => ({}));
+  const [schoolStagePhotos, setSchoolStagePhotos] = React.useState(() => ({}));
+  const [deliveryNotes, setDeliveryNotes]         = React.useState(() => (typeof DELIVERY_NOTES_SEED !== 'undefined' ? DELIVERY_NOTES_SEED : []));
+
+  const setProjectCoverFor = (projectId, list) => {
+    setProjectCover(m => ({ ...m, [projectId]: list && list[0] ? list[0] : null }));
+  };
+  const setProjectGalleryFor = (projectId, list) => {
+    setProjectGallery(m => ({ ...m, [projectId]: list || [] }));
+  };
+  const setSchoolStagePhotosFor = (schoolId, stageKey, list) => {
+    setSchoolStagePhotos(m => ({ ...m, [`${schoolId}|${stageKey}`]: list || [] }));
+  };
+  const getSchoolStagePhotos = (schoolId, stageKey) => {
+    return schoolStagePhotos[`${schoolId}|${stageKey}`] || [];
+  };
+
+  // R29 Delivery Notes CRUD
+  const addDeliveryNote = (data, currentUser) => {
+    const id = 'dn-' + Date.now();
+    const note = {
+      id,
+      projectId:  data.projectId  || null,
+      schoolId:   data.schoolId   || null,
+      stageKey:   data.stageKey   || null,
+      deliveryDate: data.deliveryDate || new Date().toISOString().slice(0, 10),
+      supplier:   data.supplier   || '',
+      contractor: data.contractor || '',
+      items:      Array.isArray(data.items) && data.items.length ? data.items : [{ description: '', quantity: '', unit: '' }],
+      receivedBy: data.receivedBy || '',
+      signatureDataUrl: data.signatureDataUrl || null,
+      photos:     Array.isArray(data.photos) ? data.photos : [],
+      notes:      data.notes || '',
+      status:     data.status || 'received',
+      createdAt:  new Date().toISOString(),
+      createdBy:  currentUser?.id || null,
+    };
+    setDeliveryNotes(ns => [note, ...ns]);
+    setTimeout(() => {
+      if (typeof logAudit === 'function') logAudit({
+        actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
+        action: 'CREATE', entityType: 'delivery_note', entityId: id,
+        entityLabel: `${note.supplier || 'supplier'} → ${note.schoolId || 'school'}`,
+        summary: `Created delivery note ${id} for ${note.schoolId || 'a school'} (${note.items.length} item${note.items.length === 1 ? '' : 's'}, status ${note.status})`,
+      });
+    }, 0);
+    return note;
+  };
+  const updateDeliveryNote = (id, patch, currentUser) => {
+    setDeliveryNotes(ns => ns.map(n => n.id === id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n));
+    setTimeout(() => {
+      if (typeof logAudit === 'function') logAudit({
+        actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
+        action: 'UPDATE', entityType: 'delivery_note', entityId: id,
+        entityLabel: id, summary: `Updated delivery note ${id}`,
+      });
+    }, 0);
+  };
+  const deleteDeliveryNote = (id, currentUser) => {
+    setDeliveryNotes(ns => ns.filter(n => n.id !== id));
+    setTimeout(() => {
+      if (typeof logAudit === 'function') logAudit({
+        actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
+        action: 'DELETE', entityType: 'delivery_note', entityId: id,
+        entityLabel: id, summary: `Deleted delivery note ${id}`,
+      });
+    }, 0);
+  };
 
   // Round 13 H1: Add / edit / delete contractors with audit log.
   const addContractor = (data, currentUser) => {
@@ -3141,6 +3679,10 @@ function useStoreR2(base) {
     rolePermissions, toggleRolePermission, resetRolePermissions,
     themeColors, themeLogo, updateThemeColor, updateThemeLogo, resetBranding,
     notificationTemplates, updateNotificationTemplate,
+    // R29 — image attachments + Delivery Notes
+    projectCover, projectGallery, schoolStagePhotos, getSchoolStagePhotos,
+    setProjectCoverFor, setProjectGalleryFor, setSchoolStagePhotosFor,
+    deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote,
   };
 }
 
@@ -3720,12 +4262,20 @@ function navForRole(role, currentUser) {
     ? [{ id: 'audit-log', label: 'Audit Log', icon: 'clipboard-list' }]
     : [];
 
+  // R29 — Delivery Notes nav item: visible to Manager / VP / Operations Manager /
+  // Program Manager / Project Manager / Coordinator. Hidden for Material Planning
+  // (they use the Materials flow instead).
+  const deliveryNotesItem = (role !== 'Material planning')
+    ? [{ id: 'delivery-notes', label: 'Delivery Notes', icon: 'package' }]
+    : [];
+
   if (role === 'VP') {
     return [
       { id: 'home',        label: 'Dashboard',   icon: 'home' },
       { id: 'projects',    label: 'Programs',    icon: 'folder-kanban' },
       { id: 'escalations', label: 'Escalations', icon: 'alert-circle' },
       ...finItem,
+      ...deliveryNotesItem,
       { id: 'reports',     label: 'Reports',     icon: 'file-text' },
       ...auditLogItem,
     ];
@@ -3738,6 +4288,7 @@ function navForRole(role, currentUser) {
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },
       ...finItem,
+      ...deliveryNotesItem,
       { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
@@ -3748,6 +4299,7 @@ function navForRole(role, currentUser) {
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
+      // Delivery Notes intentionally hidden for Material planning (they use Materials).
       { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
@@ -3758,6 +4310,7 @@ function navForRole(role, currentUser) {
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
+      ...deliveryNotesItem,
       { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
@@ -3778,6 +4331,7 @@ function navForRole(role, currentUser) {
     { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },
     ...finItem,
     { id: 'contractors',    label: 'Contractors',    icon: 'hard-hat' },
+    ...deliveryNotesItem,
     { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ...auditLogItemPgm,
     ...settingsItem,
@@ -4959,6 +5513,8 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
     lifecycleStages, addLifecycleStage, updateLifecycleStage, deleteLifecycleStage, reorderLifecycleStage,
     projectLifecycleState, toggleProjectLifecycleStage,
     tasks: allTasks, schools: allSchools,
+    // R29 — project cover + gallery state (in-memory)
+    projectCover, projectGallery, setProjectCoverFor, setProjectGalleryFor,
   } = store || {};
 
   const sortedLifecycle = React.useMemo(
@@ -4985,7 +5541,7 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
 
   // Tabs visible to current user
   const TABS = React.useMemo(() => {
-    const t = ['Overview', 'Schools', 'Tasks'];
+    const t = ['Overview', 'Schools', 'Tasks', 'Gallery'];
     if (canViewFinancials(currentUser)) t.push('Financials');
     t.push('Contractors');
     return t;
@@ -5027,6 +5583,18 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           <div className="text-3xl font-bold tnum text-navy-900">{lifecycleProgress}%</div>
         </div>
       </div>
+
+      {/* R29 — Project cover photo. Always renders the slot: if a cover exists,
+          shows the 16:9 banner with a remove button; otherwise shows an inline
+          Add-cover-photo dropzone. */}
+      {window.ImageUploader && (
+        <window.ImageUploader
+          path={`projects/${project.id}/cover`}
+          maxCount={1}
+          coverMode={true}
+          value={projectCover && projectCover[project.id] ? [projectCover[project.id]] : []}
+          onChange={(list) => setProjectCoverFor && setProjectCoverFor(project.id, list)} />
+      )}
 
       {/* Lifecycle */}
       <Card>
@@ -5131,6 +5699,19 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
                 {projTasks.length === 0 && <div className="text-xs text-ink-500 italic">No tasks visible to you on this project.</div>}
                 {projTasks.length > 30 && <div className="text-[11px] text-ink-500 italic">+ {projTasks.length - 30} more — see My Tasks for full list.</div>}
               </div>
+            </div>
+          )}
+          {tab === 'Gallery' && (
+            <div>
+              <SectionTitle icon="upload" title={`Project gallery · ${(projectGallery[project.id] || []).length} photos`}
+                subtitle="Up to 50 photos. Each is compressed before upload — large phone photos shrink to ~200-500 KB." />
+              {window.ImageUploader && (
+                <window.ImageUploader
+                  path={`projects/${project.id}/gallery`}
+                  maxCount={50}
+                  value={projectGallery[project.id] || []}
+                  onChange={(list) => setProjectGalleryFor && setProjectGalleryFor(project.id, list)} />
+              )}
             </div>
           )}
           {tab === 'Financials' && canViewFinancials(currentUser) && (
@@ -5633,6 +6214,8 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
     stageStatuses, setSchoolStageStatus, stageHistory, toggleSchoolStage,
     updateSchool, validateSchool, logAudit,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
+    // R29 — per-stage photo storage
+    getSchoolStagePhotos, setSchoolStagePhotosFor,
   } = useStore();
   // R28 — edit-coordinates modal (opened from the map preview's empty-state button
   // or its "Add precise coordinates" link when the school falls back to a region
@@ -5859,22 +6442,32 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
           )}
 
           {tab === 'Photos' && (
-            <div className="p-5">
-              <SectionTitle icon="upload" title="Photos" subtitle="Multi-image upload (demo placeholders)" />
-              <div className="border-2 border-dashed border-soft rounded-md p-8 text-center text-xs text-ink-500">
-                <Icon name="upload" size={20} />
-                <div className="mt-2 font-medium">Drop images here or click to browse</div>
-              </div>
-              <div className="mt-4 grid grid-cols-4 gap-2">
-                {(school.photosList || []).map(p => (
-                  <div key={p.id} className="placeholder-grid h-24 rounded border border-soft flex items-center justify-center text-[10px] text-ink-500">
-                    <Icon name="sun" size={16} />
+            <div className="p-5 space-y-3">
+              <SectionTitle icon="upload" title="Stage photos"
+                subtitle="Up to 5 photos per stage. Compressed to ≤ 500 KB before upload — large phone photos shrink automatically." />
+              {(window.STAGE_KEYS || SCHOOL_STAGES).map((label, i) => {
+                const key = (window.STAGE_KEYS || [])[i] || label;
+                const list = (typeof getSchoolStagePhotos === 'function') ? getSchoolStagePhotos(school.id, key) : [];
+                const shortLabel = (window.SCHOOL_STAGE_SHORT || SCHOOL_STAGES)[i];
+                return (
+                  <div key={key} data-testid={`stage-photos-S${String(i + 1).padStart(2, '0')}`}
+                    className="border border-soft rounded-md p-3">
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <span className="font-mono text-[10px] text-ink-500">S{String(i + 1).padStart(2, '0')}</span>
+                      <span className="text-sm font-medium">{shortLabel}</span>
+                      <span className="text-[11px] text-ink-500 ml-auto">{list.length}/5</span>
+                    </div>
+                    {window.ImageUploader && (
+                      <window.ImageUploader
+                        path={`projects/${school.projectId}/schools/${school.id}/stages/${key}`}
+                        maxCount={5}
+                        compact={true}
+                        value={list}
+                        onChange={(next) => setSchoolStagePhotosFor && setSchoolStagePhotosFor(school.id, key, next)} />
+                    )}
                   </div>
-                ))}
-                {(school.photosList || []).length === 0 && (
-                  <div className="col-span-4 text-center py-6 text-xs text-ink-500 italic">No photos uploaded yet.</div>
-                )}
-              </div>
+                );
+              })}
             </div>
           )}
 
@@ -7520,7 +8113,7 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
   const TABS = [
     'Users','Roles & Permissions','Projects','Lifecycle Stages','School Stages',
     'Custom Statuses','Custom Fields','Milestone Templates','KPIs',
-    'Branding','Notifications',
+    'Branding','Notifications','Storage',
     ...(showAudit ? ['Audit Log'] : []),
   ];
 
@@ -7544,6 +8137,7 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
           {tab === 'KPIs'               && <KPIsTab />}
           {tab === 'Branding'           && <BrandingTab currentUser={currentUser} />}
           {tab === 'Notifications'      && <NotificationsTab currentUser={currentUser} />}
+          {tab === 'Storage'            && <StorageTab />}
           {tab === 'Audit Log'          && <AuditTab />}
         </div>
       </Card>
@@ -8808,7 +9402,83 @@ function AuditTab() {
   );
 }
 
-Object.assign(window, { PageSettings });
+// R29 — Storage panel. Reads totals from the in-memory image storage adapter
+// (window.imageStorage). Surfaces total image count, bytes used vs the Supabase
+// Pro 100 GB quota the client is about to subscribe to, and the top 5 storage
+// consumers grouped by path prefix (projects/{pid}/, delivery-notes/, etc.).
+function StorageTab() {
+  const storage = window.imageStorage;
+  // Re-render every 4s so the panel reflects new uploads without forcing a
+  // store-level subscription. The numbers come from a singleton in-memory map.
+  const [, force] = React.useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => force(n => n + 1), 4000);
+    return () => clearInterval(t);
+  }, []);
+  if (!storage) return <div className="text-xs text-ink-500 italic">Image storage adapter not loaded.</div>;
+  const QUOTA = 100 * 1024 * 1024 * 1024;
+  const used = storage.estimatedBytes();
+  const count = storage.imageCount();
+  const pct = QUOTA ? Math.min(100, (used / QUOTA) * 100) : 0;
+  const fmt = window.formatBytes || (n => n + ' B');
+  const top = storage.topPrefixes(2, 5);
+  const projects = window.PROJECTS || [];
+  const labelFor = (prefix) => {
+    if (prefix.startsWith('projects/')) {
+      const pid = prefix.split('/')[1];
+      const p = projects.find(pp => pp.id === pid);
+      return p ? `${p.name} (${pid})` : prefix;
+    }
+    if (prefix.startsWith('delivery-notes')) return 'Delivery notes';
+    return prefix;
+  };
+
+  return (
+    <div data-testid="settings-storage-panel" className="space-y-4">
+      <SectionTitle title="Image storage" subtitle="In-browser memory for the demo. Will sync to Supabase Storage after backend wiring." className="!mb-0" />
+
+      <div className="grid grid-cols-3 gap-3">
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Images stored</div><div className="text-2xl font-bold tnum mt-1">{count.toLocaleString()}</div></Card>
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Bytes used</div><div className="text-2xl font-bold tnum mt-1" data-testid="settings-storage-bytes">{fmt(used)}</div><div className="text-[11px] text-ink-500">of {fmt(QUOTA)} (Supabase Pro)</div></Card>
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Quota used</div><div className="text-2xl font-bold tnum mt-1 text-emerald-600">{pct < 0.001 ? '<0.001' : pct.toFixed(3)}%</div>
+          <div className="mt-2 h-1 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: Math.max(0.5, pct) + '%' }} /></div>
+        </Card>
+      </div>
+
+      <Card padding="p-0">
+        <div className="px-4 py-3 border-b border-soft">
+          <div className="text-sm font-semibold ink-on-dark">Top 5 by storage</div>
+          <div className="text-[11px] text-ink-500 mt-0.5">Grouped by the first two path segments.</div>
+        </div>
+        <table className="w-full text-xs">
+          <thead className="surface-2 border-b border-soft">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold">Bucket</th>
+              <th className="text-right px-3 py-2 font-semibold w-24">Images</th>
+              <th className="text-right px-3 py-2 font-semibold w-32">Bytes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {top.length === 0 && <tr><td colSpan={3} className="text-center py-6 text-xs text-ink-500 italic">No images uploaded yet.</td></tr>}
+            {top.map(g => (
+              <tr key={g.prefix} className="border-b border-soft">
+                <td className="px-3 py-2 font-medium">{labelFor(g.prefix)}</td>
+                <td className="px-3 py-2 text-right tnum">{g.count.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right tnum">{fmt(g.bytes)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      <div className="text-[11px] text-ink-500 italic bg-amber-50 border border-amber-200 rounded-md p-2.5">
+        Images stored in browser memory for demo. Will sync to Supabase Storage after backend wiring.
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { PageSettings, StorageTab });
 
 </script>
 <script type="text/babel">
@@ -10218,6 +10888,432 @@ Object.assign(window, { PageReportsZamil, SchoolStagesWorkbookCard, buildSchoolS
 
 </script>
 <script type="text/babel">
+// src/page-delivery-notes.jsx
+// R29 — Delivery Notes module.
+// One <PageDeliveryNotes /> entry point manages three sub-views via local state:
+//   • list     — table grouped by project, status pill, photo count
+//   • detail   — read-only render of a single note + Edit + Print
+//   • edit     — full create/edit form (also used for "New delivery note")
+//
+// Photos use the shared ImageUploader → MemoryImageStorage adapter.
+// Print path: open a printable HTML view in a new tab; browser's native
+// Print-to-PDF dialog handles export (no PDF lib in the bundle).
+
+const DN_STATUSES = ['draft', 'received', 'disputed'];
+const DN_STATUS_TONE = { draft: 'soft', received: 'ok', disputed: 'danger' };
+
+function PageDeliveryNotes({ currentUser }) {
+  const store = useStore();
+  const { deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote, projects, schools } = store;
+  const [view, setView] = React.useState('list');     // 'list' | 'detail' | 'edit'
+  const [activeId, setActiveId] = React.useState(null);
+  const [projectFilter, setProjectFilter] = React.useState('all');
+  const [statusFilter, setStatusFilter] = React.useState('all');
+  const [q, setQ] = React.useState('');
+
+  const filtered = React.useMemo(() => {
+    const ql = q.trim().toLowerCase();
+    return (deliveryNotes || []).filter(n => {
+      if (projectFilter !== 'all' && n.projectId !== projectFilter) return false;
+      if (statusFilter !== 'all'  && n.status !== statusFilter)    return false;
+      if (ql) {
+        const blob = [n.id, n.supplier, n.contractor, n.receivedBy, n.schoolId, n.notes,
+                      ...(n.items || []).map(i => i.description)].join(' ').toLowerCase();
+        if (!blob.includes(ql)) return false;
+      }
+      return true;
+    });
+  }, [deliveryNotes, projectFilter, statusFilter, q]);
+
+  const active = (deliveryNotes || []).find(n => n.id === activeId) || null;
+
+  const openDetail = (id) => { setActiveId(id); setView('detail'); };
+  const openEdit   = (id) => { setActiveId(id); setView('edit'); };
+  const openNew    = ()   => { setActiveId(null); setView('edit'); };
+  const back       = ()   => { setView('list'); setActiveId(null); };
+
+  const onSave = (data) => {
+    if (activeId) {
+      updateDeliveryNote(activeId, data, currentUser);
+      openDetail(activeId);
+    } else {
+      const note = addDeliveryNote(data, currentUser);
+      openDetail(note.id);
+    }
+  };
+  const onDelete = (id) => {
+    if (!confirm('Delete this delivery note? This cannot be undone.')) return;
+    deleteDeliveryNote(id, currentUser);
+    back();
+  };
+
+  if (view === 'detail' && active) {
+    return <DeliveryNoteDetail note={active} projects={projects} schools={schools} onBack={back}
+                                onEdit={() => openEdit(active.id)} onDelete={() => onDelete(active.id)} />;
+  }
+  if (view === 'edit') {
+    return <DeliveryNoteForm initial={active} projects={projects} schools={schools}
+                              onCancel={() => active ? openDetail(active.id) : back()} onSave={onSave} />;
+  }
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold ink-on-dark">Delivery Notes</h1>
+          <p className="text-xs text-ink-500 ink-muted-on-dark mt-0.5">
+            Material + equipment deliveries logged against schools and stages. Receipt photos + signatures attach to each note.
+          </p>
+        </div>
+        <Button variant="accent" icon="plus" onClick={openNew}>New delivery note</Button>
+      </div>
+
+      <Card padding="p-3">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative">
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-500"><Icon name="search" size={14} /></span>
+            <input value={q} onChange={e => setQ(e.target.value)}
+              placeholder="Search supplier, school, contractor, items…"
+              data-testid="delivery-notes-search"
+              className="pl-8 pr-3 py-1.5 text-sm rounded-md border border-ink-200 bg-white w-80 focus:outline-none focus:ring-2 ring-accent" />
+          </div>
+          <Select value={projectFilter} onChange={setProjectFilter}
+            options={[{ value: 'all', label: 'All projects' }, ...(projects || []).map(p => ({ value: p.id, label: p.name }))]} />
+          <Select value={statusFilter} onChange={setStatusFilter}
+            options={[{ value: 'all', label: 'All statuses' }, ...DN_STATUSES.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))]} />
+          <div className="ml-auto text-xs text-ink-500">{filtered.length} of {(deliveryNotes || []).length} notes</div>
+        </div>
+      </Card>
+
+      <Card padding="p-0">
+        <div data-testid="delivery-notes-list" className="overflow-auto scrollbar-thin" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+          <table className="w-full text-xs">
+            <thead className="surface-2 border-b border-soft">
+              <tr>
+                <th className="text-left px-3 py-2 font-semibold">Note ID</th>
+                <th className="text-left px-3 py-2 font-semibold">Project</th>
+                <th className="text-left px-3 py-2 font-semibold">School</th>
+                <th className="text-left px-3 py-2 font-semibold">Stage</th>
+                <th className="text-left px-3 py-2 font-semibold">Supplier</th>
+                <th className="text-left px-3 py-2 font-semibold">Date</th>
+                <th className="text-left px-3 py-2 font-semibold">Items</th>
+                <th className="text-left px-3 py-2 font-semibold">Photos</th>
+                <th className="text-left px-3 py-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((n, i) => {
+                const proj = (projects || []).find(p => p.id === n.projectId);
+                const stage = n.stageKey && window.SCHOOL_STAGE_SHORT
+                  ? window.SCHOOL_STAGE_SHORT[(window.STAGE_KEYS || []).indexOf(n.stageKey)] || n.stageKey
+                  : '—';
+                return (
+                  <tr key={n.id} onClick={() => openDetail(n.id)}
+                    className={cls('cursor-pointer border-b border-soft hover-row',
+                      i % 2 === 0 ? 'bg-white' : 'bg-slate-50')}>
+                    <td className="px-3 py-2 font-mono text-[11px] text-ink-500">{n.id}</td>
+                    <td className="px-3 py-2 font-medium">{proj?.name || n.projectId || '—'}</td>
+                    <td className="px-3 py-2 font-mono text-[11px]">{n.schoolId || '—'}</td>
+                    <td className="px-3 py-2 text-ink-700">{stage}</td>
+                    <td className="px-3 py-2 text-ink-700">{n.supplier || '—'}</td>
+                    <td className="px-3 py-2 tnum">{n.deliveryDate || '—'}</td>
+                    <td className="px-3 py-2 tnum">{(n.items || []).length}</td>
+                    <td className="px-3 py-2 tnum">
+                      {(n.photos || []).length > 0 && <Icon name="upload" size={11} className="inline-block mr-1 text-ink-500" />}
+                      {(n.photos || []).length}
+                    </td>
+                    <td className="px-3 py-2"><Pill tone={DN_STATUS_TONE[n.status] || 'soft'}>{n.status}</Pill></td>
+                  </tr>
+                );
+              })}
+              {filtered.length === 0 && (
+                <tr><td colSpan={9} className="text-center py-8 text-xs text-ink-500 italic">No delivery notes match these filters.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ── Detail (read-only) ─────────────────────────────────────────────────────
+function DeliveryNoteDetail({ note, projects, schools, onBack, onEdit, onDelete }) {
+  const proj = (projects || []).find(p => p.id === note.projectId);
+  const sch  = (schools  || window.ALL_SCHOOLS || []).find(s => s.id === note.schoolId);
+  const stageIdx = note.stageKey ? (window.STAGE_KEYS || []).indexOf(note.stageKey) : -1;
+  const stageLabel = stageIdx >= 0 ? `${stageIdx + 1}. ${window.SCHOOL_STAGES[stageIdx]}` : (note.stageKey || '—');
+
+  const print = () => {
+    const win = window.open('', '_blank');
+    if (!win) { alert('Pop-up blocked. Please allow pop-ups for the print view.'); return; }
+    const items = (note.items || []).map(it =>
+      `<tr><td>${it.description||''}</td><td style="text-align:right">${it.quantity||''}</td><td>${it.unit||''}</td></tr>`
+    ).join('');
+    win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Delivery Note ${note.id}</title>
+      <style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px;color:#0F172A}
+      h1{font-size:18px;margin:0 0 4px} .meta{color:#64748B;font-size:11px;margin-bottom:18px}
+      table{width:100%;border-collapse:collapse;margin:8px 0 16px}
+      th,td{border:1px solid #cbd5e1;padding:6px 8px;text-align:left}
+      th{background:#f1f5f9;text-transform:uppercase;font-size:10px;letter-spacing:.05em}
+      .row{display:flex;gap:24px;margin:8px 0}.cell{flex:1}.label{font-size:10px;text-transform:uppercase;color:#64748B;letter-spacing:.05em}
+      .val{font-weight:500} @media print { @page { size: A4; margin: 14mm; } }</style></head>
+      <body><h1>Delivery Note · ${note.id}</h1>
+      <div class="meta">Status: <strong>${note.status}</strong> · Created ${note.createdAt || ''}</div>
+      <div class="row"><div class="cell"><div class="label">Project</div><div class="val">${proj?.name||note.projectId||'—'}</div></div>
+        <div class="cell"><div class="label">School</div><div class="val">${sch?.nameEn||note.schoolId||'—'}</div></div>
+        <div class="cell"><div class="label">Stage</div><div class="val">${stageLabel}</div></div></div>
+      <div class="row"><div class="cell"><div class="label">Supplier</div><div class="val">${note.supplier||'—'}</div></div>
+        <div class="cell"><div class="label">Contractor</div><div class="val">${note.contractor||'—'}</div></div>
+        <div class="cell"><div class="label">Delivery date</div><div class="val">${note.deliveryDate||'—'}</div></div></div>
+      <table><thead><tr><th>Description</th><th style="width:90px;text-align:right">Quantity</th><th style="width:80px">Unit</th></tr></thead><tbody>${items||'<tr><td colspan="3" style="color:#64748B"><em>No items</em></td></tr>'}</tbody></table>
+      <div class="row"><div class="cell"><div class="label">Received by</div><div class="val">${note.receivedBy||'—'}</div></div></div>
+      ${note.notes ? `<div class="row"><div class="cell"><div class="label">Notes</div><div class="val">${note.notes}</div></div></div>` : ''}
+      <script>window.onload=()=>setTimeout(()=>window.print(),200)</script></body></html>`);
+    win.document.close();
+  };
+
+  return (
+    <div className="p-6 space-y-4">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" icon="arrow-left" onClick={onBack}>Back</Button>
+        <div className="flex-1">
+          <div className="text-xs text-ink-500 font-mono">{note.id}</div>
+          <h1 className="text-xl font-semibold">Delivery Note</h1>
+        </div>
+        <Pill tone={DN_STATUS_TONE[note.status] || 'soft'}>{note.status}</Pill>
+        <Button variant="outline" icon="file-text" onClick={print}>Print / Export PDF</Button>
+        <Button variant="outline" icon="pencil" onClick={onEdit}>Edit</Button>
+        <Button variant="ghost" icon="trash-2" onClick={onDelete}>Delete</Button>
+      </div>
+
+      <Card>
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <Field label="Project"        value={proj?.name || note.projectId || '—'} />
+          <Field label="School"         value={sch ? `${sch.id} · ${sch.nameEn || sch.name}` : (note.schoolId || '—')} />
+          <Field label="Stage"          value={stageLabel} />
+          <Field label="Supplier"       value={note.supplier || '—'} />
+          <Field label="Contractor"     value={note.contractor || '—'} />
+          <Field label="Delivery date"  value={note.deliveryDate || '—'} />
+          <Field label="Received by"    value={note.receivedBy || '—'} />
+          <Field label="Created at"     value={note.createdAt || '—'} />
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle icon="package" title={`Items (${(note.items || []).length})`} />
+        <table className="w-full text-sm">
+          <thead className="surface-2 border-b border-soft text-xs">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold">Description</th>
+              <th className="text-right px-3 py-2 font-semibold w-24">Quantity</th>
+              <th className="text-left px-3 py-2 font-semibold w-24">Unit</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(note.items || []).map((it, i) => (
+              <tr key={i} className="border-b border-soft">
+                <td className="px-3 py-2">{it.description || '—'}</td>
+                <td className="px-3 py-2 text-right tnum">{it.quantity || '—'}</td>
+                <td className="px-3 py-2 text-ink-700">{it.unit || '—'}</td>
+              </tr>
+            ))}
+            {(note.items || []).length === 0 && (
+              <tr><td colSpan={3} className="text-center py-6 text-xs text-ink-500 italic">No items.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+
+      {note.notes && (
+        <Card>
+          <SectionTitle icon="file-text" title="Notes" />
+          <div className="text-sm whitespace-pre-wrap text-ink-700">{note.notes}</div>
+        </Card>
+      )}
+
+      <Card>
+        <SectionTitle icon="upload" title={`Photos (${(note.photos || []).length})`}
+          subtitle="Click a thumbnail to preview full size." />
+        {(note.photos || []).length === 0 ? (
+          <div className="text-xs text-ink-500 italic">No photos attached.</div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            {(note.photos || []).map(p => (
+              <a key={p.path} href={p.url} target="_blank" rel="noopener noreferrer"
+                className="block w-full rounded border border-soft overflow-hidden"
+                style={{ aspectRatio: '1/1' }}>
+                <img src={p.url} alt="" className="w-full h-full object-cover" />
+              </a>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function Field({ label, value }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-ink-500">{label}</div>
+      <div className="text-sm font-medium mt-0.5">{value}</div>
+    </div>
+  );
+}
+
+// ── Create / edit form ─────────────────────────────────────────────────────
+function DeliveryNoteForm({ initial, projects, schools, onCancel, onSave }) {
+  const isNew = !initial;
+  const allSchools = schools || window.ALL_SCHOOLS || [];
+  const [form, setForm] = React.useState(() => ({
+    projectId:    initial?.projectId    || (projects?.[0]?.id || ''),
+    schoolId:     initial?.schoolId     || '',
+    stageKey:     initial?.stageKey     || '',
+    deliveryDate: initial?.deliveryDate || new Date().toISOString().slice(0, 10),
+    supplier:     initial?.supplier     || '',
+    contractor:   initial?.contractor   || '',
+    receivedBy:   initial?.receivedBy   || '',
+    notes:        initial?.notes        || '',
+    status:       initial?.status       || 'received',
+    items:        initial?.items?.length ? [...initial.items] : [{ description: '', quantity: '', unit: '' }],
+    photos:       initial?.photos       || [],
+    signatureDataUrl: initial?.signatureDataUrl || null,
+  }));
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setItem = (i, patch) => setForm(f => ({ ...f, items: f.items.map((it, idx) => idx === i ? { ...it, ...patch } : it) }));
+  const addItem = () => setForm(f => ({ ...f, items: [...f.items, { description: '', quantity: '', unit: '' }] }));
+  const removeItem = (i) => setForm(f => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }));
+
+  const projectSchools = allSchools.filter(s => s.projectId === form.projectId);
+  const noteId = initial?.id || 'dn-new';
+
+  const submit = (e) => {
+    e && e.preventDefault && e.preventDefault();
+    if (!form.schoolId) { alert('Please pick a school for this delivery.'); return; }
+    const cleanedItems = form.items.filter(it => it.description.trim());
+    onSave({ ...form, items: cleanedItems });
+  };
+
+  return (
+    <form onSubmit={submit} className="p-6 space-y-4">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" icon="arrow-left" type="button" onClick={onCancel}>Cancel</Button>
+        <div className="flex-1">
+          <h1 className="text-xl font-semibold">{isNew ? 'New delivery note' : `Edit delivery note · ${initial.id}`}</h1>
+          <p className="text-xs text-ink-500">All required fields must be filled before saving.</p>
+        </div>
+        <Button variant="accent" icon="check" type="submit">Save</Button>
+      </div>
+
+      <Card>
+        <div className="grid grid-cols-3 gap-3">
+          <FormField label="Project">
+            <Select value={form.projectId} onChange={v => { set('projectId', v); set('schoolId', ''); }}
+              options={(projects || []).map(p => ({ value: p.id, label: p.name }))} />
+          </FormField>
+          <FormField label="School (required)">
+            <Select value={form.schoolId} onChange={v => set('schoolId', v)}
+              options={[{ value: '', label: '— Select a school —' }, ...projectSchools.slice(0, 250).map(s => ({ value: s.id, label: `${s.id} · ${s.nameEn || s.name}` }))]} />
+          </FormField>
+          <FormField label="Stage (optional)">
+            <Select value={form.stageKey} onChange={v => set('stageKey', v)}
+              options={[{ value: '', label: '— No specific stage —' }, ...(window.STAGE_KEYS || []).map((k, i) => ({ value: k, label: `${i + 1}. ${window.SCHOOL_STAGES[i]}` }))]} />
+          </FormField>
+          <FormField label="Delivery date">
+            <input type="date" value={form.deliveryDate} onChange={e => set('deliveryDate', e.target.value)}
+              className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white" />
+          </FormField>
+          <FormField label="Supplier">
+            <input type="text" value={form.supplier} onChange={e => set('supplier', e.target.value)}
+              placeholder="e.g. Saudi Cable Group"
+              className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white" />
+          </FormField>
+          <FormField label="Contractor">
+            <input type="text" value={form.contractor} onChange={e => set('contractor', e.target.value)}
+              placeholder="Contractor name"
+              className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white" />
+          </FormField>
+          <FormField label="Received by">
+            <input type="text" value={form.receivedBy} onChange={e => set('receivedBy', e.target.value)}
+              placeholder="Name + role"
+              className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white" />
+          </FormField>
+          <FormField label="Status">
+            <Select value={form.status} onChange={v => set('status', v)}
+              options={DN_STATUSES.map(s => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))} />
+          </FormField>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle icon="package" title="Items" subtitle="Add one row per line item delivered."
+          action={<Button size="sm" variant="ghost" icon="plus" type="button" onClick={addItem}>Add row</Button>} />
+        <table className="w-full text-sm">
+          <thead className="surface-2 border-b border-soft text-xs">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold">Description</th>
+              <th className="text-right px-3 py-2 font-semibold w-24">Quantity</th>
+              <th className="text-left px-3 py-2 font-semibold w-24">Unit</th>
+              <th className="px-2 py-2 w-8"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {form.items.map((it, i) => (
+              <tr key={i} className="border-b border-soft">
+                <td className="px-3 py-1.5"><input type="text" value={it.description} onChange={e => setItem(i, { description: e.target.value })} placeholder="e.g. PV modules 540W"
+                  className="w-full px-2 py-1 text-sm rounded border border-ink-200 bg-white" /></td>
+                <td className="px-3 py-1.5"><input type="number" value={it.quantity} onChange={e => setItem(i, { quantity: e.target.value })}
+                  className="w-full px-2 py-1 text-sm text-right tnum rounded border border-ink-200 bg-white" /></td>
+                <td className="px-3 py-1.5"><input type="text" value={it.unit} onChange={e => setItem(i, { unit: e.target.value })} placeholder="pcs / m / kg"
+                  className="w-full px-2 py-1 text-sm rounded border border-ink-200 bg-white" /></td>
+                <td className="px-2 py-1.5 text-right">
+                  {form.items.length > 1 && (
+                    <button type="button" onClick={() => removeItem(i)} className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600">
+                      <Icon name="trash-2" size={13} />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      <Card>
+        <SectionTitle icon="file-text" title="Notes (optional)" />
+        <textarea value={form.notes} onChange={e => set('notes', e.target.value)} rows={3}
+          placeholder="Damage, discrepancies, partial delivery, etc."
+          className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white" />
+      </Card>
+
+      <Card>
+        <SectionTitle icon="upload" title="Receipt photos"
+          subtitle="Up to 10 photos. Each is compressed to ≤ 500 KB before storage." />
+        {window.ImageUploader && (
+          <window.ImageUploader
+            path={`delivery-notes/${noteId}`}
+            maxCount={10}
+            value={form.photos}
+            onChange={(list) => set('photos', list)} />
+        )}
+      </Card>
+    </form>
+  );
+}
+
+function FormField({ label, children }) {
+  return (
+    <div>
+      <label className="text-[11px] font-medium text-ink-700 mb-1 block">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+Object.assign(window, { PageDeliveryNotes });
+
+</script>
+<script type="text/babel">
 // src/app.jsx
 // Root App — Zamil Services Solar Programs Dashboard (Round 5)
 // Login → Main shell. Role-based routing. Site Engineer + Recycle Bin removed.
@@ -10401,6 +11497,12 @@ function AppInner() {
         onBack={() => setPage(activeProjectId ? 'schools-list' : 'home')}
         onAddTask={onAddTask} currentUser={currentUser}
         onEscalate={(sch) => onNewEscalation({ projectId: sch.projectId, schoolId: sch.id, title: `${sch.code} ${sch.name} — ` })} />;
+    }
+
+    // R29 — Delivery Notes is a cross-role page. Render it once here regardless
+    // of the role-specific branches below.
+    if (page === 'delivery-notes' && typeof PageDeliveryNotes === 'function') {
+      return <PageDeliveryNotes currentUser={currentUser} />;
     }
 
     // VP

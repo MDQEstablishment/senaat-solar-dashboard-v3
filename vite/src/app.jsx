@@ -183,6 +183,12 @@ function AppInner() {
         onEscalate={(sch) => onNewEscalation({ projectId: sch.projectId, schoolId: sch.id, title: `${sch.code} ${sch.name} — ` })} />;
     }
 
+    // R29 — Delivery Notes is a cross-role page. Render it once here regardless
+    // of the role-specific branches below.
+    if (page === 'delivery-notes' && typeof PageDeliveryNotes === 'function') {
+      return <PageDeliveryNotes currentUser={currentUser} />;
+    }
+
     // VP
     if (role === 'VP') {
       if (page === 'home')        return <PageVPDashboard onOpenEscalation={openEsc} currentUser={currentUser} />;

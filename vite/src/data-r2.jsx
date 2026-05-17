@@ -313,8 +313,40 @@ const AUDIT_LOG_SEED = (() => {
   return list;
 })();
 
+// ─────── R29 Delivery Notes seed ───────
+// 12 sample notes spread across 6 projects / 6 stages / multiple suppliers
+// so the list view isn't empty on first load. No photos / signatures attached
+// (those need the in-browser image pipeline, which the seed-data layer can't run).
+const DELIVERY_NOTES_SEED = (() => {
+  const samples = [
+    ['p-mad','SS-ZAM-MAD1001','pv_module',     '2026-04-12','SolarTech Arabia',     'TBN',                   'Eng. Sami Hassan · Site Engineer', 'received',  [['PV modules 540W', 36, 'pcs'], ['Cable ties 30cm', 200, 'pcs']]],
+    ['p-mad','SS-ZAM-MAD1004','pv_mounting',   '2026-04-15','Al-Yamamah Steel',     'TBN',                   'Mohammed Al-Qahtani · Foreman',    'received',  [['Mounting rails 4m', 24, 'pcs'], ['L-feet brackets', 96, 'pcs']]],
+    ['p-dam','SS-ZAM-DAM1002','cable_tray',    '2026-04-18','Saudi Cable Group',    'Eastern Solar Co.',     'Ali Hasanain · PM',                'received',  [['Cable tray 200x100', 60, 'm'], ['Tray supports', 30, 'pcs']]],
+    ['p-dam','SS-ZAM-DAM1010','inverters',     '2026-04-22','Huawei MENA',          'Eastern Solar Co.',     'Nasser Alhajri · PM',              'received',  [['SUN2000-100KTL', 4, 'pcs']]],
+    ['p-jaz','SS-ZAM-JAZ1005','dc_cables',     '2026-04-09','Jazan Power Supplies', 'Jazan Power Solutions', 'Waleed Dawood · PM',               'received',  [['DC cable 6mm² red',  500, 'm'], ['DC cable 6mm² black', 500, 'm']]],
+    ['p-hai','SS-ZAM-HAI1008','smdb',          '2026-04-25','ABB Saudi',            'Northern Electrics',    'Muhammad Rafique · PM',            'received',  [['SMDB enclosure 800x600', 6, 'pcs'], ['MCCB 250A', 6, 'pcs']]],
+    ['p-qas','SS-ZAM-QAS1015','data_logger',   '2026-04-28','Schneider Electric',   'Qassim Solar Co.',      'Eng. Khaled Al-Mutairi',           'received',  [['Data logger PAC2200', 8, 'pcs']]],
+    ['p-naj','SS-ZAM-NAJ1003','earthing',      '2026-04-30','Najran Hardware',      'Najran Solar Co.',      'Nashir AlSagoor · PM',             'disputed',  [['Copper rod 1.5m', 40, 'pcs'], ['Earthing clamp', 40, 'pcs']]],
+    ['p-mak1','SS-ZAM-MAK1006','foundation',   '2026-05-01','Holcim Saudi',         'Makkah Building Co.',   'Ali Hasanain · PM',                'received',  [['Cement bags 50kg',  120, 'pcs'], ['Steel rebar 12mm', 80,  'pcs']]],
+    ['p-mak1','SS-ZAM-MAK1009','pv_module',    '2026-05-03','SolarTech Arabia',     'Makkah Building Co.',   'Hassan Mohammed · Foreman',        'received',  [['PV modules 540W', 48, 'pcs']]],
+    ['p-jof','SS-ZAM-JOF1002','ac_cables',     '2026-05-04','Saudi Cable Group',    'Al Jouf Solar',         'Muhammad Rafique · PM',            'draft',     [['AC cable 70mm²', 200, 'm']]],
+    ['p-nb', 'SS-ZAM-NB1005', 'breaker',       '2026-05-05','Schneider Electric',   'Northern Borders Co.',  'Muhammad Rafique · PM',            'received',  [['ACB 800A', 2, 'pcs'], ['MCCB 400A', 4, 'pcs']]],
+  ];
+  return samples.map(([projectId, schoolId, stageKey, deliveryDate, supplier, contractor, receivedBy, status, items], i) => ({
+    id: 'dn-seed-' + (i + 1),
+    projectId, schoolId, stageKey, deliveryDate, supplier, contractor, receivedBy, status,
+    items: items.map(([description, quantity, unit]) => ({ description, quantity, unit })),
+    signatureDataUrl: null,
+    photos: [],
+    notes: '',
+    createdAt: new Date(new Date(deliveryDate).getTime() + 3600000).toISOString(),
+    createdBy: 'u-pgm',
+  }));
+})();
+
 Object.assign(window, {
   STAGE_STATUSES_DEFAULT, LIFECYCLE_STAGES_DEFAULT, CUSTOM_FIELDS_DEFAULT,
   MILESTONE_TEMPLATES_DEFAULT, MILESTONE_ENTRIES_DEFAULT,
   FINANCIAL_ENTRIES_DEFAULT, ESCALATIONS_DEFAULT, AUDIT_LOG_SEED,
+  DELIVERY_NOTES_SEED,
 });

@@ -31,7 +31,7 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
   const TABS = [
     'Users','Roles & Permissions','Projects','Lifecycle Stages','School Stages',
     'Custom Statuses','Custom Fields','Milestone Templates','KPIs',
-    'Branding','Notifications',
+    'Branding','Notifications','Storage',
     ...(showAudit ? ['Audit Log'] : []),
   ];
 
@@ -55,6 +55,7 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
           {tab === 'KPIs'               && <KPIsTab />}
           {tab === 'Branding'           && <BrandingTab currentUser={currentUser} />}
           {tab === 'Notifications'      && <NotificationsTab currentUser={currentUser} />}
+          {tab === 'Storage'            && <StorageTab />}
           {tab === 'Audit Log'          && <AuditTab />}
         </div>
       </Card>
@@ -1319,4 +1320,80 @@ function AuditTab() {
   );
 }
 
-Object.assign(window, { PageSettings });
+// R29 — Storage panel. Reads totals from the in-memory image storage adapter
+// (window.imageStorage). Surfaces total image count, bytes used vs the Supabase
+// Pro 100 GB quota the client is about to subscribe to, and the top 5 storage
+// consumers grouped by path prefix (projects/{pid}/, delivery-notes/, etc.).
+function StorageTab() {
+  const storage = window.imageStorage;
+  // Re-render every 4s so the panel reflects new uploads without forcing a
+  // store-level subscription. The numbers come from a singleton in-memory map.
+  const [, force] = React.useState(0);
+  React.useEffect(() => {
+    const t = setInterval(() => force(n => n + 1), 4000);
+    return () => clearInterval(t);
+  }, []);
+  if (!storage) return <div className="text-xs text-ink-500 italic">Image storage adapter not loaded.</div>;
+  const QUOTA = 100 * 1024 * 1024 * 1024;
+  const used = storage.estimatedBytes();
+  const count = storage.imageCount();
+  const pct = QUOTA ? Math.min(100, (used / QUOTA) * 100) : 0;
+  const fmt = window.formatBytes || (n => n + ' B');
+  const top = storage.topPrefixes(2, 5);
+  const projects = window.PROJECTS || [];
+  const labelFor = (prefix) => {
+    if (prefix.startsWith('projects/')) {
+      const pid = prefix.split('/')[1];
+      const p = projects.find(pp => pp.id === pid);
+      return p ? `${p.name} (${pid})` : prefix;
+    }
+    if (prefix.startsWith('delivery-notes')) return 'Delivery notes';
+    return prefix;
+  };
+
+  return (
+    <div data-testid="settings-storage-panel" className="space-y-4">
+      <SectionTitle title="Image storage" subtitle="In-browser memory for the demo. Will sync to Supabase Storage after backend wiring." className="!mb-0" />
+
+      <div className="grid grid-cols-3 gap-3">
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Images stored</div><div className="text-2xl font-bold tnum mt-1">{count.toLocaleString()}</div></Card>
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Bytes used</div><div className="text-2xl font-bold tnum mt-1" data-testid="settings-storage-bytes">{fmt(used)}</div><div className="text-[11px] text-ink-500">of {fmt(QUOTA)} (Supabase Pro)</div></Card>
+        <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Quota used</div><div className="text-2xl font-bold tnum mt-1 text-emerald-600">{pct < 0.001 ? '<0.001' : pct.toFixed(3)}%</div>
+          <div className="mt-2 h-1 rounded-full bg-slate-100 overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: Math.max(0.5, pct) + '%' }} /></div>
+        </Card>
+      </div>
+
+      <Card padding="p-0">
+        <div className="px-4 py-3 border-b border-soft">
+          <div className="text-sm font-semibold ink-on-dark">Top 5 by storage</div>
+          <div className="text-[11px] text-ink-500 mt-0.5">Grouped by the first two path segments.</div>
+        </div>
+        <table className="w-full text-xs">
+          <thead className="surface-2 border-b border-soft">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold">Bucket</th>
+              <th className="text-right px-3 py-2 font-semibold w-24">Images</th>
+              <th className="text-right px-3 py-2 font-semibold w-32">Bytes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {top.length === 0 && <tr><td colSpan={3} className="text-center py-6 text-xs text-ink-500 italic">No images uploaded yet.</td></tr>}
+            {top.map(g => (
+              <tr key={g.prefix} className="border-b border-soft">
+                <td className="px-3 py-2 font-medium">{labelFor(g.prefix)}</td>
+                <td className="px-3 py-2 text-right tnum">{g.count.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right tnum">{fmt(g.bytes)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Card>
+
+      <div className="text-[11px] text-ink-500 italic bg-amber-50 border border-amber-200 rounded-md p-2.5">
+        Images stored in browser memory for demo. Will sync to Supabase Storage after backend wiring.
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { PageSettings, StorageTab });

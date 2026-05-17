@@ -995,6 +995,121 @@ record('R28: School Detail mounts EditCoordsModal at page level',
 record('R28: EditCoordsModal flags the local-only persistence ("Saved locally for this session")',
        /Saved locally for this session/.test(mapR28));
 
+// ── K16. Round 29 — image compression + uploader + Project cover / gallery /
+//                    stage photos + new Delivery Notes module + Storage panel ──
+const imageR29     = read('lib/image.js');
+const storageR29   = read('lib/storage.js');
+const uploaderR29  = read('components/ImageUploader.jsx');
+const projectR29   = read('page-project.jsx');
+const schoolDetR29 = read('page-school-detail.jsx');
+const deliveryR29  = read('page-delivery-notes.jsx');
+const dataR2R29    = read('data-r2.jsx');
+const storeR29     = read('store-r2.jsx');
+const shellR29     = read('shell.jsx');
+const appR29       = read('app.jsx');
+const settingsR29  = read('page-settings.jsx');
+const mainR29      = read('main.jsx');
+
+record('R29: IMAGE_LIMITS constants set per spec (10 MB input / 500 KB output / 1920 px / q 0.78)',
+       /maxInputBytes:\s+10 \* 1024 \* 1024/.test(imageR29) &&
+       /maxOutputBytes: 500 \* 1024/.test(imageR29) &&
+       /maxDimension:\s+1920/.test(imageR29) &&
+       /jpegQuality:\s+0\.78/.test(imageR29));
+record('R29: compressImage uses canvas + iterates quality down (0.78 → 0.7 → 0.6 → 0.5 → 0.4)',
+       /document\.createElement\('canvas'\)/.test(imageR29) &&
+       /const qualities = \[IMAGE_LIMITS\.jpegQuality, 0\.7, 0\.6, 0\.5, 0\.4\]/.test(imageR29) &&
+       /b\.size <= IMAGE_LIMITS\.maxOutputBytes/.test(imageR29));
+record('R29: compressImage returns { blob, dataUrl, width, height, originalBytes, compressedBytes, quality, mime }',
+       /return \{[\s\S]{0,400}blob, dataUrl, width, height,[\s\S]{0,400}originalBytes:[\s\S]{0,400}compressedBytes:[\s\S]{0,400}quality:/.test(imageR29));
+record('R29: compressImage rejects files > IMAGE_LIMITS.maxInputBytes',
+       /file\.size > IMAGE_LIMITS\.maxInputBytes/.test(imageR29) &&
+       /File too large/.test(imageR29));
+record('R29: compressImage rejects unsupported MIME types',
+       /acceptedMimes:\s+\['image\/jpeg', 'image\/png', 'image\/webp', 'image\/heic'\]/.test(imageR29) &&
+       /Unsupported file type/.test(imageR29));
+record('R29: MemoryImageStorage adapter exposes upload / delete / list / estimatedBytes / topPrefixes',
+       /class MemoryImageStorage/.test(storageR29) &&
+       /async upload\(path, blob, dataUrl/.test(storageR29) &&
+       /async delete\(path\)/.test(storageR29) &&
+       /async list\(prefix\)/.test(storageR29) &&
+       /estimatedBytes\(\)/.test(storageR29) &&
+       /topPrefixes\(/.test(storageR29) &&
+       /window\.imageStorage = imageStorage/.test(storageR29) === false /* assigned via Object.assign */ &&
+       /Object\.assign\(window, \{ MemoryImageStorage, imageStorage \}\)/.test(storageR29));
+record('R29: ImageUploader rejects files > 10 MB (reportError + maxInputBytes guard) and rejects non-image MIME',
+       /maxInputBytes/.test(imageR29) &&
+       /reportError\(err\.message \|\| String\(err\)\)/.test(uploaderR29));
+record('R29: ImageUploader shows preview with original vs compressed size + dimensions',
+       /data-testid="upload-preview-size"/.test(uploaderR29) &&
+       /p\.compressed\.originalBytes/.test(uploaderR29) &&
+       /p\.compressed\.compressedBytes/.test(uploaderR29) &&
+       /p\.compressed\.width\}×\{p\.compressed\.height/.test(uploaderR29));
+record('R29: ImageUploader enforces maxCount + offers Upload + Cancel + Delete affordances',
+       /const remaining = Math\.max\(0, maxCount - value\.length\)/.test(uploaderR29) &&
+       /Max \$\{maxCount\} image/.test(uploaderR29) &&
+       /removeUploaded = async \(rec\)/.test(uploaderR29));
+record('R29: ImageUploader exposed on window + imported from main.jsx',
+       /Object\.assign\(window, \{ ImageUploader \}\)/.test(uploaderR29) &&
+       /import '\.\/components\/ImageUploader\.jsx';/.test(mainR29) &&
+       /import '\.\/lib\/image\.js';/.test(mainR29) &&
+       /import '\.\/lib\/storage\.js';/.test(mainR29));
+
+record('R29: Project Detail header renders cover photo slot (always-on, coverMode)',
+       /<window\.ImageUploader[\s\S]{0,300}path=\{`projects\/\$\{project\.id\}\/cover`\}[\s\S]{0,200}coverMode=\{true\}/.test(projectR29));
+record('R29: Project Detail Gallery tab mounts ImageUploader with maxCount=50',
+       /Gallery'/.test(projectR29) &&
+       /tab === 'Gallery'/.test(projectR29) &&
+       /path=\{`projects\/\$\{project\.id\}\/gallery`\}[\s\S]{0,200}maxCount=\{50\}/.test(projectR29));
+record('R29: School Detail Photos tab renders one ImageUploader per stage (path with stageKey)',
+       /data-testid=\{`stage-photos-S\$\{String\(i \+ 1\)\.padStart\(2, '0'\)\}`\}/.test(schoolDetR29) &&
+       /path=\{`projects\/\$\{school\.projectId\}\/schools\/\$\{school\.id\}\/stages\/\$\{key\}`\}[\s\S]{0,200}maxCount=\{5\}/.test(schoolDetR29));
+
+record('R29: Delivery Notes seed has at least 12 entries spread across projects',
+       /const DELIVERY_NOTES_SEED = \(\(\) => \{/.test(dataR2R29) &&
+       (dataR2R29.match(/'p-(mad|dam|jaz|hai|qas|naj|mak1|jof|nb)'/g) || []).length >= 12 &&
+       /DELIVERY_NOTES_SEED,/.test(dataR2R29));
+record('R29: store exposes deliveryNotes state + addDeliveryNote + updateDeliveryNote + deleteDeliveryNote',
+       /const \[deliveryNotes, setDeliveryNotes\]/.test(storeR29) &&
+       /const addDeliveryNote = \(data, currentUser\)/.test(storeR29) &&
+       /const updateDeliveryNote = \(id, patch, currentUser\)/.test(storeR29) &&
+       /const deleteDeliveryNote = \(id, currentUser\)/.test(storeR29) &&
+       /deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote/.test(storeR29));
+record('R29: addDeliveryNote writes a CREATE audit entry with entityType "delivery_note"',
+       /action: 'CREATE', entityType: 'delivery_note'/.test(storeR29));
+record('R29: PageDeliveryNotes renders list view + create/edit form + read-only detail',
+       /function PageDeliveryNotes/.test(deliveryR29) &&
+       /function DeliveryNoteDetail/.test(deliveryR29) &&
+       /function DeliveryNoteForm/.test(deliveryR29) &&
+       /data-testid="delivery-notes-list"/.test(deliveryR29) &&
+       /data-testid="delivery-notes-search"/.test(deliveryR29));
+record('R29: Delivery Notes detail offers Print/Export PDF via a printable HTML window',
+       /Print \/ Export PDF/.test(deliveryR29) &&
+       /window\.open\('', '_blank'\)/.test(deliveryR29) &&
+       /window\.print\(\)/.test(deliveryR29));
+record('R29: Delivery Notes form mounts ImageUploader with path delivery-notes/{note_id}, maxCount=10',
+       /path=\{`delivery-notes\/\$\{noteId\}`\}[\s\S]{0,200}maxCount=\{10\}/.test(deliveryR29));
+
+record('R29: Sidebar adds "Delivery Notes" item for non-Material-planning roles',
+       /const deliveryNotesItem = \(role !== 'Material planning'\)/.test(shellR29) &&
+       /\{ id: 'delivery-notes', label: 'Delivery Notes', icon: 'package' \}/.test(shellR29));
+record('R29: app.jsx routes "delivery-notes" to PageDeliveryNotes',
+       /if \(page === 'delivery-notes'/.test(appR29) &&
+       /<PageDeliveryNotes currentUser=\{currentUser\}/.test(appR29));
+
+record('R29: Settings adds "Storage" tab with StorageTab component',
+       /'Branding','Notifications','Storage'/.test(settingsR29) &&
+       /tab === 'Storage'/.test(settingsR29) &&
+       /function StorageTab/.test(settingsR29) &&
+       /data-testid="settings-storage-panel"/.test(settingsR29));
+record('R29: Storage panel shows correct byte count + image count + Supabase 100 GB quota note',
+       /storage\.estimatedBytes\(\)/.test(settingsR29) &&
+       /storage\.imageCount\(\)/.test(settingsR29) &&
+       /100 \* 1024 \* 1024 \* 1024/.test(settingsR29) &&
+       /Supabase Pro/.test(settingsR29) &&
+       /data-testid="settings-storage-bytes"/.test(settingsR29));
+record('R29: Storage panel surfaces local-only disclaimer for the demo',
+       /Images stored in browser memory for demo\. Will sync to Supabase Storage after backend wiring\./.test(settingsR29));
+
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic
 // to confirm the data flow.

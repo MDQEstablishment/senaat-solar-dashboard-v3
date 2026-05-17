@@ -8,6 +8,8 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
     stageStatuses, setSchoolStageStatus, stageHistory, toggleSchoolStage,
     updateSchool, validateSchool, logAudit,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
+    // R29 — per-stage photo storage
+    getSchoolStagePhotos, setSchoolStagePhotosFor,
   } = useStore();
   // R28 — edit-coordinates modal (opened from the map preview's empty-state button
   // or its "Add precise coordinates" link when the school falls back to a region
@@ -234,22 +236,32 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
           )}
 
           {tab === 'Photos' && (
-            <div className="p-5">
-              <SectionTitle icon="upload" title="Photos" subtitle="Multi-image upload (demo placeholders)" />
-              <div className="border-2 border-dashed border-soft rounded-md p-8 text-center text-xs text-ink-500">
-                <Icon name="upload" size={20} />
-                <div className="mt-2 font-medium">Drop images here or click to browse</div>
-              </div>
-              <div className="mt-4 grid grid-cols-4 gap-2">
-                {(school.photosList || []).map(p => (
-                  <div key={p.id} className="placeholder-grid h-24 rounded border border-soft flex items-center justify-center text-[10px] text-ink-500">
-                    <Icon name="sun" size={16} />
+            <div className="p-5 space-y-3">
+              <SectionTitle icon="upload" title="Stage photos"
+                subtitle="Up to 5 photos per stage. Compressed to ≤ 500 KB before upload — large phone photos shrink automatically." />
+              {(window.STAGE_KEYS || SCHOOL_STAGES).map((label, i) => {
+                const key = (window.STAGE_KEYS || [])[i] || label;
+                const list = (typeof getSchoolStagePhotos === 'function') ? getSchoolStagePhotos(school.id, key) : [];
+                const shortLabel = (window.SCHOOL_STAGE_SHORT || SCHOOL_STAGES)[i];
+                return (
+                  <div key={key} data-testid={`stage-photos-S${String(i + 1).padStart(2, '0')}`}
+                    className="border border-soft rounded-md p-3">
+                    <div className="flex items-baseline gap-2 mb-2">
+                      <span className="font-mono text-[10px] text-ink-500">S{String(i + 1).padStart(2, '0')}</span>
+                      <span className="text-sm font-medium">{shortLabel}</span>
+                      <span className="text-[11px] text-ink-500 ml-auto">{list.length}/5</span>
+                    </div>
+                    {window.ImageUploader && (
+                      <window.ImageUploader
+                        path={`projects/${school.projectId}/schools/${school.id}/stages/${key}`}
+                        maxCount={5}
+                        compact={true}
+                        value={list}
+                        onChange={(next) => setSchoolStagePhotosFor && setSchoolStagePhotosFor(school.id, key, next)} />
+                    )}
                   </div>
-                ))}
-                {(school.photosList || []).length === 0 && (
-                  <div className="col-span-4 text-center py-6 text-xs text-ink-500 italic">No photos uploaded yet.</div>
-                )}
-              </div>
+                );
+              })}
             </div>
           )}
 
