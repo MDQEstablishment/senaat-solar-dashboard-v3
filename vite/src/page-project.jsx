@@ -261,83 +261,31 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           onClose={() => setLifecycleEditOpen(false)} />
       )}
 
-      {/* R19: School stage distribution — horizontal funnel + 18-cell scrub strip */}
+      {/* R21 Issue #3: School Execution Stages — vertical list (was horizontal funnel
+          + 18-cell strip). Real distributions cluster at 3-4 stages out of 18, which
+          made the horizontal layout collapse 14 segments into invisible slivers.
+          The vertical list always shows the full pipeline S01→S18 with active rows
+          prominent and empty rows recessed. Scoped to maxHeight 480px with internal
+          scroll so the rest of the Project Detail page stays in view. */}
       {project.schoolDist && (() => {
         const totalFunnel = projSchoolCount;
-        const distSum = project.schoolDist.reduce((a,c)=>a+c,0);
-        const notStartedCount = Math.max(0, totalFunnel - distSum);
-        const funnelSegs = [
-          { n: null, label: 'Not started', cat: 'none', count: notStartedCount, bg: '#E5E7EB', fg: '#475569' },
-          ...STAGE_KEYS.map((key, i) => {
-            const cat = STAGE_CATEGORY[key];
-            const cc  = STAGE_CATEGORY_COLORS[cat] || {};
-            return { n: i, label: SCHOOL_STAGES[i], cat, count: project.schoolDist[i] || 0, bg: cc.dot || '#94A3B8', fg: '#fff' };
-          }),
-        ];
+        const SchoolsStagesVertical = window.SchoolsStagesVertical;
         return (
           <Card>
-            <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`} />
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11, color: '#64748B' }}>
-              <span>← Earlier in pipeline</span>
-              <span>Later in pipeline →</span>
+            <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`}
+              subtitle="Full pipeline S01→S18 · empty rows stay in place · click any row to filter" />
+            <div style={{ maxHeight: 480, overflowY: 'auto', border: '0.5px solid #E2E8F0', borderRadius: 8 }}>
+              {SchoolsStagesVertical ? (
+                <SchoolsStagesVertical
+                  totalRows={totalFunnel}
+                  distPerStage={project.schoolDist}
+                  activeStage={activeFunnelStage}
+                  onSetStage={(i) => setActiveFunnelStage(i)} />
+              ) : (
+                <div className="p-4 text-xs text-ink-500 italic">Loading stage list…</div>
+              )}
             </div>
 
-            {/* Horizontal funnel */}
-            <div style={{ display: 'flex', height: 42, borderRadius: 6, overflow: 'hidden', background: '#F1F2F5' }}>
-              {funnelSegs.map((seg, si) => {
-                const w = totalFunnel > 0 ? (seg.count / totalFunnel) * 100 : 0;
-                if (w < 0.5) return null;
-                const isActive = seg.n !== null && activeFunnelStage === seg.n;
-                return (
-                  <div key={si}
-                    style={{ width: w + '%', background: seg.bg, borderRight: '1px solid rgba(255,255,255,0.5)',
-                      position: 'relative', cursor: seg.n !== null ? 'pointer' : 'default',
-                      outline: isActive ? '2px solid #0B2545' : 'none',
-                      outlineOffset: isActive ? '-2px' : 0, zIndex: isActive ? 2 : 1 }}
-                    onClick={() => seg.n !== null && setActiveFunnelStage(seg.n)}
-                    title={seg.label + ' · ' + seg.count + ' schools'}>
-                    {w > 4 && (
-                      <span style={{ position: 'absolute', top: '50%', left: '50%',
-                        transform: 'translate(-50%,-50%)', color: seg.fg, fontSize: 11,
-                        fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                        {seg.count}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* 18-cell mini strip */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 4, marginTop: 12 }}>
-              {STAGE_KEYS.map((key, i) => {
-                const cat    = STAGE_CATEGORY[key];
-                const cc     = STAGE_CATEGORY_COLORS[cat] || {};
-                const count  = project.schoolDist[i] || 0;
-                const pct    = totalFunnel > 0 ? Math.round(count / totalFunnel * 100) : 0;
-                const isActive = activeFunnelStage === i;
-                return (
-                  <div key={key}
-                    style={{ background: isActive ? '#fff' : '#FAFAFA',
-                      border: isActive ? '1px solid #0B2545' : '1px solid #EAECEF',
-                      borderRadius: 6, padding: '8px 6px 6px', cursor: 'pointer' }}
-                    onClick={() => setActiveFunnelStage(isActive ? null : i)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#64748B', fontWeight: 600 }}>{i + 1}</span>
-                      <span style={{ width: 6, height: 6, borderRadius: 2, background: cc.dot, display: 'inline-block' }} />
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', lineHeight: 1, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{count}</div>
-                    <div style={{ fontSize: 9, color: '#64748B', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</div>
-                    <div style={{ height: 3, borderRadius: 99, background: '#EAECEF', overflow: 'hidden', marginTop: 6 }}>
-                      <div style={{ height: '100%', background: cc.dot, width: Math.max(pct, 0.4) + '%' }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Filter chip */}
             {activeFunnelStage !== null && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8,

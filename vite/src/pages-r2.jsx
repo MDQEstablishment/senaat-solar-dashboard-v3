@@ -4,9 +4,14 @@ import React from 'react';
 // R16 #4: Filter escalations to those directed at the current user.
 // "Directed at" = currently with this user, OR raised to this user's role,
 // OR explicitly assigned to this user. Status must still be open (not Resolved).
+// R21 Issue #1: VP-specific rule — only items raised by a user with role 'Manager'
+// reach the VP. Escalations raised by Program Manager / Operations Manager / Project
+// Manager stop at the Manager tier; the Manager must explicitly forward to VP. This
+// enforces the escalation hierarchy that was implicit in the org chart but not yet
+// enforced in the selector.
 function filterEscalationsDirectedTo(escalations, user) {
   if (!user) return [];
-  return (escalations || []).filter(e =>
+  const list = (escalations || []).filter(e =>
     e.status !== 'Resolved' && (
       e.currentlyWith === user.id ||
       e.toUserId === user.id ||
@@ -15,6 +20,14 @@ function filterEscalationsDirectedTo(escalations, user) {
       e.raisedTo === user.role
     )
   );
+  if (user.role !== 'VP') return list;
+  // VP gate: drop anything whose raiser is not a Manager.
+  const people = window.PEOPLE || [];
+  return list.filter(e => {
+    const raiserId = e.fromUserId || e.raisedBy;
+    const raiser = people.find(p => p.id === raiserId);
+    return raiser && raiser.role === 'Manager';
+  });
 }
 // Heading varies per role so the widget reads naturally on each dashboard.
 function escalationsDirectedHeading(user) {

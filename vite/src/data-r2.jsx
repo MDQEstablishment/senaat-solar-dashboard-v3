@@ -96,35 +96,36 @@ const FINANCIAL_ENTRIES_DEFAULT = (() => {
 })();
 
 // Sample escalations using new Zamil user IDs and hierarchy
+// R21 Issue #1: PM and Program-Manager raised items now stop at the Manager tier.
+// The VP only sees escalations whose raiser is a Manager (see filterEscalationsDirectedTo).
 const ESCALATIONS_DEFAULT = [
   {
     id: 'esc1', title: 'SEC approval delays blocking 32 schools in Jazan',
-    fromUserId: 'u-pm2', toRole: 'VP', toUserId: 'u-vp',
+    fromUserId: 'u-pm2', toRole: 'Manager', toUserId: 'u-mgr1',
     projectId: 'p-jaz', schoolId: null, taskId: null,
-    reason: 'SEC has held our submission for 6 weeks. Need executive intervention.',
-    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    reason: 'SEC has held our submission for 6 weeks. Manager intervention requested before VP escalation.',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-mgr1',
     opened: '2026-04-22', daysOpen: 12,
     chain: [
-      { fromUserId: 'u-pm2', toUserId: 'u-pgm', toRole: 'Program Manager', when: '2026-04-22', action: 'Escalated' },
-      { fromUserId: 'u-pgm', toUserId: 'u-vp',  toRole: 'VP',              when: '2026-04-23', action: 'Forwarded' },
+      { fromUserId: 'u-pm2', toUserId: 'u-pgm',  toRole: 'Program Manager', when: '2026-04-22', action: 'Escalated' },
+      { fromUserId: 'u-pgm', toUserId: 'u-mgr1', toRole: 'Manager',         when: '2026-04-23', action: 'Forwarded' },
     ],
     history: [
       { who: 'u-pm2', when: '2026-04-22', action: 'Created',     note: 'Escalating — SEC stuck.' },
-      { who: 'u-pgm', when: '2026-04-23', action: 'Forwarded',   note: 'Forwarded to VP — needs executive intervention with SEC.' },
-      { who: 'u-vp',  when: '2026-04-25', action: 'Acknowledged',note: 'Reaching out to SEC director.' },
+      { who: 'u-pgm', when: '2026-04-23', action: 'Forwarded',   note: 'Forwarded to Manager — may need VP sign-off after Manager review.' },
     ],
   },
   {
     id: 'esc2', title: 'Cash flow risk — Najran 3rd payment 30 days overdue',
-    fromUserId: 'u-pgm', toRole: 'VP', toUserId: 'u-vp',
+    fromUserId: 'u-pgm', toRole: 'Manager', toUserId: 'u-mgr2',
     projectId: 'p-naj', schoolId: null, taskId: null,
     reason: 'Client has not released 3rd payment. Subcontractor threatening to pull resources.',
-    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-mgr2',
     opened: '2026-04-28', daysOpen: 6,
-    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-vp', toRole: 'VP', when: '2026-04-28', action: 'Escalated' }],
+    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-mgr2', toRole: 'Manager', when: '2026-04-28', action: 'Escalated' }],
     history: [
-      { who: 'u-pgm', when: '2026-04-28', action: 'Created',     note: 'Cash flow blocker.' },
-      { who: 'u-vp',  when: '2026-04-30', action: 'Acknowledged',note: 'Coordinating with finance.' },
+      { who: 'u-pgm',  when: '2026-04-28', action: 'Created',     note: 'Cash flow blocker — needs Manager review before VP.' },
+      { who: 'u-mgr2', when: '2026-04-30', action: 'Acknowledged',note: 'Coordinating with finance.' },
     ],
   },
   {
@@ -141,13 +142,38 @@ const ESCALATIONS_DEFAULT = [
   },
   {
     id: 'esc4', title: 'Material substitution approval — DC cables',
-    fromUserId: 'u-pgm', toRole: 'VP', toUserId: 'u-vp',
+    fromUserId: 'u-pgm', toRole: 'Manager', toUserId: 'u-mgr1',
     projectId: 'p-nb', schoolId: null, taskId: null,
     reason: 'Original spec cable unavailable. Vendor proposes equivalent KSA-made cable.',
-    urgency: 'Medium', status: 'Open', currentlyWith: 'u-vp',
+    urgency: 'Medium', status: 'Open', currentlyWith: 'u-mgr1',
     opened: '2026-04-30', daysOpen: 4,
-    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-vp', toRole: 'VP', when: '2026-04-30', action: 'Escalated' }],
-    history: [{ who: 'u-pgm', when: '2026-04-30', action: 'Created', note: 'Substitution dossier attached.' }],
+    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-mgr1', toRole: 'Manager', when: '2026-04-30', action: 'Escalated' }],
+    history: [{ who: 'u-pgm', when: '2026-04-30', action: 'Created', note: 'Substitution dossier attached — Manager to review.' }],
+  },
+  // R21 Issue #1: NEW Manager-raised escalation — reaches the VP per the new gate.
+  {
+    id: 'esc7', title: 'Budget overrun on Madinah program needs VP sign-off',
+    fromUserId: 'u-mgr1', toRole: 'VP', toUserId: 'u-vp',
+    projectId: 'p-mad', schoolId: null, taskId: null,
+    reason: 'Madinah program tracking 7.2% over approved contract value. Need VP authorization to release contingency reserve and renegotiate three line items with the SEC.',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    opened: '2026-05-02', daysOpen: 2,
+    chain: [{ fromUserId: 'u-mgr1', toUserId: 'u-vp', toRole: 'VP', when: '2026-05-02', action: 'Escalated' }],
+    history: [
+      { who: 'u-mgr1', when: '2026-05-02', action: 'Created', note: 'Reviewed with finance and PM. Authorising release of contingency requires VP sign-off per delegation matrix.' },
+    ],
+  },
+  {
+    id: 'esc8', title: 'Vendor non-performance — Eastern province inverters',
+    fromUserId: 'u-mgr2', toRole: 'VP', toUserId: 'u-vp',
+    projectId: 'p-has', schoolId: null, taskId: null,
+    reason: 'Tier-1 inverter supplier missed three consecutive delivery slots. Recommending termination clause invocation. Need VP approval before legal triggers liquidated damages.',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    opened: '2026-04-29', daysOpen: 5,
+    chain: [{ fromUserId: 'u-mgr2', toUserId: 'u-vp', toRole: 'VP', when: '2026-04-29', action: 'Escalated' }],
+    history: [
+      { who: 'u-mgr2', when: '2026-04-29', action: 'Created', note: 'Termination clause requires executive sign-off.' },
+    ],
   },
   {
     id: 'esc5', title: 'Access permissions — 8 schools blocked by Education Directorate',

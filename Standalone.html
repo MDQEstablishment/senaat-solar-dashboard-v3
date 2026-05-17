@@ -1408,35 +1408,36 @@ const FINANCIAL_ENTRIES_DEFAULT = (() => {
 })();
 
 // Sample escalations using new Zamil user IDs and hierarchy
+// R21 Issue #1: PM and Program-Manager raised items now stop at the Manager tier.
+// The VP only sees escalations whose raiser is a Manager (see filterEscalationsDirectedTo).
 const ESCALATIONS_DEFAULT = [
   {
     id: 'esc1', title: 'SEC approval delays blocking 32 schools in Jazan',
-    fromUserId: 'u-pm2', toRole: 'VP', toUserId: 'u-vp',
+    fromUserId: 'u-pm2', toRole: 'Manager', toUserId: 'u-mgr1',
     projectId: 'p-jaz', schoolId: null, taskId: null,
-    reason: 'SEC has held our submission for 6 weeks. Need executive intervention.',
-    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    reason: 'SEC has held our submission for 6 weeks. Manager intervention requested before VP escalation.',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-mgr1',
     opened: '2026-04-22', daysOpen: 12,
     chain: [
-      { fromUserId: 'u-pm2', toUserId: 'u-pgm', toRole: 'Program Manager', when: '2026-04-22', action: 'Escalated' },
-      { fromUserId: 'u-pgm', toUserId: 'u-vp',  toRole: 'VP',              when: '2026-04-23', action: 'Forwarded' },
+      { fromUserId: 'u-pm2', toUserId: 'u-pgm',  toRole: 'Program Manager', when: '2026-04-22', action: 'Escalated' },
+      { fromUserId: 'u-pgm', toUserId: 'u-mgr1', toRole: 'Manager',         when: '2026-04-23', action: 'Forwarded' },
     ],
     history: [
       { who: 'u-pm2', when: '2026-04-22', action: 'Created',     note: 'Escalating — SEC stuck.' },
-      { who: 'u-pgm', when: '2026-04-23', action: 'Forwarded',   note: 'Forwarded to VP — needs executive intervention with SEC.' },
-      { who: 'u-vp',  when: '2026-04-25', action: 'Acknowledged',note: 'Reaching out to SEC director.' },
+      { who: 'u-pgm', when: '2026-04-23', action: 'Forwarded',   note: 'Forwarded to Manager — may need VP sign-off after Manager review.' },
     ],
   },
   {
     id: 'esc2', title: 'Cash flow risk — Najran 3rd payment 30 days overdue',
-    fromUserId: 'u-pgm', toRole: 'VP', toUserId: 'u-vp',
+    fromUserId: 'u-pgm', toRole: 'Manager', toUserId: 'u-mgr2',
     projectId: 'p-naj', schoolId: null, taskId: null,
     reason: 'Client has not released 3rd payment. Subcontractor threatening to pull resources.',
-    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-mgr2',
     opened: '2026-04-28', daysOpen: 6,
-    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-vp', toRole: 'VP', when: '2026-04-28', action: 'Escalated' }],
+    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-mgr2', toRole: 'Manager', when: '2026-04-28', action: 'Escalated' }],
     history: [
-      { who: 'u-pgm', when: '2026-04-28', action: 'Created',     note: 'Cash flow blocker.' },
-      { who: 'u-vp',  when: '2026-04-30', action: 'Acknowledged',note: 'Coordinating with finance.' },
+      { who: 'u-pgm',  when: '2026-04-28', action: 'Created',     note: 'Cash flow blocker — needs Manager review before VP.' },
+      { who: 'u-mgr2', when: '2026-04-30', action: 'Acknowledged',note: 'Coordinating with finance.' },
     ],
   },
   {
@@ -1453,13 +1454,38 @@ const ESCALATIONS_DEFAULT = [
   },
   {
     id: 'esc4', title: 'Material substitution approval — DC cables',
-    fromUserId: 'u-pgm', toRole: 'VP', toUserId: 'u-vp',
+    fromUserId: 'u-pgm', toRole: 'Manager', toUserId: 'u-mgr1',
     projectId: 'p-nb', schoolId: null, taskId: null,
     reason: 'Original spec cable unavailable. Vendor proposes equivalent KSA-made cable.',
-    urgency: 'Medium', status: 'Open', currentlyWith: 'u-vp',
+    urgency: 'Medium', status: 'Open', currentlyWith: 'u-mgr1',
     opened: '2026-04-30', daysOpen: 4,
-    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-vp', toRole: 'VP', when: '2026-04-30', action: 'Escalated' }],
-    history: [{ who: 'u-pgm', when: '2026-04-30', action: 'Created', note: 'Substitution dossier attached.' }],
+    chain: [{ fromUserId: 'u-pgm', toUserId: 'u-mgr1', toRole: 'Manager', when: '2026-04-30', action: 'Escalated' }],
+    history: [{ who: 'u-pgm', when: '2026-04-30', action: 'Created', note: 'Substitution dossier attached — Manager to review.' }],
+  },
+  // R21 Issue #1: NEW Manager-raised escalation — reaches the VP per the new gate.
+  {
+    id: 'esc7', title: 'Budget overrun on Madinah program needs VP sign-off',
+    fromUserId: 'u-mgr1', toRole: 'VP', toUserId: 'u-vp',
+    projectId: 'p-mad', schoolId: null, taskId: null,
+    reason: 'Madinah program tracking 7.2% over approved contract value. Need VP authorization to release contingency reserve and renegotiate three line items with the SEC.',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    opened: '2026-05-02', daysOpen: 2,
+    chain: [{ fromUserId: 'u-mgr1', toUserId: 'u-vp', toRole: 'VP', when: '2026-05-02', action: 'Escalated' }],
+    history: [
+      { who: 'u-mgr1', when: '2026-05-02', action: 'Created', note: 'Reviewed with finance and PM. Authorising release of contingency requires VP sign-off per delegation matrix.' },
+    ],
+  },
+  {
+    id: 'esc8', title: 'Vendor non-performance — Eastern province inverters',
+    fromUserId: 'u-mgr2', toRole: 'VP', toUserId: 'u-vp',
+    projectId: 'p-has', schoolId: null, taskId: null,
+    reason: 'Tier-1 inverter supplier missed three consecutive delivery slots. Recommending termination clause invocation. Need VP approval before legal triggers liquidated damages.',
+    urgency: 'High', status: 'Open', currentlyWith: 'u-vp',
+    opened: '2026-04-29', daysOpen: 5,
+    chain: [{ fromUserId: 'u-mgr2', toUserId: 'u-vp', toRole: 'VP', when: '2026-04-29', action: 'Escalated' }],
+    history: [
+      { who: 'u-mgr2', when: '2026-04-29', action: 'Created', note: 'Termination clause requires executive sign-off.' },
+    ],
   },
   {
     id: 'esc5', title: 'Access permissions — 8 schools blocked by Education Directorate',
@@ -4396,83 +4422,31 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           onClose={() => setLifecycleEditOpen(false)} />
       )}
 
-      {/* R19: School stage distribution — horizontal funnel + 18-cell scrub strip */}
+      {/* R21 Issue #3: School Execution Stages — vertical list (was horizontal funnel
+          + 18-cell strip). Real distributions cluster at 3-4 stages out of 18, which
+          made the horizontal layout collapse 14 segments into invisible slivers.
+          The vertical list always shows the full pipeline S01→S18 with active rows
+          prominent and empty rows recessed. Scoped to maxHeight 480px with internal
+          scroll so the rest of the Project Detail page stays in view. */}
       {project.schoolDist && (() => {
         const totalFunnel = projSchoolCount;
-        const distSum = project.schoolDist.reduce((a,c)=>a+c,0);
-        const notStartedCount = Math.max(0, totalFunnel - distSum);
-        const funnelSegs = [
-          { n: null, label: 'Not started', cat: 'none', count: notStartedCount, bg: '#E5E7EB', fg: '#475569' },
-          ...STAGE_KEYS.map((key, i) => {
-            const cat = STAGE_CATEGORY[key];
-            const cc  = STAGE_CATEGORY_COLORS[cat] || {};
-            return { n: i, label: SCHOOL_STAGES[i], cat, count: project.schoolDist[i] || 0, bg: cc.dot || '#94A3B8', fg: '#fff' };
-          }),
-        ];
+        const SchoolsStagesVertical = window.SchoolsStagesVertical;
         return (
           <Card>
-            <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`} />
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11, color: '#64748B' }}>
-              <span>← Earlier in pipeline</span>
-              <span>Later in pipeline →</span>
+            <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`}
+              subtitle="Full pipeline S01→S18 · empty rows stay in place · click any row to filter" />
+            <div style={{ maxHeight: 480, overflowY: 'auto', border: '0.5px solid #E2E8F0', borderRadius: 8 }}>
+              {SchoolsStagesVertical ? (
+                <SchoolsStagesVertical
+                  totalRows={totalFunnel}
+                  distPerStage={project.schoolDist}
+                  activeStage={activeFunnelStage}
+                  onSetStage={(i) => setActiveFunnelStage(i)} />
+              ) : (
+                <div className="p-4 text-xs text-ink-500 italic">Loading stage list…</div>
+              )}
             </div>
 
-            {/* Horizontal funnel */}
-            <div style={{ display: 'flex', height: 42, borderRadius: 6, overflow: 'hidden', background: '#F1F2F5' }}>
-              {funnelSegs.map((seg, si) => {
-                const w = totalFunnel > 0 ? (seg.count / totalFunnel) * 100 : 0;
-                if (w < 0.5) return null;
-                const isActive = seg.n !== null && activeFunnelStage === seg.n;
-                return (
-                  <div key={si}
-                    style={{ width: w + '%', background: seg.bg, borderRight: '1px solid rgba(255,255,255,0.5)',
-                      position: 'relative', cursor: seg.n !== null ? 'pointer' : 'default',
-                      outline: isActive ? '2px solid #0B2545' : 'none',
-                      outlineOffset: isActive ? '-2px' : 0, zIndex: isActive ? 2 : 1 }}
-                    onClick={() => seg.n !== null && setActiveFunnelStage(seg.n)}
-                    title={seg.label + ' · ' + seg.count + ' schools'}>
-                    {w > 4 && (
-                      <span style={{ position: 'absolute', top: '50%', left: '50%',
-                        transform: 'translate(-50%,-50%)', color: seg.fg, fontSize: 11,
-                        fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                        {seg.count}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* 18-cell mini strip */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 4, marginTop: 12 }}>
-              {STAGE_KEYS.map((key, i) => {
-                const cat    = STAGE_CATEGORY[key];
-                const cc     = STAGE_CATEGORY_COLORS[cat] || {};
-                const count  = project.schoolDist[i] || 0;
-                const pct    = totalFunnel > 0 ? Math.round(count / totalFunnel * 100) : 0;
-                const isActive = activeFunnelStage === i;
-                return (
-                  <div key={key}
-                    style={{ background: isActive ? '#fff' : '#FAFAFA',
-                      border: isActive ? '1px solid #0B2545' : '1px solid #EAECEF',
-                      borderRadius: 6, padding: '8px 6px 6px', cursor: 'pointer' }}
-                    onClick={() => setActiveFunnelStage(isActive ? null : i)}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#64748B', fontWeight: 600 }}>{i + 1}</span>
-                      <span style={{ width: 6, height: 6, borderRadius: 2, background: cc.dot, display: 'inline-block' }} />
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', lineHeight: 1, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{count}</div>
-                    <div style={{ fontSize: 9, color: '#64748B', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</div>
-                    <div style={{ height: 3, borderRadius: 99, background: '#EAECEF', overflow: 'hidden', marginTop: 6 }}>
-                      <div style={{ height: '100%', background: cc.dot, width: Math.max(pct, 0.4) + '%' }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Filter chip */}
             {activeFunnelStage !== null && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8,
@@ -8438,9 +8412,14 @@ Object.assign(window, { PageSettings });
 // R16 #4: Filter escalations to those directed at the current user.
 // "Directed at" = currently with this user, OR raised to this user's role,
 // OR explicitly assigned to this user. Status must still be open (not Resolved).
+// R21 Issue #1: VP-specific rule — only items raised by a user with role 'Manager'
+// reach the VP. Escalations raised by Program Manager / Operations Manager / Project
+// Manager stop at the Manager tier; the Manager must explicitly forward to VP. This
+// enforces the escalation hierarchy that was implicit in the org chart but not yet
+// enforced in the selector.
 function filterEscalationsDirectedTo(escalations, user) {
   if (!user) return [];
-  return (escalations || []).filter(e =>
+  const list = (escalations || []).filter(e =>
     e.status !== 'Resolved' && (
       e.currentlyWith === user.id ||
       e.toUserId === user.id ||
@@ -8449,6 +8428,14 @@ function filterEscalationsDirectedTo(escalations, user) {
       e.raisedTo === user.role
     )
   );
+  if (user.role !== 'VP') return list;
+  // VP gate: drop anything whose raiser is not a Manager.
+  const people = window.PEOPLE || [];
+  return list.filter(e => {
+    const raiserId = e.fromUserId || e.raisedBy;
+    const raiser = people.find(p => p.id === raiserId);
+    return raiser && raiser.role === 'Manager';
+  });
 }
 // Heading varies per role so the widget reads naturally on each dashboard.
 function escalationsDirectedHeading(user) {
@@ -9774,24 +9761,28 @@ function SchoolStagesWorkbookCard() {
     <Card>
       <SectionTitle icon="file-spreadsheet"
         title="School Stages Workbook"
-        subtitle="One Excel file: download as template → fill in completion dates → upload to update progress, or export as live report" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        subtitle="Download a blank template or export the current state. Imports live on each project." />
+      {/* R21 Issue #2: Import Updates button moved out of the Reports tab — the
+          import flow now lives on Project Detail → Import Schools. The onPickFile
+          handler is preserved for the project-level call site; the Reports surface
+          stays read-only (Template + Export). */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Button variant="accent" icon="file-plus-2" onClick={downloadTemplate} disabled={busy != null} className="!justify-center">
           {busy === 'template' ? 'Building…' : 'Download Template'}
-        </Button>
-        <Button variant="ghost" icon="upload" onClick={() => fileRef.current?.click()} disabled={busy != null} className="!justify-center border border-soft">
-          {busy === 'import' ? 'Importing…' : 'Import Updates (.xlsx)'}
         </Button>
         <Button variant="ghost" icon="file-spreadsheet" onClick={exportReport} disabled={busy != null} className="!justify-center border border-soft">
           {busy === 'export' ? 'Exporting…' : 'Export Report'}
         </Button>
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-             className="hidden" onChange={onPickFile} />
+             className="hidden" onChange={onPickFile} aria-hidden="true" />
       <div className="text-[11px] text-ink-500 mt-3">
-        Identity columns (6): School ID · Name (AR/EN) · Region · Project · Contractor.
+        Identity columns (9): School ID · Name (AR/EN) · Region · City · Project · Contractor · SEC Meter · Status.
         Stage columns (18): grouped by Mechanical · Electrical · Commissioning · Handover.
         All 2,601 schools are pre-populated; leave a date cell blank to skip that stage.
+      </div>
+      <div className="text-[11px] text-ink-500 mt-2 italic">
+        Need to import updates? Use <span className="font-medium not-italic text-ink-700">Import Schools</span> inside any project.
       </div>
       {summary && (
         <Modal open={true} onClose={() => setSummary(null)} title="Import complete" width="max-w-md">

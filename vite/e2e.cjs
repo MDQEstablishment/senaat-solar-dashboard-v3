@@ -651,6 +651,49 @@ record('R20: Filter chip + identity school table preserved from R19',
 record('R20: SchoolsStagesVertical exposed on window',
        /SchoolsStagesVertical \}\);/.test(schoolsR20));
 
+// ── K9. Round 21 — VP escalation gate + Reports cleanup + Project Detail vertical ──
+const pagesR21    = read('pages-r2.jsx');
+const dataR2R21   = read('data-r2.jsx');
+const reportsR21  = read('page-reports-zamil.jsx');
+const projectR21  = read('page-project.jsx');
+
+record('R21 #1: VP escalations are filtered to Manager raisers only',
+       /R21 Issue #1: VP-specific rule/.test(pagesR21) &&
+       /if \(user\.role !== 'VP'\) return list/.test(pagesR21) &&
+       /raiser && raiser\.role === 'Manager'/.test(pagesR21));
+record('R21 #1: Existing PM / Program-Manager escalations now stop at the Manager tier (currentlyWith = u-mgr1 or u-mgr2)',
+       /id: 'esc1'[\s\S]{0,400}currentlyWith: 'u-mgr1'/.test(dataR2R21) &&
+       /id: 'esc2'[\s\S]{0,400}currentlyWith: 'u-mgr2'/.test(dataR2R21) &&
+       /id: 'esc4'[\s\S]{0,400}currentlyWith: 'u-mgr1'/.test(dataR2R21));
+record('R21 #1: at least one Manager-raised escalation routes to the VP (Budget overrun on Madinah)',
+       /id: 'esc7'[\s\S]{0,400}fromUserId: 'u-mgr1'[\s\S]{0,400}currentlyWith: 'u-vp'/.test(dataR2R21) &&
+       /Budget overrun on Madinah program needs VP sign-off/.test(dataR2R21));
+record('R21 #1: a second Manager-raised escalation present (vendor non-performance)',
+       /id: 'esc8'[\s\S]{0,400}fromUserId: 'u-mgr2'[\s\S]{0,400}currentlyWith: 'u-vp'/.test(dataR2R21));
+
+record('R21 #2: Reports tab does not contain Import Excel button',
+       !/Import Updates \(\.xlsx\)/.test(reportsR21) &&
+       !/Importing…/.test(reportsR21.replace(/'Importing…' : ''/g, '')) || // helper text removed from JSX
+       !/<Button[^>]*onClick=\{\(\) => fileRef\.current\?\.click\(\)\}/.test(reportsR21));
+record('R21 #2: Reports tab still has Download Template and Export Report buttons',
+       /Download Template/.test(reportsR21) &&
+       /Export Report/.test(reportsR21) &&
+       /grid-cols-1 md:grid-cols-2 gap-3/.test(reportsR21));
+record('R21 #2: Reports tab shows helper text directing users to Import Schools inside a project',
+       /Need to import updates\? Use[\s\S]{0,200}Import Schools[\s\S]{0,200}inside any project/.test(reportsR21));
+record('R21 #2: Importer (onPickFile) preserved as function but UI button is unwired',
+       /const onPickFile = async/.test(reportsR21) &&
+       /<input ref=\{fileRef\}[^>]*aria-hidden="true"/.test(reportsR21));
+
+record('R21 #3: Project Detail Overview renders SchoolsStagesVertical',
+       /window\.SchoolsStagesVertical/.test(projectR21) &&
+       /<SchoolsStagesVertical[\s\S]{0,300}distPerStage=\{project\.schoolDist\}/.test(projectR21));
+record('R21 #3: Project Detail vertical list constrained to maxHeight 480px with internal scroll',
+       /maxHeight: 480, overflowY: 'auto'/.test(projectR21));
+record('R21 #3: old horizontal funnel + 18-cell strip removed from Project Detail Overview',
+       !/\/\* Horizontal funnel \*\//.test(projectR21) &&
+       !/\/\* 18-cell mini strip \*\//.test(projectR21));
+
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic
 // to confirm the data flow.

@@ -555,24 +555,28 @@ function SchoolStagesWorkbookCard() {
     <Card>
       <SectionTitle icon="file-spreadsheet"
         title="School Stages Workbook"
-        subtitle="One Excel file: download as template → fill in completion dates → upload to update progress, or export as live report" />
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        subtitle="Download a blank template or export the current state. Imports live on each project." />
+      {/* R21 Issue #2: Import Updates button moved out of the Reports tab — the
+          import flow now lives on Project Detail → Import Schools. The onPickFile
+          handler is preserved for the project-level call site; the Reports surface
+          stays read-only (Template + Export). */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Button variant="accent" icon="file-plus-2" onClick={downloadTemplate} disabled={busy != null} className="!justify-center">
           {busy === 'template' ? 'Building…' : 'Download Template'}
-        </Button>
-        <Button variant="ghost" icon="upload" onClick={() => fileRef.current?.click()} disabled={busy != null} className="!justify-center border border-soft">
-          {busy === 'import' ? 'Importing…' : 'Import Updates (.xlsx)'}
         </Button>
         <Button variant="ghost" icon="file-spreadsheet" onClick={exportReport} disabled={busy != null} className="!justify-center border border-soft">
           {busy === 'export' ? 'Exporting…' : 'Export Report'}
         </Button>
       </div>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-             className="hidden" onChange={onPickFile} />
+             className="hidden" onChange={onPickFile} aria-hidden="true" />
       <div className="text-[11px] text-ink-500 mt-3">
-        Identity columns (6): School ID · Name (AR/EN) · Region · Project · Contractor.
+        Identity columns (9): School ID · Name (AR/EN) · Region · City · Project · Contractor · SEC Meter · Status.
         Stage columns (18): grouped by Mechanical · Electrical · Commissioning · Handover.
         All 2,601 schools are pre-populated; leave a date cell blank to skip that stage.
+      </div>
+      <div className="text-[11px] text-ink-500 mt-2 italic">
+        Need to import updates? Use <span className="font-medium not-italic text-ink-700">Import Schools</span> inside any project.
       </div>
       {summary && (
         <Modal open={true} onClose={() => setSummary(null)} title="Import complete" width="max-w-md">
