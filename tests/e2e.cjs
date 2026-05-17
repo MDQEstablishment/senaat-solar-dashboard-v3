@@ -460,18 +460,21 @@ record('R16 #1: store-r2 schoolStagesList carries category + excelHeader for eac
 // the funnel + 24-px scrub strip + filter chip in R19. These tests cover the same
 // intent: schools list still surfaces all 18 School Execution Stages in some form.
 const schoolsListR17 = read('page-schools-list.jsx');
-record('R17 → R19: Project Detail Stages view surfaces all 18 stages',
-       /STAGE_KEYS\.map\(\(key, i\)/.test(schoolsListR17) &&
-       /18 School Execution Stages/.test(schoolsListR17));
+// R17 → R19 → R20 → R23: Stages view surfaces all 18 stages. R23 replaced the
+// previous SchoolsStagesVertical implementation with the shared StageChecklistTable
+// (src/components/StageChecklistTable.jsx) — so the assertions now point there.
+record('R17 → R23: Project Detail Stages view surfaces all 18 stages',
+       /STAGE_KEYS_\.map\(\(key, i\)/.test(read('components/StageChecklistTable.jsx')) &&
+       /SCHOOL_STAGES_\[i\]/.test(read('components/StageChecklistTable.jsx')));
 record('R17: legacy 12-stage map (Surveyed / SEC Approvals / Fix1 / Fix2 / Handed Over) removed from Stages view',
        !/const LEGACY_STAGE_MAP/.test(schoolsListR17) &&
        !/LEGACY_STAGE_MAP\.map/.test(schoolsListR17));
-record('R17 → R19: Stages view colours each stage segment by category',
-       /STAGE_CATEGORY_COLORS\[cat\]/.test(schoolsListR17) &&
-       /STAGE_CATEGORY\[key\]/.test(schoolsListR17));
-record('R17 → R19: Stages view renders a current-stage badge per school',
-       /Current stage/.test(schoolsListR17) &&
-       /Not started/.test(schoolsListR17));
+record('R17 → R23: Stages view colours each stage segment by category',
+       /STAGE_CATEGORY_COLORS_\[cat\]/.test(read('components/StageChecklistTable.jsx')) &&
+       /STAGE_CATEGORY_\[key\]/.test(read('components/StageChecklistTable.jsx')));
+record('R17 → R23: Stages view renders a current-stage badge per school',
+       /Not started/.test(read('components/StageChecklistTable.jsx')) &&
+       /currentStageOf/.test(read('components/StageChecklistTable.jsx')));
 
 // ── K5. Round 18 — shorter handover labels + Project Detail export uses 18 stages ──
 const dataJsxR18    = read('data.jsx');
@@ -553,17 +556,14 @@ record('R19 Item #1: Tinted category panels (mechanical/electrical/commissioning
        /catKey="commissioning"/.test(dashJsxR19) &&
        /catKey="handover"/.test(dashJsxR19));
 
-// R19 Item #2 → R20: Project Detail Stages view surfaces all 18 stages in a
-// clickable form with a filter chip. R19 used a horizontal funnel + scrub strip;
-// R20 swapped to a vertical list because real distributions cluster at 3-4 stages
-// and the horizontal funnel collapsed empty segments into invisible slivers.
-record('R19 Item #2 → R20: Project Detail Stages view surfaces all 18 stages',
-       /Schools at each stage/.test(schoolsR19) &&
-       (/data-testid="stages-view-vertical"/.test(schoolsR19) ||
-        /data-testid="stages-view-scrub-strip"/.test(schoolsR19)));
-record('R19 Item #2: Stages view shows a removable filter chip when a stage is selected',
-       /Filtered by stage:/.test(schoolsR19) &&
-       /Clear stage filter/.test(schoolsR19));
+// R19 Item #2 → R20 → R23: Stages view surfaces all 18 stages. The horizontal
+// funnel (R19) and the vertical list (R20) both came and went; R23 replaced both
+// with the shared per-school checkmark table (StageChecklistTable).
+record('R19 Item #2 → R23: Stages view surfaces all 18 stages via the shared checkmark table',
+       /<SCT schools=\{rows\} hideInternalToolbar=\{true\}/.test(schoolsR19) &&
+       /data-testid="stage-checklist-table"/.test(read('components/StageChecklistTable.jsx')));
+record('R19 Item #2 → R23: Stages view exposes a removable stage filter (in shared component)',
+       /aria-label="Clear stage filter"/.test(read('components/StageChecklistTable.jsx')));
 record('R19 Item #2: legacy 18-column matrix removed from Stages view',
        !/STAGE_KEYS\.map\(\(k, i\) => \{[\s\S]{0,500}const st = s\.stages && s\.stages\[i\];[\s\S]{0,500}return \(\s+<td/.test(schoolsR19));
 
@@ -620,36 +620,37 @@ record('R19.1 D: StageCard progress bar visible — height 4, slate-100 bg, cate
        /height: 4, background: '#F1F5F9'/.test(stageR191) &&
        /background: catColors\.dot \|\| '#0B2545'/.test(stageR191));
 
-// ── K8. Round 20 — Project Detail Stages view goes VERTICAL ─────────────
+// ── K8. Round 20 → R23 — the vertical 18-row list (R20) was superseded by the
+// shared per-school checkmark table (R23). The R20 component (SchoolsStagesVertical)
+// was deleted from page-schools-list.jsx because nothing references it anymore.
+// These assertions preserve the *intent* (Schools List Stages view continues to
+// surface all 18 stages with an active-stage filter mechanism) against the new
+// implementation in src/components/StageChecklistTable.jsx.
 const schoolsR20 = read('page-schools-list.jsx');
+const sctR20     = read('components/StageChecklistTable.jsx');
 
-record('R20: Project Detail Vertical stage list component defined',
-       /function SchoolsStagesVertical/.test(schoolsR20) &&
-       /data-testid="stages-view-vertical"/.test(schoolsR20) &&
-       /STAGE_KEYS\.map\(\(key, i\)/.test(schoolsR20));
-record('R20: Vertical stage list renders 18 rows (one per stage S01-S18)',
-       /data-testid=\{`stages-view-row-S\$\{String\(i \+ 1\)\.padStart\(2, '0'\)\}`\}/.test(schoolsR20) &&
-       /data-stage-index=\{i\}/.test(schoolsR20));
-record('R20: Active rows visually distinct from empty rows (height + opacity)',
-       /const hasData = count > 0/.test(schoolsR20) &&
-       /const rowHeight = hasData \? 60 : 26/.test(schoolsR20) &&
-       /const rowOpacity = hasData \? 1 : 0\.4/.test(schoolsR20) &&
-       /fontSize: hasData \? 24 : 12/.test(schoolsR20));
-record('R20: Empty rows stay in place (not collapsed) with dashed-line placeholder',
-       /borderTop: '1px dashed #E2E8F0'/.test(schoolsR20) &&
-       /color: hasData \? '#0F172A' : '#94A3B8'/.test(schoolsR20));
-record('R20: Clicking a stage row filters the school table',
-       /onClick=\{\(\) => onSetStage\(isActive \? null : i\)\}/.test(schoolsR20) &&
-       /onSetStage=\{\(i\) => setFunnelStage\(i\)\}/.test(schoolsR20));
-record('R20: Old horizontal funnel + scrub strip removed from Stages view',
+record('R20 → R23: Schools List Stages view surfaces all 18 stages',
+       /STAGE_KEYS_\.map\(\(key, i\)/.test(sctR20) &&
+       /<SCT schools=\{rows\}/.test(schoolsR20));
+record('R20 → R23: Stages view renders 18 stage columns (S01-S18) in the checkmark header',
+       /S\{String\(i \+ 1\)\.padStart\(2, '0'\)\}/.test(sctR20));
+record('R20 → R23: Active row / column highlights via category colours',
+       /STAGE_CATEGORY_COLORS_\[cat\]/.test(sctR20) &&
+       /borderTop: `2px solid \$\{cc\.dot/.test(sctR20));
+record('R20 → R23: Completed stages render with check icon; empty stages with slate dot',
+       /Icon name="check-circle"/.test(sctR20) &&
+       /background: '#E2E8F0'/.test(sctR20));
+record('R20 → R23: Clicking a stage filter narrows the table',
+       /activeStage != null/.test(sctR20) &&
+       /rows = rows\.filter\(s => \{[\s\S]{0,200}return st && \(st\.done \|\| st\.completedDate\)/.test(sctR20));
+record('R20 → R23: Old SchoolsStagesVertical scrub strip removed from page-schools-list.jsx',
        !/data-testid="stages-view-scrub-strip"/.test(schoolsR20) &&
-       !/Horizontal funnel — single tall row, segments proportional to counts/.test(schoolsR20));
-record('R20: Filter chip + identity school table preserved from R19',
-       /Filtered by stage:/.test(schoolsR20) &&
-       /aria-label="Clear stage filter"/.test(schoolsR20) &&
-       /Current stage/.test(schoolsR20));
-record('R20: SchoolsStagesVertical exposed on window',
-       /SchoolsStagesVertical \}\);/.test(schoolsR20));
+       !/data-testid="stages-view-vertical"/.test(schoolsR20));
+record('R20 → R23: Stages view continues to expose a removable stage filter',
+       /aria-label="Clear stage filter"/.test(sctR20));
+record('R20 → R23: SchoolsStagesVertical component deleted (no longer in source or window export)',
+       !/function SchoolsStagesVertical/.test(schoolsR20) &&
+       !/SchoolsStagesVertical \}\);/.test(schoolsR20));
 
 // ── K9. Round 21 — VP escalation gate + Reports cleanup + Project Detail vertical ──
 const pagesR21    = read('pages-r2.jsx');
@@ -692,9 +693,8 @@ record('R21 #2: Importer (onPickFile) preserved as function but UI button is unw
 record('R21 #3 → R22: Project Detail still has a project-scoped stages view',
        /ProjectStageChecklistTable/.test(projectR21) &&
        /<ProjectStageSummaryCards/.test(projectR21));
-record('R20+R22: vertical list (Schools List) keeps its 480-px scroll container',
-       /maxHeight: 'calc\(100vh - 480px\)'/.test(read('page-schools-list.jsx')) ||
-       /maxHeight: 480/.test(read('page-schools-list.jsx')));
+record('R20+R23: Schools List checkmark table renders inside its own scroll container (640 px on this page)',
+       /maxHeight=\{640\}/.test(read('page-schools-list.jsx')));
 record('R21 #3: old horizontal funnel + 18-cell strip removed from Project Detail Overview',
        !/\/\* Horizontal funnel \*\//.test(projectR21) &&
        !/\/\* 18-cell mini strip \*\//.test(projectR21));
@@ -708,30 +708,35 @@ const schoolsR22 = read('page-schools-list.jsx');
 record('R22 #1: Project Detail Overview no longer uses SchoolsStagesVertical',
        !/<SchoolsStagesVertical/.test(projectR22) &&
        !/const SchoolsStagesVertical = window\.SchoolsStagesVertical/.test(projectR22));
-record('R22 #1: Schools List page still uses SchoolsStagesVertical (no regression)',
-       /function SchoolsStagesVertical/.test(schoolsR22) &&
-       /<SchoolsStagesVertical/.test(schoolsR22) &&
-       /SchoolsStagesVertical \}\);/.test(schoolsR22));
-record('R22 #2: Project Detail Overview has per-school stage checkmark table',
+// R22 #1: the checkmark table moved to Schools List in R23, so we now want the
+// inverse of the original R22 #1 assertion — Schools List uses the table.
+record('R22 #1 → R23: Schools List page renders the shared checkmark table',
+       /<SCT schools=\{rows\} hideInternalToolbar=\{true\}/.test(schoolsR22) &&
+       !/function SchoolsStagesVertical/.test(schoolsR22));
+// R22 #2 family: the implementation moved to src/components/StageChecklistTable.jsx.
+// The Project Detail call site is a thin adapter. Assert the live behaviour against
+// the shared component file plus the adapter.
+const sctR22 = read('components/StageChecklistTable.jsx');
+record('R22 #2 → R23: Project Detail Overview has per-school stage checkmark table',
        /function ProjectStageChecklistTable/.test(projectR22) &&
-       /data-testid="project-stage-checklist-table"/.test(projectR22) &&
-       /<ProjectStageChecklistTable/.test(projectR22));
-record('R22 #2: Stage completion checkmarks render only for stages with completedDate',
-       /const done = !!\(st && \(st\.completedDate \|\| st\.done\)\)/.test(projectR22) &&
-       /<Icon name="check-circle" size=\{16\} className="text-emerald-600/.test(projectR22));
-record('R22 #2: Table has sticky header row + sticky first column',
-       /position: 'sticky', top: 0, left: 0, zIndex: 3/.test(projectR22) &&
-       /position: 'sticky', left: 0, zIndex: 1/.test(projectR22));
-record('R22 #2: Search box filters school rows in the table',
-       /placeholder="Search by school name \/ ID \/ city"/.test(projectR22) &&
-       /aria-label="Search schools"/.test(projectR22) &&
-       /\(s\.nameEn \|\| ''\)\.toLowerCase\(\)\.includes\(lowered\)/.test(projectR22));
-record('R22 #2: Completed-only / In-progress-only filter toggle wired',
-       /id: 'completed',\s+label: 'Completed only'/.test(projectR22) &&
-       /id: 'in_progress',\s+label: 'In progress only'/.test(projectR22) &&
-       /statusFilter === 'completed'/.test(projectR22));
-record('R22 #2: Legend row shows "green check = stage complete · — = not yet"',
-       /stage complete/.test(projectR22) && /not yet/.test(projectR22));
+       /const SCT = window\.StageChecklistTable/.test(projectR22) &&
+       /data-testid="stage-checklist-table"/.test(sctR22));
+record('R22 #2 → R23: Stage completion checkmarks render only for stages with completedDate',
+       /const done = !!\(st && \(st\.completedDate \|\| st\.done\)\)/.test(sctR22) &&
+       /<Icon name="check-circle" size=\{16\} className="text-emerald-600/.test(sctR22));
+record('R22 #2 → R23: Table has sticky header row + sticky first column',
+       /position: 'sticky', top: 0, left: 0, zIndex: 3/.test(sctR22) &&
+       /position: 'sticky', left: 0, zIndex: 1/.test(sctR22));
+record('R22 #2 → R23: Search box filters school rows in the table',
+       /placeholder="Search by school name \/ ID \/ city"/.test(sctR22) &&
+       /aria-label="Search schools"/.test(sctR22) &&
+       /\(s\.nameEn \|\| ''\)\.toLowerCase\(\)\.includes\(lowered\)/.test(sctR22));
+record('R22 #2 → R23: Completed-only / In-progress-only filter toggle wired',
+       /id: 'completed',\s+label: 'Completed only'/.test(sctR22) &&
+       /id: 'in_progress',\s+label: 'In progress only'/.test(sctR22) &&
+       /statusFilter === 'completed'/.test(sctR22));
+record('R22 #2 → R23: Legend row shows "green check = stage complete · — = not yet"',
+       /stage complete/.test(sctR22) && /not yet/.test(sctR22));
 
 record('R22 #3: Category summary cards group 18 stages into Mechanical / Electrical / Commissioning / Handover',
        /function ProjectStageSummaryCards/.test(projectR22) &&
@@ -751,6 +756,42 @@ record('R22 supporting: SCHOOL_STAGE_SHORT array of 18 short labels exported fro
        /SCHOOL_STAGES, SCHOOL_STAGE_SHORT/.test(dataR22) &&
        /'Foundation','PV Mount','PV Module'/.test(dataR22) &&
        /'H\/O Zamil','H\/O Client'/.test(dataR22));
+
+// ── K11. Round 23 — checkmark table moves to Schools List Stages view ──────
+const sctR23      = read('components/StageChecklistTable.jsx');
+const schoolsR23  = read('page-schools-list.jsx');
+const projectR23  = read('page-project.jsx');
+const mainR23     = read('main.jsx');
+
+record('R23: shared StageChecklistTable component exists and is window-exposed',
+       /function StageChecklistTable\(\{[\s\S]{0,300}hideInternalToolbar/.test(sctR23) &&
+       /Object\.assign\(window, \{ StageChecklistTable \}\)/.test(sctR23) &&
+       /import '\.\/components\/StageChecklistTable\.jsx';/.test(mainR23));
+record('R23: Schools List Stages view renders per-school checkmark table (not SchoolsStagesVertical)',
+       !/function SchoolsStagesVertical/.test(schoolsR23) &&
+       !/<SchoolsStagesVertical/.test(schoolsR23) &&
+       /<SCT schools=\{rows\} hideInternalToolbar=\{true\}/.test(schoolsR23));
+record('R23: SchoolsStagesVertical removed from page-schools-list.jsx window export',
+       /Object\.assign\(window, \{ PageSchoolsList, SchoolsStagesTable \}\);/.test(schoolsR23));
+record('R23: Schools List checkmark table has sticky header + sticky first column',
+       /data-testid="stage-checklist-sticky-header"/.test(sctR23) &&
+       /position: 'sticky', top: 0, left: 0, zIndex: 3/.test(sctR23) &&
+       /position: 'sticky', left: 0, zIndex: 1/.test(sctR23));
+record('R23: Search box filters rows in Schools List Stages view',
+       /data-testid="stage-checklist-search"/.test(sctR23) &&
+       /\(s\.nameEn \|\| ''\)\.toLowerCase\(\)\.includes\(lowered\)/.test(sctR23));
+record('R23: Compact view still renders simple stage pill list (Compact + Current stage column intact)',
+       /Compact view/.test(schoolsR23) &&
+       /SchoolsCompactTable/.test(schoolsR23));
+record('R23: Project Detail still uses the shared checkmark table (no regression on R22)',
+       /<ProjectStageChecklistTable/.test(projectR23) &&
+       /const SCT = window\.StageChecklistTable/.test(projectR23) &&
+       /<SCT schools=\{schools\} activeStage=\{activeStage\}/.test(projectR23));
+record('R23: completedDate gates the green check (truthy completedDate or done flag)',
+       /st && \(st\.completedDate \|\| st\.done\)/.test(sctR23) &&
+       /Icon name="check-circle" size=\{16\} className="text-emerald-600/.test(sctR23));
+record('R23: legend row "green check = stage complete · — = not yet" preserved',
+       /stage complete/.test(sctR23) && /not yet/.test(sctR23));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic
