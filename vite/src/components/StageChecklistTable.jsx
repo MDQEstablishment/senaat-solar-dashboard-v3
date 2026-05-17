@@ -1,36 +1,39 @@
 import React from 'react';
-// R23 (extracted) → R24 (visual revert to classic R17-era table).
-// One source of truth for the per-school × per-stage checkmark table used by:
-//   • Project Detail Overview (page-project.jsx)
+// R24 → R25 — shared per-school × per-stage table.
+// R25 restyles to match the Compact view's exact look (same shell, slate-50 header,
+// hover-row, alternating zebra) so the toggle between Compact / Stages feels like a
+// column swap rather than a layout change. Used by:
 //   • Schools List → Stages view (page-schools-list.jsx)
+//   • R25 removed the Project Detail Overview call site; the adapter in
+//     page-project.jsx stays in place but is no longer rendered.
 //
-// R24 visual contract (client preference):
-//   • Plain HTML <table> — no sticky positioning, no category-tinted header band,
-//     no current-stage pill, no internal toolbar. Page-level filters drive `schools`.
-//   • thead: one row · slate-50 bg · slate-200 borders · School column (left, 240 px)
-//     + 18 stage columns (S## code on top, short label below).
-//   • tbody: school name (EN + AR) + 18 cells. Each cell shows the R17-era pair:
-//     green check icon + dd MMM completion date when the stage is done; an em-dash
-//     otherwise. Rows alternate slate-50 / white, hover slate-100.
-//   • Container respects the caller's maxHeight (480 / 640). Body scrolls inside.
-//   • The activeStage filter still works — when set, only rows whose stage[i] is
-//     done remain. Removable chip lives outside this component (caller decides).
+// Visual contract:
+//   • <Card padding="p-0"> wrapper, <table className="w-full text-xs"> inside.
+//   • Columns: School ID · School name (+ AR sub-label) · City · 18 stage cols ·
+//     Remark pill. No status column (R24 KPI strip already conveys that).
+//   • Stage header (2 lines): S01..S18 in font-mono 10 px slate-400 + short stage
+//     label below (e.g. "Foundation" / "PV Mount") in 11 px slate-600, max 2 lines.
+//   • Stage cell: small green check-circle (16 px text-emerald-600) on top + dd MMM
+//     date (10 px slate-400) underneath when the stage is done; em-dash (slate-300)
+//     otherwise. No category tinting.
+//   • Rows alternate bg-white / bg-slate-50, hover bg-slate-100. No sticky.
+//   • Header backgrounds: slate-50. Borders: border-soft on rows, slate-200 on
+//     stage column borders to subtly separate the dense block of 18 columns.
 //
-// Props preserved for compatibility with the R22/R23 call sites:
-//   schools, activeStage, onClearStage, hideInternalToolbar, maxHeight,
-//   title, subtitle. `hideInternalToolbar` is now effectively always true and the
-//   prop is accepted but unused; the simpler design has no toolbar at all.
+// Props preserved for back-compat: schools, activeStage, onClearStage,
+// hideInternalToolbar (no-op), maxHeight (defaults to 'calc(100vh - 360px)' to
+// match Compact view scroll behaviour), title, subtitle. R25 omits the title/
+// subtitle / legend chrome by default; pass `title`/`subtitle` to bring it back.
 function StageChecklistTable({
   schools,
   activeStage = null,
   onClearStage,
-  // R24 — accepted for back-compat with the R23 call sites but no longer drives
-  // any branching: the component never renders an internal toolbar now.
   // eslint-disable-next-line no-unused-vars
   hideInternalToolbar,
-  maxHeight = 480,
+  maxHeight = 'calc(100vh - 360px)',
   title,
   subtitle,
+  onOpen,
 }) {
   const STAGE_KEYS_         = window.STAGE_KEYS || [];
   const SCHOOL_STAGES_      = window.SCHOOL_STAGES || [];
@@ -48,21 +51,18 @@ function StageChecklistTable({
     return rows;
   }, [schools, activeStage]);
 
-  const showHeader = !!(title || subtitle || activeStage != null);
+  const stageColCount = STAGE_KEYS_.length || 18;
+  const totalCols = stageColCount + 4;  // School ID + School name + City + Remark
+  const showHeaderBar = !!(title || subtitle || activeStage != null);
 
   return (
     <Card padding="p-0">
-      {showHeader && (
-        <div className="p-4 border-b border-soft flex flex-wrap items-center gap-3">
-          <div className="flex-1 min-w-[220px]">
-            <div className="text-sm font-semibold ink-on-dark">{title || 'Per-school stage progress'}</div>
-            <div className="text-[11px] text-ink-500 mt-0.5">
-              {subtitle ||
-                `Green check = stage complete · — = not yet · ${nfmt.format(filtered.length)} of ${nfmt.format((schools || []).length)} schools`}
-            </div>
-          </div>
+      {showHeaderBar && (
+        <div className="px-3 py-2 border-b border-soft flex items-center gap-3 text-[11px] text-ink-500">
+          {title && <span className="font-semibold ink-on-dark text-xs">{title}</span>}
+          {subtitle && <span>{subtitle}</span>}
           {activeStage != null && (
-            <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-medium"
+            <span className="ml-auto inline-flex items-center gap-2 px-2.5 py-1 rounded-full font-medium"
               style={{ background: '#EFF6FF', color: '#1E40AF', border: '1px solid #BFDBFE' }}>
               S{String(activeStage + 1).padStart(2, '0')} · {SCHOOL_STAGES_[activeStage]}
               {onClearStage && (
@@ -73,38 +73,43 @@ function StageChecklistTable({
           )}
         </div>
       )}
+
       <div data-testid="stage-checklist-table"
         className="overflow-auto scrollbar-thin" style={{ maxHeight }}>
-        <table className="min-w-full text-sm border-collapse">
-          <thead>
-            <tr className="bg-slate-50">
-              <th className="text-left px-3 py-2 font-semibold border border-slate-200 text-[12px]"
-                style={{ width: 240, minWidth: 240 }}>
-                School
+        <table className="w-full text-xs">
+          <thead className="surface-2 border-b border-soft">
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap" style={{ width: 120, minWidth: 120 }}>
+                School ID
               </th>
-              <th className="text-left px-3 py-2 font-semibold border border-slate-200 text-[12px]"
-                style={{ width: 110, minWidth: 110 }}>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap" style={{ minWidth: 280 }}>
+                School name
+              </th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap" style={{ width: 100, minWidth: 100 }}>
                 City
               </th>
               {STAGE_KEYS_.map((key, i) => (
                 <th key={key}
-                  className="text-center px-1.5 py-2 font-semibold border border-slate-200 align-top"
+                  className="text-center px-1.5 py-2 font-semibold align-top border-l border-slate-200"
                   title={SCHOOL_STAGES_[i]}
-                  style={{ width: 64, minWidth: 64 }}>
-                  <div style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 700, color: '#64748B' }}>
-                    {i + 1}
+                  style={{ width: 62, minWidth: 62 }}>
+                  <div style={{
+                    fontFamily: 'monospace', fontSize: 10, fontWeight: 600,
+                    color: '#94A3B8', letterSpacing: '.04em',
+                  }}>
+                    S{String(i + 1).padStart(2, '0')}
                   </div>
                   <div style={{
-                    fontSize: 10, fontWeight: 500, color: '#475569', lineHeight: 1.15, marginTop: 2,
+                    fontSize: 11, fontWeight: 500, color: '#475569', lineHeight: 1.15, marginTop: 2,
                     display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                    overflow: 'hidden', maxHeight: 24,
+                    overflow: 'hidden', maxHeight: 28,
                   }}>
                     {SCHOOL_STAGE_SHORT_[i]}
                   </div>
                 </th>
               ))}
-              <th className="text-left px-3 py-2 font-semibold border border-slate-200 text-[12px]"
-                style={{ width: 110, minWidth: 110 }}>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap border-l border-slate-200"
+                style={{ width: 100, minWidth: 100 }}>
                 Remark
               </th>
             </tr>
@@ -112,18 +117,24 @@ function StageChecklistTable({
           <tbody>
             {filtered.map((s, rowIdx) => (
               <tr key={s.id}
+                onClick={() => onOpen && onOpen(s.id)}
                 className={cls(
-                  'transition-colors hover:bg-slate-100',
-                  rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50'
+                  'border-b border-soft transition-colors',
+                  onOpen ? 'cursor-pointer' : '',
+                  rowIdx % 2 === 0 ? 'bg-white' : 'bg-slate-50',
+                  'hover:bg-slate-100'
                 )}>
-                <td className="px-3 py-1.5 border border-slate-200"
-                  style={{ width: 240, minWidth: 240, maxWidth: 240 }}>
-                  <div className="font-medium truncate" title={s.nameEn || s.name}>{s.nameEn || s.name}</div>
-                  <div className="text-[10px] text-ink-500 font-mono truncate">{s.id}</div>
+                <td className="px-3 py-2 font-mono text-[11px] text-ink-500 whitespace-nowrap">
+                  {s.id}
                 </td>
-                <td className="px-3 py-1.5 border border-slate-200 text-ink-700 text-xs"
-                  style={{ width: 110, minWidth: 110, maxWidth: 110 }}>
-                  <span className="truncate block" title={s.city || s.region}>{s.city || s.region || '—'}</span>
+                <td className="px-3 py-2">
+                  <div className="font-medium truncate" title={s.nameEn || s.name}>{s.nameEn || s.name}</div>
+                  {s.nameAr && (
+                    <div className="text-[10px] text-ink-500 text-right" dir="rtl" title={s.nameAr}>{s.nameAr}</div>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-ink-700 truncate" style={{ maxWidth: 100 }} title={s.city || s.region}>
+                  {s.city || s.region || '—'}
                 </td>
                 {STAGE_KEYS_.map((key, i) => {
                   const st = s.stages && s.stages[i];
@@ -131,13 +142,13 @@ function StageChecklistTable({
                   const date = st && (st.completedDate || st.date);
                   return (
                     <td key={key}
-                      className="text-center px-1 py-1.5 border border-slate-200 align-middle"
-                      style={{ width: 64, minWidth: 64 }}>
+                      className="text-center px-1 py-2 border-l border-slate-200 align-middle"
+                      style={{ width: 62, minWidth: 62 }}>
                       {done ? (
                         <div className="flex flex-col items-center leading-tight">
-                          <Icon name="check" size={14} className="text-emerald-600" strokeWidth={3} />
+                          <Icon name="check-circle" size={16} className="text-emerald-600" />
                           {date && (
-                            <span className="text-[9px] text-ink-500 mt-0.5">
+                            <span className="text-[10px] text-slate-400 mt-0.5">
                               {new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
                             </span>
                           )}
@@ -148,8 +159,7 @@ function StageChecklistTable({
                     </td>
                   );
                 })}
-                <td className="px-3 py-1.5 border border-slate-200"
-                  style={{ width: 110, minWidth: 110, maxWidth: 110 }}>
+                <td className="px-3 py-2 border-l border-slate-200">
                   <Pill tone={s.remark === 'Active' ? 'ok' : s.remark === 'Excluded' || s.remark === 'Blocked' ? 'danger' : 'warn'}>
                     {s.remark || 'Active'}
                   </Pill>
@@ -158,8 +168,7 @@ function StageChecklistTable({
             ))}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={(STAGE_KEYS_.length || 18) + 3}
-                  className="text-center py-8 text-xs text-ink-500 italic border border-slate-200 bg-white">
+                <td colSpan={totalCols} className="text-center py-8 text-xs text-ink-500 italic">
                   No schools match these filters.
                 </td>
               </tr>
@@ -167,14 +176,8 @@ function StageChecklistTable({
           </tbody>
         </table>
       </div>
-      <div className="px-4 py-2 border-t border-soft text-[10px] text-ink-500 flex items-center gap-4">
-        <span className="inline-flex items-center gap-1.5">
-          <Icon name="check" size={12} className="text-emerald-600" strokeWidth={3} /> stage complete
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="text-slate-300">—</span> not yet
-        </span>
-        <span className="ml-auto tnum">{nfmt.format(filtered.length)} of {nfmt.format((schools || []).length)} schools</span>
+      <div className="px-3 py-2 border-t border-soft text-[11px] text-ink-500">
+        Showing {nfmt.format(filtered.length)} of {nfmt.format((schools || []).length)} schools — scroll to browse.
       </div>
     </Card>
   );

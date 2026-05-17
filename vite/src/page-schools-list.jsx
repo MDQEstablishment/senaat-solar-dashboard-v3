@@ -395,16 +395,14 @@ function SchoolsCompactTable({ rows, canAdd, onOpen, onDelete, onContractorChang
   );
 }
 
-// R23 — Stages view now delegates to the shared per-school × per-stage checkmark
-// table (src/components/StageChecklistTable.jsx). The Schools List page already
-// applies its own filters (status / remark / city / search) to produce the `rows`
-// array passed here, so the shared table hides its internal toolbar — the page-
-// level filter chrome at the top of the screen drives the table content.
+// R25 — Stages view now matches Compact view styling (Card padding="p-0",
+// classic table, slate-50 thead, alternating zebra rows, hover slate-100).
+// The shared StageChecklistTable does the rendering; this wrapper just plumbs
+// the page-filtered rows and the school-row click handler.
 function SchoolsStagesTable({ rows, onOpen }) {
   const SCT = window.StageChecklistTable;
   if (!SCT) return <Card padding="p-4"><div className="text-xs text-ink-500 italic">Loading…</div></Card>;
-  return <SCT schools={rows} hideInternalToolbar={true} maxHeight={640} title="Per-school stage progress"
-              subtitle={`Green check = stage complete · — = not yet · ${rows.length.toLocaleString()} schools`} />;
+  return <SCT schools={rows} onOpen={onOpen} />;
 }
 
 

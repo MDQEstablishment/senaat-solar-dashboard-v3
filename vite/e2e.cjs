@@ -473,8 +473,8 @@ record('R17: legacy 12-stage map (Surveyed / SEC Approvals / Fix1 / Fix2 / Hande
 // category-tinted header band, no current-stage pill per row, no sticky positions.
 // What we still assert is the *cell* content from R17: check + dd-MMM date for
 // done stages, em-dash otherwise, dense rows.
-record('R17 → R24: Stages view body cells render check icon + dd-MMM date for done stages',
-       /Icon name="check" size=\{14\} className="text-emerald-600" strokeWidth=\{3\}/.test(read('components/StageChecklistTable.jsx')) &&
+record('R17 → R25: Stages view body cells render check-circle icon + dd-MMM date for done stages',
+       /Icon name="check-circle" size=\{16\} className="text-emerald-600"/.test(read('components/StageChecklistTable.jsx')) &&
        /toLocaleDateString\('en-GB', \{ day: '2-digit', month: 'short' \}\)/.test(read('components/StageChecklistTable.jsx')));
 record('R17 → R24: Stages view body cells render em-dash for stages with no completedDate',
        /<span className="text-slate-300" aria-hidden="true">—<\/span>/.test(read('components/StageChecklistTable.jsx')));
@@ -562,8 +562,8 @@ record('R19 Item #1: Tinted category panels (mechanical/electrical/commissioning
 // R19 Item #2 → R20 → R23: Stages view surfaces all 18 stages. The horizontal
 // funnel (R19) and the vertical list (R20) both came and went; R23 replaced both
 // with the shared per-school checkmark table (StageChecklistTable).
-record('R19 Item #2 → R23: Stages view surfaces all 18 stages via the shared checkmark table',
-       /<SCT schools=\{rows\} hideInternalToolbar=\{true\}/.test(schoolsR19) &&
+record('R19 Item #2 → R25: Stages view surfaces all 18 stages via the shared checkmark table',
+       /<SCT schools=\{rows\} onOpen=\{onOpen\}/.test(schoolsR19) &&
        /data-testid="stage-checklist-table"/.test(read('components/StageChecklistTable.jsx')));
 record('R19 Item #2 → R23: Stages view exposes a removable stage filter (in shared component)',
        /aria-label="Clear stage filter"/.test(read('components/StageChecklistTable.jsx')));
@@ -635,8 +635,8 @@ const sctR20     = read('components/StageChecklistTable.jsx');
 record('R20 → R23: Schools List Stages view surfaces all 18 stages',
        /STAGE_KEYS_\.map\(\(key, i\)/.test(sctR20) &&
        /<SCT schools=\{rows\}/.test(schoolsR20));
-record('R20 → R24: Stages view renders 18 stage columns headered by column number + short label',
-       /\{i \+ 1\}/.test(sctR20) &&
+record('R20 → R25: Stages view renders 18 stage columns headered by S## + short label',
+       /S\{String\(i \+ 1\)\.padStart\(2, '0'\)\}/.test(sctR20) &&
        /SCHOOL_STAGE_SHORT_\[i\]/.test(sctR20));
 // R24 deliberately drops category-tinted header backgrounds and the per-cell
 // category border — the client preferred the classic uniform table. We assert
@@ -644,8 +644,8 @@ record('R20 → R24: Stages view renders 18 stage columns headered by column num
 record('R20 → R24: classic table — no category-tinted header band on stage columns',
        !/borderTop: `2px solid \$\{cc\.dot/.test(sctR20) &&
        !/background: cc\.soft/.test(sctR20));
-record('R20 → R24: Completed stages render with check icon; empty stages with em-dash',
-       /Icon name="check" size=\{14\}/.test(sctR20) &&
+record('R20 → R25: Completed stages render with check-circle icon; empty stages with em-dash',
+       /Icon name="check-circle" size=\{16\}/.test(sctR20) &&
        /<span className="text-slate-300" aria-hidden="true">—<\/span>/.test(sctR20));
 record('R20 → R23: Clicking a stage filter narrows the table',
        /activeStage != null/.test(sctR20) &&
@@ -700,8 +700,8 @@ record('R21 #2: Importer (onPickFile) preserved as function but UI button is unw
 record('R21 #3 → R22: Project Detail still has a project-scoped stages view',
        /ProjectStageChecklistTable/.test(projectR21) &&
        /<ProjectStageSummaryCards/.test(projectR21));
-record('R20+R23: Schools List checkmark table renders inside its own scroll container (640 px on this page)',
-       /maxHeight=\{640\}/.test(read('page-schools-list.jsx')));
+record('R20+R25: Schools List checkmark table renders inside its own scroll container (matches Compact view)',
+       /maxHeight = 'calc\(100vh - 360px\)'/.test(read('components/StageChecklistTable.jsx')));
 record('R21 #3: old horizontal funnel + 18-cell strip removed from Project Detail Overview',
        !/\/\* Horizontal funnel \*\//.test(projectR21) &&
        !/\/\* 18-cell mini strip \*\//.test(projectR21));
@@ -717,20 +717,20 @@ record('R22 #1: Project Detail Overview no longer uses SchoolsStagesVertical',
        !/const SchoolsStagesVertical = window\.SchoolsStagesVertical/.test(projectR22));
 // R22 #1: the checkmark table moved to Schools List in R23, so we now want the
 // inverse of the original R22 #1 assertion — Schools List uses the table.
-record('R22 #1 → R23: Schools List page renders the shared checkmark table',
-       /<SCT schools=\{rows\} hideInternalToolbar=\{true\}/.test(schoolsR22) &&
+record('R22 #1 → R25: Schools List page renders the shared checkmark table',
+       /<SCT schools=\{rows\} onOpen=\{onOpen\}/.test(schoolsR22) &&
        !/function SchoolsStagesVertical/.test(schoolsR22));
 // R22 #2 family: the implementation moved to src/components/StageChecklistTable.jsx.
 // The Project Detail call site is a thin adapter. Assert the live behaviour against
 // the shared component file plus the adapter.
 const sctR22 = read('components/StageChecklistTable.jsx');
-record('R22 #2 → R23: Project Detail Overview has per-school stage checkmark table',
-       /function ProjectStageChecklistTable/.test(projectR22) &&
-       /const SCT = window\.StageChecklistTable/.test(projectR22) &&
-       /data-testid="stage-checklist-table"/.test(sctR22));
-record('R22 #2 → R24: Stage completion checkmarks render only for stages with completedDate',
+record('R22 #2 → R25: Project Detail Overview no longer renders the per-school checkmark table',
+       !/<ProjectStageChecklistTable/.test(projectR22) &&
+       !/function ProjectStageChecklistTable/.test(projectR22) &&
+       /R25.*per-school checkmark table was removed from Project Detail/.test(projectR22));
+record('R22 #2 → R25: Stage completion checkmarks render only for stages with completedDate',
        /const done = !!\(st && \(st\.completedDate \|\| st\.done\)\)/.test(sctR22) &&
-       /<Icon name="check" size=\{14\} className="text-emerald-600"/.test(sctR22));
+       /<Icon name="check-circle" size=\{16\} className="text-emerald-600"/.test(sctR22));
 // R24 deliberately drops the sticky thead + sticky first column and the
 // internal search / Completed-only / In-progress-only toolbar. The classic
 // table reads top-to-bottom and uses page-level filters above the table.
@@ -743,8 +743,8 @@ record('R22 #2 → R24: classic table — no internal search box (page-level fil
 record('R22 #2 → R24: classic table — no internal Completed-only / In-progress-only toggle',
        !/id: 'completed',\s+label: 'Completed only'/.test(sctR22) &&
        !/id: 'in_progress',\s+label: 'In progress only'/.test(sctR22));
-record('R22 #2 → R23: Legend row shows "green check = stage complete · — = not yet"',
-       /stage complete/.test(sctR22) && /not yet/.test(sctR22));
+record('R22 #2 → R25: Legend row removed (table now matches Compact view chrome)',
+       !/green check = stage complete · — = not yet/.test(sctR22));
 
 record('R22 #3: Category summary cards group 18 stages into Mechanical / Electrical / Commissioning / Handover',
        /function ProjectStageSummaryCards/.test(projectR22) &&
@@ -775,10 +775,10 @@ record('R23 → R24: shared StageChecklistTable component exists and is window-e
        /function StageChecklistTable\(\{/.test(sctR23) &&
        /Object\.assign\(window, \{ StageChecklistTable \}\)/.test(sctR23) &&
        /import '\.\/components\/StageChecklistTable\.jsx';/.test(mainR23));
-record('R23: Schools List Stages view renders per-school checkmark table (not SchoolsStagesVertical)',
+record('R23 → R25: Schools List Stages view renders per-school checkmark table (not SchoolsStagesVertical)',
        !/function SchoolsStagesVertical/.test(schoolsR23) &&
        !/<SchoolsStagesVertical/.test(schoolsR23) &&
-       /<SCT schools=\{rows\} hideInternalToolbar=\{true\}/.test(schoolsR23));
+       /<SCT schools=\{rows\} onOpen=\{onOpen\}/.test(schoolsR23));
 record('R23: SchoolsStagesVertical removed from page-schools-list.jsx window export',
        /Object\.assign\(window, \{ PageSchoolsList, SchoolsStagesTable \}\);/.test(schoolsR23));
 // R24 reverts the sticky thead + internal search added in R23. Assert the absence.
@@ -790,37 +790,36 @@ record('R23 → R24: classic table — page-level filters drive rows (no interna
 record('R23: Compact view still renders simple stage pill list (Compact + Current stage column intact)',
        /Compact view/.test(schoolsR23) &&
        /SchoolsCompactTable/.test(schoolsR23));
-record('R23: Project Detail still uses the shared checkmark table (no regression on R22)',
-       /<ProjectStageChecklistTable/.test(projectR23) &&
-       /const SCT = window\.StageChecklistTable/.test(projectR23) &&
-       /<SCT schools=\{schools\} activeStage=\{activeStage\}/.test(projectR23));
-record('R23 → R24: completedDate gates the green check (truthy completedDate or done flag)',
+record('R23 → R25: Project Detail Overview no longer mounts the shared checkmark table',
+       !/<ProjectStageChecklistTable/.test(projectR23) &&
+       !/const SCT = window\.StageChecklistTable/.test(projectR23));
+record('R23 → R25: completedDate gates the green check (truthy completedDate or done flag)',
        /st && \(st\.completedDate \|\| st\.done\)/.test(sctR23) &&
-       /Icon name="check" size=\{14\} className="text-emerald-600"/.test(sctR23));
-record('R23: legend row "green check = stage complete · — = not yet" preserved',
-       /stage complete/.test(sctR23) && /not yet/.test(sctR23));
+       /Icon name="check-circle" size=\{16\} className="text-emerald-600"/.test(sctR23));
+record('R23 → R25: legend row removed (Stages view now matches Compact view chrome)',
+       !/stage complete/.test(sctR23) && !/not yet/.test(sctR23));
 
 // ── K12. Round 24 — restore classic R17 checkmark-table look on Schools List
 //                   + Project Detail, swap KPI strip to stage-driven metrics ───
 const sctR24      = read('components/StageChecklistTable.jsx');
 const schoolsR24  = read('page-schools-list.jsx');
 
-record('R24: classic <table> markup with border-collapse + slate-50 thead background',
-       /<table className="min-w-full text-sm border-collapse">/.test(sctR24) &&
-       /<tr className="bg-slate-50">/.test(sctR24));
-record('R24: stage column header shows just the column number (1..18), not S## prefix',
-       /\{i \+ 1\}/.test(sctR24) &&
-       !/S\{String\(i \+ 1\)\.padStart\(2, '0'\)\}\s*<\/div>\s*<div style/.test(sctR24));
-record('R24: per-stage cell renders check icon + dd-MMM date for done, em-dash for not done',
-       /Icon name="check" size=\{14\} className="text-emerald-600" strokeWidth=\{3\}/.test(sctR24) &&
+record('R24 → R25: classic <table> markup w-full text-xs with slate-50 thead (Compact-view styling)',
+       /<table className="w-full text-xs">/.test(sctR24) &&
+       /surface-2 border-b border-soft/.test(sctR24));
+record('R24 → R25: stage column header shows S## prefix + short stage label',
+       /S\{String\(i \+ 1\)\.padStart\(2, '0'\)\}/.test(sctR24) &&
+       /SCHOOL_STAGE_SHORT_\[i\]/.test(sctR24));
+record('R24 → R25: per-stage cell renders check-circle icon + dd-MMM date for done, em-dash for not done',
+       /Icon name="check-circle" size=\{16\} className="text-emerald-600"/.test(sctR24) &&
        /toLocaleDateString\('en-GB', \{ day: '2-digit', month: 'short' \}\)/.test(sctR24) &&
        /<span className="text-slate-300" aria-hidden="true">—<\/span>/.test(sctR24));
 record('R24: rows alternate slate-50 / white with slate-100 hover',
        /rowIdx % 2 === 0 \? 'bg-white' : 'bg-slate-50'/.test(sctR24) &&
        /hover:bg-slate-100/.test(sctR24));
-record('R24: School column shows name (EN + AR) plus school code in font-mono',
-       /<div className="font-medium truncate"/.test(sctR24) &&
-       /<div className="text-\[10px\] text-ink-500 font-mono truncate">\{s\.id\}<\/div>/.test(sctR24));
+record('R24 → R25: School ID column shows code in font-mono; School name column shows name (EN + AR)',
+       /font-mono text-\[11px\] text-ink-500 whitespace-nowrap/.test(sctR24) &&
+       /<div className="font-medium truncate"/.test(sctR24));
 record('R24: City column rendered between School and stage columns',
        /<th[\s\S]{0,200}City/.test(sctR24));
 record('R24: Remark column rendered at the end with category-tone Pill',
@@ -844,9 +843,56 @@ record('R24: page-level filter dropdown is "All stages" (was "All status")',
 record('R24: stage filter narrows rows to those with that stage marked done',
        /const idx = Number\(stageFilter\)/.test(schoolsR24) &&
        /st && \(st\.done \|\| st\.completedDate\)/.test(schoolsR24));
-record('R24: Project Detail Overview still uses the same shared classic table',
-       /<ProjectStageChecklistTable/.test(read('page-project.jsx')) &&
-       /const SCT = window\.StageChecklistTable/.test(read('page-project.jsx')));
+record('R24 → R25: Project Detail Overview no longer uses the shared checkmark table',
+       !/<ProjectStageChecklistTable/.test(read('page-project.jsx')) &&
+       !/const SCT = window\.StageChecklistTable/.test(read('page-project.jsx')));
+
+// ── K13. Round 25 — Stages view matches Compact view styling; Project Detail
+//                    no longer renders the per-school checkmark table ─────────
+const sctR25      = read('components/StageChecklistTable.jsx');
+const schoolsR25  = read('page-schools-list.jsx');
+const projectR25  = read('page-project.jsx');
+
+record('R25 #1: Stages view uses Compact-view styling (Card padding="p-0", w-full text-xs, slate-50 thead)',
+       /<table className="w-full text-xs">/.test(sctR25) &&
+       /surface-2 border-b border-soft/.test(sctR25));
+record('R25 #1: Column order is School ID · School name · City · 18 stages · Remark',
+       /<th[\s\S]{0,200}School ID/.test(sctR25) &&
+       /<th[\s\S]{0,200}School name/.test(sctR25) &&
+       /<th[\s\S]{0,200}City/.test(sctR25) &&
+       /<th[\s\S]{0,200}Remark/.test(sctR25));
+record('R25 #1: Stage header is two-line — S## (font-mono 10 px slate-400) + short label (11 px slate-600)',
+       /fontFamily: 'monospace', fontSize: 10, fontWeight: 600,\s+color: '#94A3B8'/.test(sctR25) &&
+       /fontSize: 11, fontWeight: 500, color: '#475569'/.test(sctR25));
+record('R25 #1: Stage cell uses check-circle 16 px text-emerald-600 + dd MMM date 10 px slate-400',
+       /Icon name="check-circle" size=\{16\} className="text-emerald-600"/.test(sctR25) &&
+       /text-\[10px\] text-slate-400 mt-0\.5/.test(sctR25) &&
+       /day: '2-digit', month: 'short'/.test(sctR25));
+record('R25 #1: Empty stage cell renders em-dash only (text-slate-300)',
+       /<span className="text-slate-300" aria-hidden="true">—<\/span>/.test(sctR25));
+record('R25 #1: Rows alternate bg-white / bg-slate-50, hover bg-slate-100',
+       /rowIdx % 2 === 0 \? 'bg-white' : 'bg-slate-50'/.test(sctR25) &&
+       /hover:bg-slate-100/.test(sctR25));
+record('R25 #1: No sticky positioning anywhere in the shared component',
+       !/position: 'sticky'/.test(sctR25));
+record('R25 #1: No category-tinted header backgrounds or per-cell category accents',
+       !/STAGE_CATEGORY_COLORS_\[cat\]/.test(sctR25) &&
+       !/borderTop: `2px solid \$\{cc\.dot/.test(sctR25));
+record('R25 #1: Schools List wrapper passes onOpen and drops title/subtitle/hideInternalToolbar',
+       /<SCT schools=\{rows\} onOpen=\{onOpen\} \/>/.test(schoolsR25));
+record('R25 #1: KPI strip from R24 preserved (Total schools / Energized / Handed over / Blocked-Excluded)',
+       /label: 'Energized',\s*value: energizedCount/.test(schoolsR25) &&
+       /label: 'Handed over',\s*value: handedOverCount/.test(schoolsR25) &&
+       /label: 'Blocked \/ Excluded',\s*value: blockedExcludedCount/.test(schoolsR25));
+
+record('R25 #2: Project Detail Overview no longer renders the per-school checkmark table',
+       !/<ProjectStageChecklistTable/.test(projectR25) &&
+       !/function ProjectStageChecklistTable/.test(projectR25));
+record('R25 #2: Project Detail still renders the 4-card category summary',
+       /<ProjectStageSummaryCards/.test(projectR25) &&
+       /function ProjectStageSummaryCards/.test(projectR25));
+record('R25 #2: Project Detail keeps the Project Execution Lifecycle widget (untouched)',
+       /Project Execution Lifecycle/.test(projectR25));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

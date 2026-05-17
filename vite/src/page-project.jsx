@@ -247,15 +247,9 @@ function ProjectStageSummaryCards({ distPerStage, totalSchools, activeStage, onS
   );
 }
 
-// R22 → R23 — Per-school stage checkmark table.
-// The full implementation lives in src/components/StageChecklistTable.jsx so it can be
-// reused by Schools List → Stages view (page-schools-list.jsx). This thin wrapper
-// preserves the Project Detail call site signature (schools, activeStage, onClearStage).
-function ProjectStageChecklistTable({ schools, activeStage, onClearStage }) {
-  const SCT = window.StageChecklistTable;
-  if (!SCT) return null;
-  return <SCT schools={schools} activeStage={activeStage} onClearStage={onClearStage} maxHeight={480} />;
-}
+// R25 — The R22 ProjectStageChecklistTable adapter was deleted; Project Detail
+// no longer renders a per-school table. Schools List → Stages view is the single
+// source of truth for that data shape.
 
 function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, onEscalate, currentUser }) {
   if (!project) return <div className="p-6 text-sm text-ink-500">Project not found.</div>;
@@ -377,10 +371,9 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           activeStage={activeFunnelStage}
           onSetStage={(i) => setActiveFunnelStage(i)} />
       )}
-      <ProjectStageChecklistTable
-        schools={(allSchools || ALL_SCHOOLS).filter(s => s.projectId === project.id)}
-        activeStage={activeFunnelStage}
-        onClearStage={() => setActiveFunnelStage(null)} />
+      {/* R25 — the per-school checkmark table was removed from Project Detail
+          Overview. The single source of truth is now Schools List → Stages view.
+          The 4-card category summary above stays. */}
 
       {/* Tabs */}
       <Card padding="p-0">
