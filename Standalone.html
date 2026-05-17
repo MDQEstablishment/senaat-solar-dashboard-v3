@@ -611,6 +611,15 @@ const OLD_TO_NEW_STAGE = {
   energized: 'energized', coc: 'coc_signed',
 };
 const STAGE_KEY_LABEL = STAGE_KEYS.reduce((a,k,i) => (a[k] = SCHOOL_STAGES[i], a), {});
+// R22 — short labels used in dense UI surfaces (Project Detail 18-cell strip).
+// Ordered to match STAGE_KEYS so SCHOOL_STAGE_SHORT[i] aligns with SCHOOL_STAGES[i].
+const SCHOOL_STAGE_SHORT = [
+  'Foundation','PV Mount','PV Module','Earthing',
+  'Cable Tray','DC Cables','LV AC','Inverters',
+  'SMDB','Logger','Meter','Breaker','CT',
+  'Energized','COC','Install Done',
+  'H/O Zamil','H/O Client',
+];
 const STAGE_INDEX = STAGE_KEYS.reduce((a,k,i) => (a[k] = i, a), {});
 
 const REMARKS = ['Active', 'Access issue', 'Excluded', 'Dismantled', 'Demolished', 'Closed'];
@@ -1294,7 +1303,7 @@ const ACTIVITY = [
 
 Object.assign(window, {
   SAR, SARfull, fmtDate,
-  SCHOOL_STAGES, STAGE_KEYS, STAGE_KEY_LABEL, STAGE_INDEX, LEGACY_SCHOOL_STAGES,
+  SCHOOL_STAGES, SCHOOL_STAGE_SHORT, STAGE_KEYS, STAGE_KEY_LABEL, STAGE_INDEX, LEGACY_SCHOOL_STAGES,
   STAGE_EXCEL_HEADERS, STAGE_CATEGORY, STAGE_CATEGORY_COLORS, STAGE_CATEGORY_LABELS, OLD_TO_NEW_STAGE,
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
@@ -4319,6 +4328,244 @@ function StageDetailPanel({ stage, stageIdx, project, onClose }) {
   );
 }
 
+// R22 Item #3 — Category-group summary cards. Drops the old funnel rectangle and
+// presents the 18 stage counts grouped by category (Mechanical / Electrical /
+// Commissioning / Handover) in 4 white cards. On wide screens the four cards lay
+// out on a single row; on narrower screens they wrap. Each cell inside a card
+// shows the stage short label, the count, and a category-coloured dot. Cells with
+// zero schools dim to slate-300 — they keep the pipeline scaffold visible without
+// adding noise. Clicking a cell with schools narrows the table underneath.
+function ProjectStageSummaryCards({ distPerStage, totalSchools, activeStage, onSetStage }) {
+  const nfmt = new Intl.NumberFormat('en-US');
+  const groups = [
+    { cat: 'mechanical',    title: 'Mechanical',    range: [0, 3] },
+    { cat: 'electrical',    title: 'Electrical',    range: [4, 12] },
+    { cat: 'commissioning', title: 'Commissioning', range: [13, 15] },
+    { cat: 'handover',      title: 'Handover',      range: [16, 17] },
+  ];
+  return (
+    <div data-testid="project-stage-summary-cards"
+      className="grid gap-3 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
+      {groups.map(g => {
+        const cc = STAGE_CATEGORY_COLORS[g.cat] || {};
+        const indices = [];
+        for (let i = g.range[0]; i <= g.range[1]; i++) indices.push(i);
+        const groupTotal = indices.reduce((a, i) => a + (distPerStage[i] || 0), 0);
+        return (
+          <div key={g.cat}
+            style={{ background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: 14 }}>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: cc.dot }} />
+                <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.06em',
+                  textTransform: 'uppercase', color: cc.text }}>
+                  {g.title}
+                </span>
+              </div>
+              <span className="text-[10px] text-ink-500 tnum">{nfmt.format(groupTotal)} schools</span>
+            </div>
+            <div className="grid gap-2"
+              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(76px, 1fr))' }}>
+              {indices.map(i => {
+                const key = STAGE_KEYS[i];
+                const count = distPerStage[i] || 0;
+                const isEmpty = count === 0;
+                const isActive = activeStage === i;
+                const next = indices[indices.indexOf(i) + 1];
+                const hasNext = next != null && (distPerStage[next] || 0) > 0;
+                return (
+                  <button key={key} type="button"
+                    onClick={() => !isEmpty && onSetStage(isActive ? null : i)}
+                    title={`S${String(i + 1).padStart(2, '0')} · ${SCHOOL_STAGES[i]} · ${nfmt.format(count)}`}
+                    style={{
+                      all: 'unset', cursor: isEmpty ? 'default' : 'pointer',
+                      padding: '8px 8px 7px',
+                      border: isActive ? `1px solid ${cc.dot}` : '0.5px solid #E2E8F0',
+                      borderRadius: 8,
+                      background: isActive ? cc.soft : '#FAFBFC',
+                      opacity: isEmpty ? 0.45 : 1,
+                      display: 'flex', flexDirection: 'column', gap: 2,
+                    }}>
+                    <div className="flex items-center gap-1.5">
+                      <span style={{ width: 6, height: 6, borderRadius: 99, background: cc.dot }} />
+                      <span style={{ fontSize: 12, fontWeight: 500,
+                        color: isEmpty ? '#94A3B8' : '#0F172A',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {SCHOOL_STAGE_SHORT[i]}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span style={{ fontSize: isEmpty ? 12 : 18, fontWeight: 600,
+                        color: isEmpty ? '#CBD5E1' : '#0F172A',
+                        fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                        {isEmpty ? '—' : nfmt.format(count)}
+                      </span>
+                      {hasNext && !isEmpty && <span style={{ fontSize: 10, color: '#94A3B8' }}>→</span>}
+                    </div>
+                    <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#94A3B8',
+                      letterSpacing: '.04em' }}>
+                      S{String(i + 1).padStart(2, '0')}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// R22 Item #2 — Per-school stage checkmark table. One row per school, 18 stage
+// columns. Cell shows a green CheckCircle when the stage has a completedDate,
+// otherwise a small slate placeholder dot. Sticky thead + sticky first column.
+// Toolbar: free-text search by school name, plus a Completed/In progress filter.
+function ProjectStageChecklistTable({ schools, activeStage, onClearStage }) {
+  const [q, setQ] = React.useState('');
+  const [statusFilter, setStatusFilter] = React.useState('all');  // all | completed | in_progress
+  const nfmt = new Intl.NumberFormat('en-US');
+  const lowered = q.trim().toLowerCase();
+  const filtered = React.useMemo(() => {
+    let rows = schools;
+    if (lowered) {
+      rows = rows.filter(s =>
+        (s.nameEn || '').toLowerCase().includes(lowered) ||
+        (s.nameAr || '').includes(q.trim()) ||
+        (s.id || '').toLowerCase().includes(lowered) ||
+        (s.city || '').toLowerCase().includes(lowered)
+      );
+    }
+    if (statusFilter === 'completed') {
+      rows = rows.filter(s => s.status === 'Completed');
+    } else if (statusFilter === 'in_progress') {
+      rows = rows.filter(s => s.status === 'In Progress');
+    }
+    if (activeStage != null) {
+      rows = rows.filter(s => {
+        const st = s.stages && s.stages[activeStage];
+        return st && st.done;
+      });
+    }
+    return rows;
+  }, [schools, lowered, q, statusFilter, activeStage]);
+
+  return (
+    <Card padding="p-0">
+      <div className="p-4 border-b border-soft flex flex-wrap items-center gap-3">
+        <div className="flex-1 min-w-[220px]">
+          <div className="text-sm font-semibold ink-on-dark">Per-school stage progress</div>
+          <div className="text-[11px] text-ink-500 mt-0.5">
+            Green check = stage complete · — = not yet · {nfmt.format(filtered.length)} of {nfmt.format(schools.length)} schools
+          </div>
+        </div>
+        {activeStage != null && (
+          <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-[11px] font-medium"
+            style={{ background: '#EFF6FF', color: '#1E40AF', border: '1px solid #BFDBFE' }}>
+            S{String(activeStage + 1).padStart(2, '0')} · {SCHOOL_STAGES[activeStage]}
+            <button type="button" onClick={onClearStage} aria-label="Clear stage filter"
+              className="w-4 h-4 rounded-full bg-blue-200 text-blue-900 inline-flex items-center justify-center text-[10px] font-bold">×</button>
+          </span>
+        )}
+        <input value={q} onChange={e => setQ(e.target.value)} type="search"
+          placeholder="Search by school name / ID / city"
+          aria-label="Search schools"
+          className="px-3 py-1.5 text-xs border border-ink-200 rounded-md w-64 focus:outline-none focus:ring-2 ring-accent" />
+        <div className="inline-flex border border-soft rounded-md overflow-hidden text-[11px]">
+          {[
+            { id: 'all',         label: 'All' },
+            { id: 'completed',   label: 'Completed only' },
+            { id: 'in_progress', label: 'In progress only' },
+          ].map(opt => (
+            <button key={opt.id} type="button" onClick={() => setStatusFilter(opt.id)}
+              className={cls('px-2.5 py-1', statusFilter === opt.id
+                ? 'bg-navy-900 text-white font-medium'
+                : 'text-ink-700 hover:bg-ink-100')}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div data-testid="project-stage-checklist-table"
+        className="overflow-auto scrollbar-thin" style={{ maxHeight: 480 }}>
+        <table className="text-xs" style={{ borderCollapse: 'separate', borderSpacing: 0 }}>
+          <thead>
+            <tr>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap surface-2 border-b border-soft"
+                style={{ position: 'sticky', top: 0, left: 0, zIndex: 3, width: 220, minWidth: 220, background: '#F8FAFC' }}>
+                School
+              </th>
+              {STAGE_KEYS.map((key, i) => {
+                const cat = STAGE_CATEGORY[key];
+                const cc = STAGE_CATEGORY_COLORS[cat] || {};
+                return (
+                  <th key={key}
+                    className="text-center px-1.5 py-2 font-semibold border-b border-soft"
+                    style={{
+                      position: 'sticky', top: 0, zIndex: 2,
+                      background: cc.soft || '#F8FAFC',
+                      color: cc.text || '#0F172A',
+                      width: 48, minWidth: 48,
+                    }}
+                    title={SCHOOL_STAGES[i]}>
+                    <div style={{ fontFamily: 'monospace', fontSize: 10, fontWeight: 700, letterSpacing: '.04em' }}>
+                      S{String(i + 1).padStart(2, '0')}
+                    </div>
+                    <div style={{ fontSize: 9, fontWeight: 500, lineHeight: 1.1, marginTop: 1,
+                      maxHeight: 22, overflow: 'hidden', display: '-webkit-box',
+                      WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                      {SCHOOL_STAGE_SHORT[i]}
+                    </div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map(s => (
+              <tr key={s.id} className="hover-row border-b border-soft">
+                <td className="px-3 py-1.5"
+                  style={{ position: 'sticky', left: 0, zIndex: 1, background: '#fff',
+                    width: 220, minWidth: 220, maxWidth: 220, borderRight: '1px solid #E2E8F0' }}>
+                  <div className="font-medium truncate" title={s.nameEn || s.name}>{s.nameEn || s.name}</div>
+                  <div className="text-[10px] text-ink-500 truncate">{s.city || s.region}</div>
+                </td>
+                {STAGE_KEYS.map((key, i) => {
+                  const st = s.stages && s.stages[i];
+                  const done = !!(st && (st.completedDate || st.done));
+                  return (
+                    <td key={key} className="text-center px-1 py-1.5" style={{ width: 48, minWidth: 48 }}>
+                      {done ? (
+                        <Icon name="check-circle" size={16} className="text-emerald-600 inline-block" />
+                      ) : (
+                        <span aria-hidden="true" className="inline-block rounded-full"
+                          style={{ width: 6, height: 6, background: '#E2E8F0' }} />
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={19} className="text-center py-8 text-xs text-ink-500 italic">
+                No schools match these filters.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="px-4 py-2 border-t border-soft text-[10px] text-ink-500 flex items-center gap-4">
+        <span className="inline-flex items-center gap-1.5">
+          <Icon name="check-circle" size={12} className="text-emerald-600" /> stage complete
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="inline-block rounded-full" style={{ width: 5, height: 5, background: '#E2E8F0' }} /> not yet
+        </span>
+      </div>
+    </Card>
+  );
+}
+
 function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, onEscalate, currentUser }) {
   if (!project) return <div className="p-6 text-sm text-ink-500">Project not found.</div>;
 
@@ -4422,57 +4669,27 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           onClose={() => setLifecycleEditOpen(false)} />
       )}
 
-      {/* R21 Issue #3: School Execution Stages — vertical list (was horizontal funnel
-          + 18-cell strip). Real distributions cluster at 3-4 stages out of 18, which
-          made the horizontal layout collapse 14 segments into invisible slivers.
-          The vertical list always shows the full pipeline S01→S18 with active rows
-          prominent and empty rows recessed. Scoped to maxHeight 480px with internal
-          scroll so the rest of the Project Detail page stays in view. */}
-      {project.schoolDist && (() => {
-        const totalFunnel = projSchoolCount;
-        const SchoolsStagesVertical = window.SchoolsStagesVertical;
-        return (
-          <Card>
-            <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`}
-              subtitle="Full pipeline S01→S18 · empty rows stay in place · click any row to filter" />
-            <div style={{ maxHeight: 480, overflowY: 'auto', border: '0.5px solid #E2E8F0', borderRadius: 8 }}>
-              {SchoolsStagesVertical ? (
-                <SchoolsStagesVertical
-                  totalRows={totalFunnel}
-                  distPerStage={project.schoolDist}
-                  activeStage={activeFunnelStage}
-                  onSetStage={(i) => setActiveFunnelStage(i)} />
-              ) : (
-                <div className="p-4 text-xs text-ink-500 italic">Loading stage list…</div>
-              )}
-            </div>
-
-            {activeFunnelStage !== null && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8,
-                  padding: '6px 10px 6px 12px', background: '#EFF6FF', border: '1px solid #BFDBFE',
-                  borderRadius: 99, fontSize: 11, color: '#1E40AF', fontWeight: 500 }}>
-                  Filtered:
-                  <span style={{ fontWeight: 600, marginLeft: 2 }}>
-                    S{String(activeFunnelStage + 1).padStart(2, '0')} · {SCHOOL_STAGES[activeFunnelStage]}
-                  </span>
-                  <span style={{ width: 14, height: 14, borderRadius: 99, background: '#BFDBFE',
-                    color: '#1E3A8A', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
-                    onClick={() => setActiveFunnelStage(null)}>×</span>
-                </span>
-                <span style={{ fontSize: 11, color: '#64748B' }}>
-                  {project.schoolDist[activeFunnelStage] || 0} schools at this stage ·{' '}
-                  <button onClick={() => onOpenSchools && onOpenSchools(project.id)}
-                    style={{ color: '#1E40AF', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, padding: 0 }}>
-                    View all schools →
-                  </button>
-                </span>
-              </div>
-            )}
-          </Card>
-        );
-      })()}
+      {/* R22 — School Execution Stages on Project Detail Overview.
+          Two pieces, top → bottom:
+            1. 4 category-group summary cards (replaces the old funnel rectangle).
+               Mechanical (4) / Electrical (9) / Commissioning (3) / Handover (2).
+            2. Per-school stage checkmark table (200 schools × 18 stages),
+               sticky header + sticky first column, search + status filter, with
+               green CheckCircle for completed stages and a slate placeholder dot
+               for not-yet-completed ones. The Schools List page continues to use
+               SchoolsStagesVertical (R20) — only the Project Detail Overview
+               reverts to this richer per-school view. */}
+      {project.schoolDist && (
+        <ProjectStageSummaryCards
+          distPerStage={project.schoolDist}
+          totalSchools={projSchoolCount}
+          activeStage={activeFunnelStage}
+          onSetStage={(i) => setActiveFunnelStage(i)} />
+      )}
+      <ProjectStageChecklistTable
+        schools={(allSchools || ALL_SCHOOLS).filter(s => s.projectId === project.id)}
+        activeStage={activeFunnelStage}
+        onClearStage={() => setActiveFunnelStage(null)} />
 
       {/* Tabs */}
       <Card padding="p-0">

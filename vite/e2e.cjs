@@ -685,14 +685,72 @@ record('R21 #2: Importer (onPickFile) preserved as function but UI button is unw
        /const onPickFile = async/.test(reportsR21) &&
        /<input ref=\{fileRef\}[^>]*aria-hidden="true"/.test(reportsR21));
 
-record('R21 #3: Project Detail Overview renders SchoolsStagesVertical',
-       /window\.SchoolsStagesVertical/.test(projectR21) &&
-       /<SchoolsStagesVertical[\s\S]{0,300}distPerStage=\{project\.schoolDist\}/.test(projectR21));
-record('R21 #3: Project Detail vertical list constrained to maxHeight 480px with internal scroll',
-       /maxHeight: 480, overflowY: 'auto'/.test(projectR21));
+// R21 #3 reverted in R22 — Project Detail now uses the per-school checkmark table
+// (see R22 tests below). Schools List page still uses SchoolsStagesVertical and
+// keeps its 480-px scroll container (R20). The two assertions below preserve the
+// underlying intent: a project-scoped stages view exists with its own scroll cap.
+record('R21 #3 → R22: Project Detail still has a project-scoped stages view',
+       /ProjectStageChecklistTable/.test(projectR21) &&
+       /<ProjectStageSummaryCards/.test(projectR21));
+record('R20+R22: vertical list (Schools List) keeps its 480-px scroll container',
+       /maxHeight: 'calc\(100vh - 480px\)'/.test(read('page-schools-list.jsx')) ||
+       /maxHeight: 480/.test(read('page-schools-list.jsx')));
 record('R21 #3: old horizontal funnel + 18-cell strip removed from Project Detail Overview',
        !/\/\* Horizontal funnel \*\//.test(projectR21) &&
        !/\/\* 18-cell mini strip \*\//.test(projectR21));
+
+// ── K10. Round 22 — revert vertical on Project Detail, add per-school checkmark
+//                    table, regroup the 18-cell summary into 4 category cards ──
+const dataR22    = read('data.jsx');
+const projectR22 = read('page-project.jsx');
+const schoolsR22 = read('page-schools-list.jsx');
+
+record('R22 #1: Project Detail Overview no longer uses SchoolsStagesVertical',
+       !/<SchoolsStagesVertical/.test(projectR22) &&
+       !/const SchoolsStagesVertical = window\.SchoolsStagesVertical/.test(projectR22));
+record('R22 #1: Schools List page still uses SchoolsStagesVertical (no regression)',
+       /function SchoolsStagesVertical/.test(schoolsR22) &&
+       /<SchoolsStagesVertical/.test(schoolsR22) &&
+       /SchoolsStagesVertical \}\);/.test(schoolsR22));
+record('R22 #2: Project Detail Overview has per-school stage checkmark table',
+       /function ProjectStageChecklistTable/.test(projectR22) &&
+       /data-testid="project-stage-checklist-table"/.test(projectR22) &&
+       /<ProjectStageChecklistTable/.test(projectR22));
+record('R22 #2: Stage completion checkmarks render only for stages with completedDate',
+       /const done = !!\(st && \(st\.completedDate \|\| st\.done\)\)/.test(projectR22) &&
+       /<Icon name="check-circle" size=\{16\} className="text-emerald-600/.test(projectR22));
+record('R22 #2: Table has sticky header row + sticky first column',
+       /position: 'sticky', top: 0, left: 0, zIndex: 3/.test(projectR22) &&
+       /position: 'sticky', left: 0, zIndex: 1/.test(projectR22));
+record('R22 #2: Search box filters school rows in the table',
+       /placeholder="Search by school name \/ ID \/ city"/.test(projectR22) &&
+       /aria-label="Search schools"/.test(projectR22) &&
+       /\(s\.nameEn \|\| ''\)\.toLowerCase\(\)\.includes\(lowered\)/.test(projectR22));
+record('R22 #2: Completed-only / In-progress-only filter toggle wired',
+       /id: 'completed',\s+label: 'Completed only'/.test(projectR22) &&
+       /id: 'in_progress',\s+label: 'In progress only'/.test(projectR22) &&
+       /statusFilter === 'completed'/.test(projectR22));
+record('R22 #2: Legend row shows "green check = stage complete · — = not yet"',
+       /stage complete/.test(projectR22) && /not yet/.test(projectR22));
+
+record('R22 #3: Category summary cards group 18 stages into Mechanical / Electrical / Commissioning / Handover',
+       /function ProjectStageSummaryCards/.test(projectR22) &&
+       /data-testid="project-stage-summary-cards"/.test(projectR22) &&
+       /cat: 'mechanical',\s+title: 'Mechanical',\s+range: \[0, 3\]/.test(projectR22) &&
+       /cat: 'electrical',\s+title: 'Electrical',\s+range: \[4, 12\]/.test(projectR22) &&
+       /cat: 'commissioning',\s+title: 'Commissioning',\s+range: \[13, 15\]/.test(projectR22) &&
+       /cat: 'handover',\s+title: 'Handover',\s+range: \[16, 17\]/.test(projectR22));
+record('R22 #3: Old funnel rectangle removed from Project Detail',
+       !/Horizontal funnel/.test(projectR22) &&
+       !/\/\* Horizontal funnel \*\//.test(projectR22));
+record('R22 #3: Empty stage cells render dimmed (opacity 0.45, em-dash placeholder)',
+       /opacity: isEmpty \? 0\.45 : 1/.test(projectR22) &&
+       /isEmpty \? '—' : nfmt\.format\(count\)/.test(projectR22));
+record('R22 supporting: SCHOOL_STAGE_SHORT array of 18 short labels exported from data.jsx',
+       /const SCHOOL_STAGE_SHORT = \[/.test(dataR22) &&
+       /SCHOOL_STAGES, SCHOOL_STAGE_SHORT/.test(dataR22) &&
+       /'Foundation','PV Mount','PV Module'/.test(dataR22) &&
+       /'H\/O Zamil','H\/O Client'/.test(dataR22));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

@@ -88,6 +88,15 @@ const OLD_TO_NEW_STAGE = {
   energized: 'energized', coc: 'coc_signed',
 };
 const STAGE_KEY_LABEL = STAGE_KEYS.reduce((a,k,i) => (a[k] = SCHOOL_STAGES[i], a), {});
+// R22 — short labels used in dense UI surfaces (Project Detail 18-cell strip).
+// Ordered to match STAGE_KEYS so SCHOOL_STAGE_SHORT[i] aligns with SCHOOL_STAGES[i].
+const SCHOOL_STAGE_SHORT = [
+  'Foundation','PV Mount','PV Module','Earthing',
+  'Cable Tray','DC Cables','LV AC','Inverters',
+  'SMDB','Logger','Meter','Breaker','CT',
+  'Energized','COC','Install Done',
+  'H/O Zamil','H/O Client',
+];
 const STAGE_INDEX = STAGE_KEYS.reduce((a,k,i) => (a[k] = i, a), {});
 
 const REMARKS = ['Active', 'Access issue', 'Excluded', 'Dismantled', 'Demolished', 'Closed'];
@@ -771,7 +780,7 @@ const ACTIVITY = [
 
 Object.assign(window, {
   SAR, SARfull, fmtDate,
-  SCHOOL_STAGES, STAGE_KEYS, STAGE_KEY_LABEL, STAGE_INDEX, LEGACY_SCHOOL_STAGES,
+  SCHOOL_STAGES, SCHOOL_STAGE_SHORT, STAGE_KEYS, STAGE_KEY_LABEL, STAGE_INDEX, LEGACY_SCHOOL_STAGES,
   STAGE_EXCEL_HEADERS, STAGE_CATEGORY, STAGE_CATEGORY_COLORS, STAGE_CATEGORY_LABELS, OLD_TO_NEW_STAGE,
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
