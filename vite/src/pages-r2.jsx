@@ -423,8 +423,11 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
         </div>
       )}
 
-      {/* R19.1: Stage transitions + Top bottlenecks pair (Manager exec view). */}
-      {isExec && <DashStageInsights projects={projects} />}
+      {/* R19.1 / R29.6: Stage transitions + Top bottlenecks pair. Visible to all four
+          portfolio roles (Manager / VP / Operations Manager / Program Manager) — gated
+          on canViewSchoolExecutionStages (was isExec / canViewFinancials, which wrongly
+          excluded Ops Mgr + Pgm Mgr). */}
+      {canViewSchoolExecutionStages(currentUser) && <DashStageInsights projects={projects} />}
 
       {/* R27: portfolio-level "School Execution Stages" widget (between Transitions
           and Financial summary, gated by role). Replaces the older flat 4-card

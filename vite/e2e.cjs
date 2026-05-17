@@ -328,9 +328,10 @@ record('R15 #1: PM-group sidebar exposes Audit Log when no Settings access',
 record('R15 #1: app.jsx routes audit-log to PageSettings with auditLogOnly',
        /page === 'audit-log'/.test(appJsx) &&
        /<PageSettings[^>]*auditLogOnly=\{true\}/.test(appJsx));
-record('R15 #1: PageSettings accepts auditLogOnly prop and renders only AuditTab',
+// R15 #1 + R29.6: auditLogOnly branch renders AuditTab; from R29.6 also renders StorageTab below it.
+record('R15 #1: PageSettings accepts auditLogOnly prop and renders AuditTab (R29.6: + StorageTab)',
        /function PageSettings\(\{\s*currentUser,\s*auditLogOnly\s*=\s*false\s*\}\)/.test(settingsJsx) &&
-       /if \(auditLogOnly\)[\s\S]{0,800}<AuditTab\s*\/>/.test(settingsJsx));
+       /if \(auditLogOnly\)[\s\S]{0,1200}<AuditTab\s*\/>[\s\S]{0,400}<StorageTab\s*\/>/.test(settingsJsx));
 // R15 #2: Material Planning 'Projects' no longer duplicates Dashboard.
 const matchMaterial = appJsx.match(/role === 'Material planning'\)[\s\S]*?\n    \}/);
 record('R15 #2: Material Planning Projects route renders different content than Dashboard',
@@ -1327,24 +1328,25 @@ record('R29.5: Audit Log direct link in PM-group only when canViewAuditLog && !c
 // Stage Transitions + Top Bottlenecks — currently exec-only via isExec = canViewFinancials
 record('R29.5: PagePMDashboard isExec === canViewFinancials(currentUser)',
        /const isExec = canViewFinancials\(currentUser\);/.test(pagesR2_M));
-record('R29.5: PagePMDashboard renders DashStageInsights iff isExec',
-       /\{isExec && <DashStageInsights/.test(pagesR2_M));
+// R29.6 fix landed: DashStageInsights gate widened from isExec to canViewSchoolExecutionStages.
+record('R29.6: PagePMDashboard renders DashStageInsights via canViewSchoolExecutionStages (not isExec)',
+       /\{canViewSchoolExecutionStages\(currentUser\) && <DashStageInsights/.test(pagesR2_M) &&
+       !/\{isExec && <DashStageInsights/.test(pagesR2_M));
 record('R29.5: PageVPDashboard mounts DashStageInsights unconditionally',
        /<DashStageInsights projects=\{projects\}/.test(pagesR2_M));
-// ⚠ NOTE: matrix wants Stage Transitions + Top Bottlenecks visible on Ops Mgr + Pgm Mgr dashboards too.
-// Today they are NOT visible because both roles return canViewFinancials === false → isExec === false.
-// Flagged 🔴 in AUDIT_REPORT.md §1. The test below asserts the *current* behavior so any future fix lands a green diff.
-record('R29.5 (current behavior): Ops Mgr + Pgm Mgr do NOT see Stage Transitions panel',
-       !_cap.fin(_users.op) && !_cap.fin(_users.pgm));
+record('R29.6: Ops Mgr + Pgm Mgr NOW see Stage Transitions + Top Bottlenecks (canViewSchoolExecutionStages=true)',
+       _cap.ses(_users.op) && _cap.ses(_users.pgm));
 
-// Storage panel — currently Manager-only (full Settings page)
+// Storage panel — Manager via full Settings; VP / Ops Mgr / Pgm Mgr via auditLogOnly (R29.6 Option A).
 record('R29.5: Storage tab listed in Settings TABS array',
        /'Branding','Notifications','Storage'/.test(settingsJsx_M));
 record('R29.5: Storage tab renders <StorageTab /> when active',
        /tab === 'Storage'\s+&&\s+<StorageTab/.test(settingsJsx_M));
-// ⚠ matrix wants Manager + VP. Today VP gets auditLogOnly=true and never sees Storage. Flagged 🟡 in §5.
-record('R29.5 (current behavior): Storage reachable only via full Settings page (canViewSettings → Manager-only)',
-       _cap.set(_users.mgr) && !_cap.set(_users.vp));
+record('R29.6: auditLogOnly branch also mounts <StorageTab /> below <AuditTab />',
+       /audit-only-storage-section/.test(settingsJsx_M) &&
+       /<Card padding="p-5"><StorageTab \/><\/Card>\s*<\/div>\s*\);\s*}\s*const \[tab/.test(settingsJsx_M));
+record('R29.6: VP reaches Storage via the auditLogOnly path (sidebar Audit Log link)',
+       _cap.aud(_users.vp) && !_cap.set(_users.vp));
 
 // GitHub remote path: vite.config base + README + built index.html all reference senaat-solar-dashboard-v3
 const _viteConfig    = fs.readFileSync(path.join(__dirname, 'vite.config.js'), 'utf8');
@@ -1415,6 +1417,44 @@ record('R29.5: ImageUploader compresses + shows original-vs-compressed preview b
 // Delivery Notes sidebar hidden for Material Planning (matrix; R29 covered)
 record('R29.5: Delivery Notes shared item omitted from Material planning sidebar branch',
        /role === 'Material planning'[\s\S]{0,400}Delivery Notes intentionally hidden/.test(shellJsx_M));
+
+// ── N. R29.6 audit-fix tests ────────────────────────────────────────────────
+// Two findings from AUDIT_REPORT.md §1 fixed here:
+//   1.1 🔴 Stage Insights gating  →  widened from isExec to canViewSchoolExecutionStages
+//   1.2 🟡 Storage tab access for VP  →  Option A: render StorageTab in auditLogOnly branch
+//
+// Tests are named exactly as requested in the R29.6 brief so a future audit can
+// grep for them without ambiguity.
+
+record('R29.6: Operations Manager Dashboard renders Stage Transitions chart',
+       _cap.ses(_users.op) === true &&
+       /\{canViewSchoolExecutionStages\(currentUser\) && <DashStageInsights/.test(pagesR2_M));
+record('R29.6: Operations Manager Dashboard renders Top Bottlenecks panel',
+       _cap.ses(_users.op) === true &&
+       /\{canViewSchoolExecutionStages\(currentUser\) && <DashStageInsights/.test(pagesR2_M));
+record('R29.6: Program Manager Dashboard renders Stage Transitions chart',
+       _cap.ses(_users.pgm) === true &&
+       /\{canViewSchoolExecutionStages\(currentUser\) && <DashStageInsights/.test(pagesR2_M));
+record('R29.6: Program Manager Dashboard renders Top Bottlenecks panel',
+       _cap.ses(_users.pgm) === true &&
+       /\{canViewSchoolExecutionStages\(currentUser\) && <DashStageInsights/.test(pagesR2_M));
+record('R29.6: VP can reach Storage tab via sidebar Audit Log path',
+       _cap.aud(_users.vp) === true &&
+       /audit-only-storage-section/.test(settingsJsx_M) &&
+       /<StorageTab \/>/.test(settingsJsx_M));
+
+// Sanity: PM / Material Planning / Coordinator still excluded from Stage Insights
+record('R29.6: Project Manager dashboard still does NOT render Stage Transitions (canViewSchoolExecutionStages=false)',
+       _cap.ses(_users.pm) === false);
+record('R29.6: Material Planning dashboard still does NOT render Stage Transitions',
+       _cap.ses(_users.mat) === false);
+record('R29.6: Coordinator dashboard still does NOT render Stage Transitions',
+       _cap.ses(_users.coord) === false);
+
+// Sanity: auditLogOnly branch keeps Audit Log denial for anyone outside AUDIT_LOG_USERS
+record('R29.6: auditLogOnly still denies access to users outside AUDIT_LOG_USERS',
+       /if \(!canViewAuditLog\(currentUser\)\)/.test(settingsJsx_M) &&
+       /Access denied — Audit Log is restricted\./.test(settingsJsx_M));
 
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;

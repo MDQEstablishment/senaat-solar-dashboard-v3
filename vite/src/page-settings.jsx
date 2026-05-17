@@ -15,6 +15,9 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
         </div>
       );
     }
+    // R29.6 — Option A: Storage panel piggybacks the audit-only branch so VP / Ops Mgr /
+    // Pgm Mgr (who reach Settings via the R15 sidebar's auditLogOnly path) also see it.
+    // Managers continue to see Storage via the full Settings page (tab list below).
     return (
       <div className="p-6 space-y-5">
         <div>
@@ -22,6 +25,11 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
           <p className="text-xs text-ink-500 ink-muted-on-dark mt-0.5">Every mutation in the system is recorded here. Read-only.</p>
         </div>
         <Card padding="p-5"><AuditTab /></Card>
+        <div data-testid="audit-only-storage-section">
+          <h1 className="text-2xl font-bold ink-on-dark">Storage</h1>
+          <p className="text-xs text-ink-500 ink-muted-on-dark mt-0.5">Local image storage usage. Migrates to Supabase Storage post-cutover.</p>
+        </div>
+        <Card padding="p-5"><StorageTab /></Card>
       </div>
     );
   }
