@@ -1,17 +1,46 @@
 import React from 'react';
 // Page 1 — Main Dashboard
 
-const KPICard = ({ label, value, trend, spark, accent, suffix }) => (
-  <div className="surface border border-soft rounded-xl p-4 shadow-card relative overflow-hidden">
-    <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent ? 'var(--accent)' : '#0B2545' }} />
-    <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500 ink-muted-on-dark">{label}</div>
-    <div className="flex items-end justify-between mt-1.5">
-      <div className="text-[26px] font-bold leading-none text-navy-900 ink-on-dark tnum">{value}<span className="text-sm font-medium text-ink-500 ml-1">{suffix}</span></div>
-      {trend != null && <TrendArrow delta={trend} />}
+// R19 Item #1 — KPICard layout per Claude Design mockup:
+//   • label (uppercase 10px tracking)
+//   • delta chip BELOW the label when trend != 0 — "▲ +N.N%" green / "▼ −N.N%" red.
+//     For Schools Energized + Overall Progress the chip carries the "vs last week"
+//     suffix to make the cadence explicit; other cards just show the bare delta.
+//   • big number (26px) with optional suffix
+//   • subtle 1px-stroke sparkline at the bottom (12-point trend line, no fill)
+const KPICard = ({ label, value, trend, spark, accent, suffix, deltaSuffix }) => {
+  const hasDelta = trend != null && trend !== 0;
+  const up = trend > 0;
+  const chipBg = up ? '#ECFDF5' : '#FEF2F2';
+  const chipBorder = up ? '#A7F3D0' : '#FECACA';
+  const chipText = up ? '#047857' : '#B91C1C';
+  return (
+    <div className="surface border border-soft rounded-xl p-4 shadow-card relative overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent ? 'var(--accent)' : '#0B2545' }} />
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500 ink-muted-on-dark">{label}</div>
+      {hasDelta && (
+        <div className="mt-1" style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontSize: 10, fontWeight: 600,
+          background: chipBg, color: chipText, border: `1px solid ${chipBorder}`,
+          padding: '1px 6px', borderRadius: 99 }}>
+          <span>{up ? '▲' : '▼'}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {up ? '+' : '−'}{Math.abs(trend)}{typeof trend === 'number' && Number.isFinite(trend) && !Number.isInteger(trend) ? '' : ''}
+            {deltaSuffix ? ` ${deltaSuffix}` : ''}
+          </span>
+        </div>
+      )}
+      <div className="flex items-end justify-between mt-1.5">
+        <div className="text-[26px] font-bold leading-none text-navy-900 ink-on-dark tnum">{value}<span className="text-sm font-medium text-ink-500 ml-1">{suffix}</span></div>
+      </div>
+      {spark && (
+        <div className="mt-2">
+          <Sparkline data={spark} width={140} height={26} color="#94A3B8" />
+        </div>
+      )}
     </div>
-    {spark && <div className="mt-2"><Sparkline data={spark} width={140} height={26} /></div>}
-  </div>
-);
+  );
+};
 
 function StageStrip({ counts, onClickStage, activeStage }) {
   // R16 #2: 18-stage strip — colour by category, not by hardcoded index.
@@ -56,59 +85,23 @@ const CAT_TINTS = {
 const VEL_SEED   = [47,52,41,38,29,33,21,18,14,11,8,6,3,1,0,0,0,0];
 const DWELL_SEED = [9,7,8,6,11,8,9,7,8,6,7,5,14,21,14,10,7,0];
 
+// R19 Item #3 — DashStageCard is now a thin adapter that forwards to the reusable
+// window.StageCard (src/components/StageCard.jsx) so the Dashboard and the Project
+// Detail render identical tiles from a single source.
 function DashStageCard({ stageObj, total, isBottleneck, isActive, onClick }) {
-  const catColors = STAGE_CATEGORY_COLORS[stageObj.cat] || {};
-  const catLabel  = STAGE_CATEGORY_LABELS[stageObj.cat] || '';
-  const velColor  = stageObj.week > 30 ? '#059669' : stageObj.week > 0 ? '#374151' : '#9CA3AF';
+  const SC = window.StageCard;
+  if (!SC) return null;
   return (
-    <div onClick={onClick} style={{
-      position: 'relative', background: '#fff', cursor: 'pointer',
-      border: isActive ? '1px solid #0B2545' : '1px solid #E5E7EB',
-      boxShadow: isActive ? '0 0 0 1px #0B2545' : 'none',
-      borderRadius: 8, padding: '12px 12px 11px',
-      display: 'flex', flexDirection: 'column', gap: 8,
-    }}>
-      {isBottleneck && (
-        <div style={{ position: 'absolute', top: -7, right: 10, fontSize: 9, fontWeight: 700,
-          letterSpacing: '.05em', background: '#fff', color: '#BE123C',
-          border: '1px solid #BE123C', padding: '1px 6px', borderRadius: 4 }}>BOTTLENECK</div>
-      )}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#64748B', fontWeight: 600 }}>
-          S{String(stageObj.n).padStart(2, '0')}
-        </span>
-        <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 600, color: catColors.text || '#64748B' }}>
-          {stageObj.pct}%
-        </span>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -4 }}>
-        <span style={{ width: 6, height: 6, borderRadius: 2, background: catColors.dot, display: 'inline-block', flexShrink: 0 }} />
-        <span style={{ fontSize: 10, color: catColors.text, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' }}>
-          {catLabel}
-        </span>
-      </div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#0F172A', lineHeight: 1.25,
-        height: '2.5em', overflow: 'hidden', display: '-webkit-box',
-        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-        {stageObj.name}
-      </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 22, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-          {stageObj.count.toLocaleString()}
-        </span>
-        <span style={{ fontSize: 10, color: '#64748B' }}>/ {(total || 2601).toLocaleString()}</span>
-      </div>
-      <div style={{ position: 'relative', height: 6, background: '#F1F2F5', borderRadius: 99, overflow: 'hidden' }}>
-        <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, borderRadius: 99,
-          background: catColors.dot, width: Math.max(stageObj.pct, 0.4) + '%' }} />
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: '#64748B' }}>
-        <span style={{ color: velColor, fontWeight: 600 }}>
-          {stageObj.week > 0 ? `▲ ${stageObj.week} /wk` : '— 0 /wk'}
-        </span>
-        {stageObj.days > 0 && <span>⏱ {stageObj.days}d dwell</span>}
-      </div>
-    </div>
+    <SC
+      stage={{ key: stageObj.key, name: stageObj.name, category: stageObj.cat, n: stageObj.n }}
+      count={stageObj.count}
+      total={total}
+      weeklyDelta={stageObj.week}
+      medianDwellDays={stageObj.days}
+      isBottleneck={isBottleneck}
+      isActive={isActive}
+      onClick={onClick}
+    />
   );
 }
 
@@ -415,8 +408,8 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
     { label: 'Open Projects',        value: openCount, trend: -8.0, spark: [9,9,9,8,8,8,7,7,7,7,8,openCount] },
     { label: 'Closed / Handed Over', value: closedCount, trend: 12.5, spark: [0,0,0,1,1,1,2,2,2,2,2,closedCount] },
     { label: 'Total Schools',        value: totalSchools.toLocaleString(), trend: 0, spark: [400,600,800,1000,1000,1000,1000,1000,1000,1000,1000,totalSchools] },
-    { label: 'Schools Energized',    value: energizedSchools.toLocaleString(), trend: 18.4, spark: [20,40,80,140,200,280,360,420,500,560,620,energizedSchools] },
-    { label: 'Overall Progress',     value: overall, suffix: '%', trend: 6.1, spark: [12,18,24,28,32,36,40,44,48,52,56,overall] },
+    { label: 'Schools Energized',    value: energizedSchools.toLocaleString(), trend: 1, deltaSuffix: 'this week', spark: [20,40,80,140,200,280,360,420,500,560,620,energizedSchools] },
+    { label: 'Overall Progress',     value: overall, suffix: '%', trend: 2.4, deltaSuffix: 'vs last week', spark: [12,18,24,28,32,36,40,44,48,52,56,overall] },
   ];
 
   // M1: page header w/ H1 for non-exec roles. Exec roles already have the KPI strip below as their header.

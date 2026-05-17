@@ -376,113 +376,196 @@ function SchoolsCompactTable({ rows, canAdd, onOpen, onDelete, onContractorChang
 //   blank "—"     → not started
 //   "In Progress" → started but not done (statusId === 'in-progress')
 //   date          → completed (use stage.completedDate, formatted dd MMM)
+// R19 Item #2 — funnel + 18-cell scrub strip + filter chip + simple identity table.
+// Each school's "current stage" = the highest index with done=true (or -1 if none).
+// Funnel segments are sized by the count at each stage; the 24-px strip below is
+// the click target. A removable filter chip persists the user's selection and
+// narrows the identity table underneath.
 function SchoolsStagesTable({ rows, onOpen }) {
-  // Build the header-row category-group spans from the new STAGE_KEYS layout.
-  // Each entry: { category, label, color, span } where span = number of stage
-  // columns this category covers.
-  const categoryGroups = React.useMemo(() => {
-    const groups = [];
-    let current = null;
-    STAGE_KEYS.forEach(k => {
-      const cat = STAGE_CATEGORY[k];
-      if (!current || current.category !== cat) {
-        current = {
-          category: cat,
-          label: STAGE_CATEGORY_LABELS[cat] || cat,
-          color: STAGE_CATEGORY_COLORS[cat] || { dot: '#0B2545', soft: '#F8FAFC', text: '#0F172A' },
-          span: 0,
-        };
-        groups.push(current);
-      }
-      current.span++;
-    });
-    return groups;
+  const [funnelStage, setFunnelStage] = React.useState(null);
+
+  // currentStageIndex per school: highest index with done=true, or -1 (not started).
+  const stageOf = React.useCallback((s) => {
+    if (!s.stages) return -1;
+    let last = -1;
+    for (let i = 0; i < s.stages.length; i++) if (s.stages[i] && s.stages[i].done) last = i;
+    return last;
   }, []);
+
+  // Distribution per stage index (0..17). Add a synthetic "not started" bucket at -1.
+  const dist = React.useMemo(() => {
+    const out = STAGE_KEYS.map(() => 0);
+    let notStarted = 0;
+    rows.forEach(s => {
+      const i = stageOf(s);
+      if (i < 0) notStarted++;
+      else out[i]++;
+    });
+    return { perStage: out, notStarted };
+  }, [rows, stageOf]);
+
+  const filteredRows = React.useMemo(() => {
+    if (funnelStage == null) return rows;
+    return rows.filter(s => stageOf(s) === funnelStage);
+  }, [rows, funnelStage, stageOf]);
+
+  const totalRows = rows.length;
+  const nfmt = new Intl.NumberFormat('en-US');
+
+  // Build funnel segments including the not-started bucket on the far left.
+  const segs = [
+    { i: -1, label: 'Not started', cat: 'none', count: dist.notStarted, bg: '#E5E7EB', fg: '#475569' },
+    ...STAGE_KEYS.map((key, i) => {
+      const cat = STAGE_CATEGORY[key];
+      const cc = STAGE_CATEGORY_COLORS[cat] || {};
+      return { i, key, label: SCHOOL_STAGES[i], cat, count: dist.perStage[i], bg: cc.dot, fg: '#fff' };
+    }),
+  ];
+  const activeStageName = funnelStage != null ? SCHOOL_STAGES[funnelStage] : null;
+  const activeKey       = funnelStage != null ? STAGE_KEYS[funnelStage]    : null;
+  const activeCat       = activeKey ? STAGE_CATEGORY[activeKey] : null;
+  const activeColor     = activeCat ? STAGE_CATEGORY_COLORS[activeCat] : null;
 
   return (
     <Card padding="p-0">
-      <div className="overflow-auto scrollbar-thin" style={{ maxHeight: 'calc(100vh - 360px)' }}>
+      <div className="p-4 border-b border-soft">
+        <div className="flex items-baseline justify-between mb-2">
+          <div className="text-sm font-semibold ink-on-dark">Schools at each stage</div>
+          <div className="text-[11px] text-ink-500">{nfmt.format(totalRows)} schools · click any stage to filter</div>
+        </div>
+        {/* Horizontal funnel — single tall row, segments proportional to counts. */}
+        <div style={{ display: 'flex', height: 42, borderRadius: 6, overflow: 'hidden', background: '#F1F2F5' }}>
+          {segs.map(seg => {
+            const w = totalRows > 0 ? (seg.count / totalRows) * 100 : 0;
+            if (w < 0.5) return null;
+            const isActive = seg.i !== -1 && funnelStage === seg.i;
+            return (
+              <div key={seg.i}
+                onClick={() => seg.i !== -1 && setFunnelStage(funnelStage === seg.i ? null : seg.i)}
+                title={seg.label + ' · ' + nfmt.format(seg.count) + ' schools'}
+                style={{
+                  width: w + '%', background: seg.bg, borderRight: '1px solid rgba(255,255,255,0.5)',
+                  position: 'relative', cursor: seg.i !== -1 ? 'pointer' : 'default',
+                  outline: isActive ? '2px solid #0B2545' : 'none',
+                  outlineOffset: isActive ? '-2px' : 0, zIndex: isActive ? 2 : 1,
+                }}>
+                {w > 4 && (
+                  <span style={{ position: 'absolute', top: '50%', left: '50%',
+                    transform: 'translate(-50%,-50%)', color: seg.fg, fontSize: 11, fontWeight: 600,
+                    whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                    {seg.i !== -1 ? 'S' + String(seg.i + 1).padStart(2, '0') + ' · ' : ''}{nfmt.format(seg.count)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 24-px scrub strip — one mini-cell per stage, click to filter. */}
+        <div data-testid="stages-view-scrub-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 3, marginTop: 10, height: 24 }}>
+          {STAGE_KEYS.map((key, i) => {
+            const cat = STAGE_CATEGORY[key];
+            const cc = STAGE_CATEGORY_COLORS[cat] || {};
+            const isActive = funnelStage === i;
+            const count = dist.perStage[i];
+            return (
+              <button key={key} type="button"
+                onClick={() => setFunnelStage(isActive ? null : i)}
+                title={`S${String(i + 1).padStart(2, '0')} · ${SCHOOL_STAGES[i]} · ${count}`}
+                style={{
+                  border: isActive ? '1px solid #0B2545' : '0.5px solid #E2E8F0',
+                  borderRadius: 4, padding: 0, background: isActive ? '#fff' : '#FAFAFA',
+                  display: 'flex', alignItems: 'stretch', cursor: 'pointer', overflow: 'hidden',
+                }}>
+                <span style={{ width: 4, background: cc.dot, flexShrink: 0 }} />
+                <span style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontVariantNumeric: 'tabular-nums', color: isActive ? '#0B2545' : '#475569', fontWeight: 600 }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Filter chip — appears only when a stage is selected. */}
+        {funnelStage != null && (
+          <div className="mt-3" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '4px 6px 4px 10px',
+              background: '#fff', border: `1px solid ${activeColor?.dot || '#0B2545'}`,
+              borderRadius: 99, fontSize: 11, fontWeight: 500, color: '#0F172A',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: 99, background: activeColor?.dot }} />
+              Filtered by stage: <span className="font-semibold">S{String(funnelStage + 1).padStart(2, '0')} · {activeStageName}</span>
+              <span style={{ fontSize: 10, color: '#64748B' }}>({nfmt.format(filteredRows.length)} of {nfmt.format(totalRows)})</span>
+              <button type="button" onClick={() => setFunnelStage(null)}
+                aria-label="Clear stage filter"
+                style={{ width: 16, height: 16, borderRadius: 99, background: '#F1F5F9', color: '#64748B',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, cursor: 'pointer', border: 'none' }}>×</button>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Identity table — same compact layout, narrowed to the active stage if any. */}
+      <div className="overflow-auto scrollbar-thin" style={{ maxHeight: 'calc(100vh - 480px)' }}>
         <table className="w-full text-xs">
           <thead className="surface-2 border-b border-soft sticky top-0">
-            {/* Category band — color-coded background per group */}
             <tr>
-              <th colSpan={3} className="px-3 py-1.5 surface-2 sticky left-0 z-10" />
-              {categoryGroups.map(g => (
-                <th key={g.category} colSpan={g.span}
-                    className="text-center px-2 py-1.5 font-semibold text-[10px] uppercase tracking-wider border-l border-r border-soft"
-                    style={{ background: g.color.soft, color: g.color.text }}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: g.color.dot }} />
-                    {g.label}
-                  </span>
-                </th>
-              ))}
-              <th className="surface-2" />
-            </tr>
-            {/* Stage names row */}
-            <tr>
-              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap sticky left-0 surface-2 z-10">School ID</th>
-              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap min-w-[200px]">School name</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">School ID</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap min-w-[260px]">School name</th>
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">City</th>
-              {STAGE_KEYS.map((k, i) => {
-                const cat = STAGE_CATEGORY[k];
-                const color = STAGE_CATEGORY_COLORS[cat] || {};
-                return (
-                  <th key={k} className="text-center px-2 py-2 font-semibold whitespace-nowrap min-w-[78px]"
-                      title={SCHOOL_STAGES[i]}>
-                    <div className="flex flex-col items-center">
-                      <span className="text-[10px] text-ink-500 tnum">{i + 1}</span>
-                      <span className="text-[10px] leading-tight" style={{ color: color.text }}>
-                        {SCHOOL_STAGES[i].split(' ').slice(0, 2).join(' ')}
-                      </span>
-                    </div>
-                  </th>
-                );
-              })}
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Level / Gender</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Contractor</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Current stage</th>
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Remark</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(s => (
-              <tr key={s.id} className="border-b border-soft hover-row cursor-pointer" onClick={() => onOpen(s.id)}>
-                <td className="px-3 py-2 font-mono text-[11px] sticky left-0 bg-white surface">{s.id}</td>
-                <td className="px-3 py-2">
-                  <div className="font-medium">{s.nameEn || s.name}</div>
-                  {s.nameAr && <div className="text-[10px] text-ink-500" dir="rtl">{s.nameAr}</div>}
-                </td>
-                <td className="px-3 py-2 text-ink-700">{s.city}</td>
-                {STAGE_KEYS.map((k, i) => {
-                  const st = s.stages && s.stages[i];
-                  const done = !!(st && st.done);
-                  const inProgress = !done && st && st.statusId === 'in-progress';
-                  const date = st && (st.completedDate || st.date);
-                  return (
-                    <td key={k} className="text-center px-2 py-2">
-                      {done ? (
-                        <div className="flex flex-col items-center">
-                          <span className="text-emerald-600"><Icon name="check" size={14} strokeWidth={3} /></span>
-                          {date && <span className="text-[9px] text-ink-500">{new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
-                        </div>
-                      ) : inProgress ? (
-                        <span className="text-[10px] text-sky-600 font-medium">In Progress</span>
-                      ) : (
-                        <span className="text-ink-200">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-                <td className="px-3 py-2"><Pill tone={s.remark === 'Active' ? 'ok' : 'warn'}>{s.remark}</Pill></td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={STAGE_KEYS.length + 4} className="text-center py-8 text-xs text-ink-500 italic">No schools match these filters.</td></tr>
+            {filteredRows.map(s => {
+              const i = stageOf(s);
+              const key = i >= 0 ? STAGE_KEYS[i] : null;
+              const cat = key ? STAGE_CATEGORY[key] : null;
+              const cc = cat ? STAGE_CATEGORY_COLORS[cat] : null;
+              const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
+              return (
+                <tr key={s.id} className="border-b border-soft hover-row cursor-pointer" onClick={() => onOpen(s.id)}>
+                  <td className="px-3 py-2 font-mono text-[11px]">{s.id}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{s.nameEn || s.name}</div>
+                    {s.nameAr && <div className="text-[10px] text-ink-500" dir="rtl">{s.nameAr}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-ink-700">{s.city}</td>
+                  <td className="px-3 py-2 text-ink-700">{s.level} / {s.gender}</td>
+                  <td className="px-3 py-2 text-ink-700">{contractor?.name || '—'}</td>
+                  <td className="px-3 py-2">
+                    {i >= 0 ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '2px 8px 2px 6px', borderRadius: 99,
+                        background: cc?.soft, color: cc?.text, fontWeight: 500, fontSize: 11 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 99, background: cc?.dot }} />
+                        S{String(i + 1).padStart(2, '0')} · {SCHOOL_STAGES[i]}
+                      </span>
+                    ) : <span className="text-ink-500 italic text-[11px]">Not started</span>}
+                  </td>
+                  <td className="px-3 py-2"><Pill tone={s.remark === 'Active' ? 'ok' : 'warn'}>{s.remark}</Pill></td>
+                </tr>
+              );
+            })}
+            {filteredRows.length === 0 && (
+              <tr><td colSpan={7} className="text-center py-8 text-xs text-ink-500 italic">
+                {funnelStage != null ? `No schools currently at stage S${String(funnelStage + 1).padStart(2, '0')} · ${activeStageName}.` : 'No schools match these filters.'}
+              </td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <div className="px-3 py-2 border-t border-soft text-[11px] text-ink-500">Stages view — {rows.length} schools across 18 School Execution Stages (Mechanical · Electrical · Commissioning · Handover).</div>
+      <div className="px-3 py-2 border-t border-soft text-[11px] text-ink-500">
+        Stages view — {nfmt.format(filteredRows.length)} of {nfmt.format(totalRows)} schools across 18 School Execution Stages.
+      </div>
     </Card>
   );
 }
 
-Object.assign(window, { PageSchoolsList });
+Object.assign(window, { PageSchoolsList, SchoolsStagesTable });

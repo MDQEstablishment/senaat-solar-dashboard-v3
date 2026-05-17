@@ -395,11 +395,13 @@ record('R16 #2: ALL_SCHOOLS construction remaps legacy keys + synthesizes new st
        /completedDate/.test(dataJsxR16) &&
        /handover_zamil/.test(dataJsxR16) && /handover_client/.test(dataJsxR16));
 
-// R16 #3: Stage Execution KPIs render 18 cards, replace Recent activities
+// R16 #3 → R19: Stage Execution KPIs render 18 cards, replace Recent activities.
+// The "18 active stages tracked" string was retired in R19 — heading is now
+// "Stage Execution · all 18 stages". This test still validates the same intent.
 record('R16 #3: Stage Execution KPIs render 18 cards',
        /function StageExecutionKPIs/.test(pagesR2R16) &&
        /STAGE_KEYS\.map\(\(key, idx\)/.test(pagesR2R16) &&
-       /18 active stages tracked/.test(pagesR2R16));
+       /Stage Execution · all 18 stages/.test(pagesR2R16));
 record('R16 #3: VP dashboard renders StageExecutionKPIs',
        /<StageExecutionKPIs\s+schools=\{schools \|\| ALL_SCHOOLS\}/.test(pagesR2R16));
 record('R16 #3: page-vp.jsx no longer renders Recent activity panel',
@@ -408,7 +410,9 @@ record('R16 #3: page-vp.jsx no longer renders Recent activity panel',
 record('R16 #3: PagePMDashboard no longer renders ExecutiveAuditPanel inline',
        !/\{isExec && <ExecutiveAuditPanel/.test(pagesR2R16));
 record('R16 #3: StageExecutionKPIs summary line counts across all 2,601 schools',
-       /Across \$\{total\.toLocaleString\(\)\} schools/.test(pagesR2R16));
+       /nfmt\.format\(total\)\} schools total/.test(pagesR2R16) &&
+       /currently in pipeline/.test(pagesR2R16) &&
+       /energized/.test(pagesR2R16));
 
 // R16 #4: Top escalations directed filter
 record('R16 #4: filterEscalationsDirectedTo helper defined',
@@ -451,22 +455,22 @@ record('R16 #1: store-r2 schoolStagesList carries category + excelHeader for eac
        /STAGE_CATEGORY\[key\]/.test(storeR16) &&
        /excelHeader: STAGE_EXCEL_HEADERS\[key\]/.test(storeR16));
 
-// ── K4. Round 17 hotfix — Project Detail Stages view renders 18 stages ────
+// ── K4. Round 17 hotfix → Round 19 — the 18-column matrix from R17 was replaced by
+// the funnel + 24-px scrub strip + filter chip in R19. These tests cover the same
+// intent: schools list still surfaces all 18 School Execution Stages in some form.
 const schoolsListR17 = read('page-schools-list.jsx');
-record('R17: Project Detail Stages view renders 18 school execution stages columns',
-       /STAGE_KEYS\.map\(\(k, i\)/.test(schoolsListR17) &&
-       /SCHOOL_STAGES\[i\]/.test(schoolsListR17) &&
-       /across 18 School Execution Stages/.test(schoolsListR17));
+record('R17 → R19: Project Detail Stages view surfaces all 18 stages',
+       /STAGE_KEYS\.map\(\(key, i\)/.test(schoolsListR17) &&
+       /18 School Execution Stages/.test(schoolsListR17));
 record('R17: legacy 12-stage map (Surveyed / SEC Approvals / Fix1 / Fix2 / Handed Over) removed from Stages view',
        !/const LEGACY_STAGE_MAP/.test(schoolsListR17) &&
        !/LEGACY_STAGE_MAP\.map/.test(schoolsListR17));
-record('R17: category-band header colour-codes Mechanical / Electrical / Commissioning / Handover',
-       /categoryGroups/.test(schoolsListR17) &&
-       /STAGE_CATEGORY_COLORS/.test(schoolsListR17) &&
-       /STAGE_CATEGORY_LABELS\[cat\]/.test(schoolsListR17));
-record('R17: stage cell shows date for completed, "In Progress" for started, blank for not-started',
-       /In Progress/.test(schoolsListR17) &&
-       /st\.completedDate \|\| st\.date/.test(schoolsListR17));
+record('R17 → R19: Stages view colours each stage segment by category',
+       /STAGE_CATEGORY_COLORS\[cat\]/.test(schoolsListR17) &&
+       /STAGE_CATEGORY\[key\]/.test(schoolsListR17));
+record('R17 → R19: Stages view renders a current-stage badge per school',
+       /Current stage/.test(schoolsListR17) &&
+       /Not started/.test(schoolsListR17));
 
 // ── K5. Round 18 — shorter handover labels + Project Detail export uses 18 stages ──
 const dataJsxR18    = read('data.jsx');
@@ -503,6 +507,70 @@ record('R18 #2: stage header prefixed with numeric index (1. … 18. …)',
        /`\$\{i \+ 1\}\. \$\{STAGE_EXCEL_HEADERS\[k\]\}`/.test(reportsJsxR18));
 record('R18 #2: identity columns include School ID + AR/EN names + Region + City + Project + Contractor + SEC Meter + Status',
        /'School ID', 'School Name \(Arabic\)', 'School Name \(English\)', 'Region', 'City', 'Project', 'Contractor', 'SEC Meter', 'Status'/.test(reportsJsxR18));
+
+// ── K6. Round 19 — dashboard redesign (KPI sparkline + delta chip, Stage transitions,
+//                                       Top bottlenecks, tinted category panels,
+//                                       Project Detail funnel + scrub strip,
+//                                       reusable StageCard) ────────────────────────
+const dashJsxR19    = read('page-dashboard.jsx');
+const schoolsR19    = read('page-schools-list.jsx');
+const pagesR2R19    = read('pages-r2.jsx');
+const stageCardR19  = read('components/StageCard.jsx');
+const mainJsxR19    = read('main.jsx');
+
+// R19 Item #1 — KPI delta chip + sparkline.
+record('R19 Item #1: KPI cards render an inline sparkline',
+       /<Sparkline data=\{spark\}/.test(dashJsxR19));
+record('R19 Item #1: KPI cards show a delta chip below the label when trend != 0',
+       /hasDelta = trend != null && trend !== 0/.test(dashJsxR19) &&
+       /deltaSuffix/.test(dashJsxR19) &&
+       /'this week'/.test(dashJsxR19) && /'vs last week'/.test(dashJsxR19));
+
+// R19 Item #1 — Stage transitions bar chart + Top bottlenecks sidebar.
+record('R19 Item #1: Dashboard renders 18 stage transitions bars',
+       /function DashTransitionsChart/.test(dashJsxR19) &&
+       /Stage transitions this week/.test(dashJsxR19) &&
+       /gridTemplateColumns: 'repeat\(18, 1fr\)'/.test(dashJsxR19) &&
+       /crossings/.test(dashJsxR19));
+record('R19 Item #1: Dashboard renders Top bottlenecks panel',
+       /function DashBottlenecksSidebar/.test(dashJsxR19) &&
+       /Top bottlenecks/.test(dashJsxR19) &&
+       /largest school drop-off/.test(dashJsxR19));
+record('R19 Item #1: Empty "Program progress trend" chart removed from VP + Manager dashboards',
+       !/<ExecutiveProgressTrend \/>/.test(pagesR2R19) &&
+       !/\{isExec && <ExecutiveProgressTrend/.test(pagesR2R19));
+record('R19 Item #1: Stage Execution heading is "Stage Execution · all 18 stages"',
+       /Stage Execution · all 18 stages/.test(pagesR2R19) &&
+       /Grouped by category · click any card to filter projects and schools/.test(pagesR2R19) &&
+       /currently in pipeline/.test(pagesR2R19));
+record('R19 Item #1: Tinted category panels (mechanical/electrical/commissioning/handover)',
+       /function DashCategoryPanel/.test(dashJsxR19) &&
+       /CAT_TINTS/.test(dashJsxR19) &&
+       /catKey="mechanical"/.test(dashJsxR19) &&
+       /catKey="electrical"/.test(dashJsxR19) &&
+       /catKey="commissioning"/.test(dashJsxR19) &&
+       /catKey="handover"/.test(dashJsxR19));
+
+// R19 Item #2 — Project Detail Stages view funnel + 18-cell strip + filter chip.
+record('R19 Item #2: Project Detail Stages view renders funnel + 18-cell strip',
+       /Schools at each stage/.test(schoolsR19) &&
+       /data-testid="stages-view-scrub-strip"/.test(schoolsR19) &&
+       /gridTemplateColumns: 'repeat\(18, 1fr\)'/.test(schoolsR19));
+record('R19 Item #2: Stages view shows a removable filter chip when a stage is selected',
+       /Filtered by stage:/.test(schoolsR19) &&
+       /Clear stage filter/.test(schoolsR19));
+record('R19 Item #2: legacy 18-column matrix removed from Stages view',
+       !/STAGE_KEYS\.map\(\(k, i\) => \{[\s\S]{0,500}const st = s\.stages && s\.stages\[i\];[\s\S]{0,500}return \(\s+<td/.test(schoolsR19));
+
+// R19 Item #3 — reusable StageCard component.
+record('R19 Item #3: components/StageCard.jsx exists and exposes window.StageCard',
+       /function StageCard\(\{ stage, count, total, weeklyDelta, medianDwellDays, isBottleneck/.test(stageCardR19) &&
+       /Object\.assign\(window, \{ StageCard \}\)/.test(stageCardR19));
+record('R19 Item #3: main.jsx imports components/StageCard.jsx',
+       /import '\.\/components\/StageCard\.jsx';/.test(mainJsxR19));
+record('R19 Item #3: Dashboard DashStageCard delegates to the reusable StageCard',
+       /const SC = window\.StageCard/.test(dashJsxR19) &&
+       /<SC[\s\S]{0,200}weeklyDelta=\{stageObj\.week\}/.test(dashJsxR19));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

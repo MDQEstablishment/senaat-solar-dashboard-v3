@@ -1911,6 +1911,96 @@ Object.assign(window, {
 
 </script>
 <script type="text/babel">
+// src/components/StageCard.jsx
+// R19 Item #3 — Reusable StageCard.
+// Single tile representing one of the 18 School Execution Stages. Used by:
+//   • Dashboard      — inside DashCategoryPanel, 18 cards across 4 tinted panels.
+//   • Project Detail — same cards on the project Overview / Stages view if needed.
+// Props (per spec):
+//   stage             { key, name, category, n }  — derived from SCHOOL_STAGES / STAGE_KEYS
+//   count             schools currently at or past this stage
+//   total             total schools in scope (for the "/ N" denominator and percent)
+//   weeklyDelta       schools that crossed INTO this stage in the last 7 days
+//   medianDwellDays   median days a school spends at this stage before moving on
+//   isBottleneck      flag → renders a small "BOTTLENECK" pill in amber
+//   isActive          flag → renders a navy 1px outline to show selection
+//   onClick           tile click handler (dispatch stage filter)
+// Layout / tokens (from the Claude Design mockup):
+//   • card padding 12px, border-radius 8px, 0.5px slate-200 border
+//   • font sizes 10px (chip) / 12px (label) / 22px (count) / 10-11px (footer)
+//   • progress bar height 4px (we use 6px for legibility; both pass spec intent)
+function StageCard({ stage, count, total, weeklyDelta, medianDwellDays, isBottleneck, isActive, onClick }) {
+  const catKey = stage.category || (window.STAGE_CATEGORY ? window.STAGE_CATEGORY[stage.key] : null);
+  const catColors = (window.STAGE_CATEGORY_COLORS && window.STAGE_CATEGORY_COLORS[catKey]) || {};
+  const catLabel  = (window.STAGE_CATEGORY_LABELS && window.STAGE_CATEGORY_LABELS[catKey]) || '';
+  const totalN = total || 2601;
+  const pct = totalN > 0 ? Math.round((count / totalN) * 100) : 0;
+  const wk = weeklyDelta || 0;
+  const dwell = medianDwellDays || 0;
+  const velColor = wk > 30 ? '#059669' : wk > 0 ? '#374151' : '#9CA3AF';
+  const nfmt = new Intl.NumberFormat('en-US');
+  return (
+    <div onClick={onClick} role={onClick ? 'button' : undefined} tabIndex={onClick ? 0 : undefined}
+      style={{
+        position: 'relative', background: '#fff', cursor: onClick ? 'pointer' : 'default',
+        border: isActive ? '1px solid #0B2545' : '0.5px solid #E2E8F0',
+        boxShadow: isActive ? '0 0 0 1px #0B2545' : 'none',
+        borderRadius: 8, padding: 12,
+        display: 'flex', flexDirection: 'column', gap: 8,
+      }}>
+      {isBottleneck && (
+        <div data-testid="stage-card-bottleneck-pill" style={{
+          position: 'absolute', top: -7, right: 10, fontSize: 9, fontWeight: 700,
+          letterSpacing: '.05em', background: '#FFFBEB', color: '#92400E',
+          border: '1px solid #FDE68A', padding: '1px 6px', borderRadius: 4,
+        }}>BOTTLENECK</div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#64748B', fontWeight: 600 }}>
+          S{String(stage.n).padStart(2, '0')}
+        </span>
+        <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 600, color: catColors.text || '#64748B' }}>
+          {pct}%
+        </span>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: -4 }}>
+        <span style={{ width: 6, height: 6, borderRadius: 2, background: catColors.dot, display: 'inline-block', flexShrink: 0 }} />
+        <span style={{ fontSize: 10, color: catColors.text, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+          {catLabel}
+        </span>
+      </div>
+      <div style={{
+        fontSize: 12, fontWeight: 600, color: '#0F172A', lineHeight: 1.25,
+        height: '2.5em', overflow: 'hidden', display: '-webkit-box',
+        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+      }}>{stage.name}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{
+          fontSize: 22, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.02em',
+          fontVariantNumeric: 'tabular-nums', lineHeight: 1,
+        }}>{nfmt.format(count)}</span>
+        <span style={{ fontSize: 10, color: '#64748B' }}>/ {nfmt.format(totalN)}</span>
+      </div>
+      <div style={{ position: 'relative', height: 4, background: '#F1F2F5', borderRadius: 99, overflow: 'hidden' }}>
+        <div style={{
+          position: 'absolute', top: 0, left: 0, bottom: 0, borderRadius: 99,
+          background: catColors.dot, width: Math.max(pct, 0.4) + '%',
+        }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, color: '#64748B' }}>
+        <span style={{ color: velColor, fontWeight: 600 }}>
+          {wk > 0 ? `▲ ${nfmt.format(wk)}/wk` : '— 0/wk'}
+        </span>
+        {dwell > 0 && <span>· {dwell} dwell</span>}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { StageCard });
+
+</script>
+<script type="text/babel">
 // src/store-r2.jsx
 // Round 5 store extensions — composed with the base store
 // Recycle Bin REMOVED (hard-delete with confirmation). Site Engineer removed from targets.
@@ -3436,17 +3526,46 @@ Object.assign(window, { Sidebar, TopBar, NotifPanel, navForRole, isPgmGroup, Zam
 // src/page-dashboard.jsx
 // Page 1 — Main Dashboard
 
-const KPICard = ({ label, value, trend, spark, accent, suffix }) => (
-  <div className="surface border border-soft rounded-xl p-4 shadow-card relative overflow-hidden">
-    <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent ? 'var(--accent)' : '#0B2545' }} />
-    <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500 ink-muted-on-dark">{label}</div>
-    <div className="flex items-end justify-between mt-1.5">
-      <div className="text-[26px] font-bold leading-none text-navy-900 ink-on-dark tnum">{value}<span className="text-sm font-medium text-ink-500 ml-1">{suffix}</span></div>
-      {trend != null && <TrendArrow delta={trend} />}
+// R19 Item #1 — KPICard layout per Claude Design mockup:
+//   • label (uppercase 10px tracking)
+//   • delta chip BELOW the label when trend != 0 — "▲ +N.N%" green / "▼ −N.N%" red.
+//     For Schools Energized + Overall Progress the chip carries the "vs last week"
+//     suffix to make the cadence explicit; other cards just show the bare delta.
+//   • big number (26px) with optional suffix
+//   • subtle 1px-stroke sparkline at the bottom (12-point trend line, no fill)
+const KPICard = ({ label, value, trend, spark, accent, suffix, deltaSuffix }) => {
+  const hasDelta = trend != null && trend !== 0;
+  const up = trend > 0;
+  const chipBg = up ? '#ECFDF5' : '#FEF2F2';
+  const chipBorder = up ? '#A7F3D0' : '#FECACA';
+  const chipText = up ? '#047857' : '#B91C1C';
+  return (
+    <div className="surface border border-soft rounded-xl p-4 shadow-card relative overflow-hidden">
+      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent ? 'var(--accent)' : '#0B2545' }} />
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-ink-500 ink-muted-on-dark">{label}</div>
+      {hasDelta && (
+        <div className="mt-1" style={{ display: 'inline-flex', alignItems: 'center', gap: 4,
+          fontSize: 10, fontWeight: 600,
+          background: chipBg, color: chipText, border: `1px solid ${chipBorder}`,
+          padding: '1px 6px', borderRadius: 99 }}>
+          <span>{up ? '▲' : '▼'}</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {up ? '+' : '−'}{Math.abs(trend)}{typeof trend === 'number' && Number.isFinite(trend) && !Number.isInteger(trend) ? '' : ''}
+            {deltaSuffix ? ` ${deltaSuffix}` : ''}
+          </span>
+        </div>
+      )}
+      <div className="flex items-end justify-between mt-1.5">
+        <div className="text-[26px] font-bold leading-none text-navy-900 ink-on-dark tnum">{value}<span className="text-sm font-medium text-ink-500 ml-1">{suffix}</span></div>
+      </div>
+      {spark && (
+        <div className="mt-2">
+          <Sparkline data={spark} width={140} height={26} color="#94A3B8" />
+        </div>
+      )}
     </div>
-    {spark && <div className="mt-2"><Sparkline data={spark} width={140} height={26} /></div>}
-  </div>
-);
+  );
+};
 
 function StageStrip({ counts, onClickStage, activeStage }) {
   // R16 #2: 18-stage strip — colour by category, not by hardcoded index.
@@ -3477,6 +3596,152 @@ function StageStrip({ counts, onClickStage, activeStage }) {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// ── Round 19: tint config + data seeds for redesigned stage section ──────────
+const CAT_TINTS = {
+  mechanical:    { bg: '#f1f5f9', border: '#cbd5e1' },
+  electrical:    { bg: '#fffbeb', border: '#fde68a' },
+  commissioning: { bg: '#ecfdf5', border: '#a7f3d0' },
+  handover:      { bg: '#faf5ff', border: '#ddd6fe' },
+};
+const VEL_SEED   = [47,52,41,38,29,33,21,18,14,11,8,6,3,1,0,0,0,0];
+const DWELL_SEED = [9,7,8,6,11,8,9,7,8,6,7,5,14,21,14,10,7,0];
+
+// R19 Item #3 — DashStageCard is now a thin adapter that forwards to the reusable
+// window.StageCard (src/components/StageCard.jsx) so the Dashboard and the Project
+// Detail render identical tiles from a single source.
+function DashStageCard({ stageObj, total, isBottleneck, isActive, onClick }) {
+  const SC = window.StageCard;
+  if (!SC) return null;
+  return (
+    <SC
+      stage={{ key: stageObj.key, name: stageObj.name, category: stageObj.cat, n: stageObj.n }}
+      count={stageObj.count}
+      total={total}
+      weeklyDelta={stageObj.week}
+      medianDwellDays={stageObj.days}
+      isBottleneck={isBottleneck}
+      isActive={isActive}
+      onClick={onClick}
+    />
+  );
+}
+
+function DashCategoryPanel({ catKey, stages, total, bottleneckIdx, activeStage, onStageClick }) {
+  const tint      = CAT_TINTS[catKey] || { bg: '#F8FAFC', border: '#E2E8F0' };
+  const catColors = STAGE_CATEGORY_COLORS[catKey] || {};
+  const catLabel  = STAGE_CATEGORY_LABELS[catKey] || catKey;
+  const avg       = stages.length ? Math.round(stages.reduce((a, s) => a + s.pct, 0) / stages.length) : 0;
+  const firstCount = stages[0]?.count || 0;
+  return (
+    <div style={{ background: tint.bg, border: `1px solid ${tint.border}`,
+      borderRadius: 12, padding: '14px 14px 14px', display: 'flex', gap: 14, alignItems: 'stretch' }}>
+      <div style={{ width: 160, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8,
+        paddingRight: 8, borderRight: `1px solid ${tint.border}` }}>
+        <div style={{ fontSize: 10, color: catColors.text, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase' }}>Category</div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.01em', lineHeight: 1.1 }}>{catLabel}</div>
+        <div style={{ fontSize: 11, color: '#64748B' }}>{stages.length} stages · {firstCount.toLocaleString()} schools past 1st</div>
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 10, color: '#64748B', textTransform: 'uppercase', letterSpacing: '.04em', fontWeight: 600 }}>Avg completion</div>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 20, fontWeight: 600, color: catColors.text, fontVariantNumeric: 'tabular-nums' }}>{avg}</span>
+            <span style={{ fontSize: 11, color: '#64748B' }}>%</span>
+          </div>
+          <div style={{ height: 4, background: '#fff', border: `1px solid ${tint.border}`, borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ height: '100%', background: catColors.dot, width: avg + '%' }} />
+          </div>
+        </div>
+      </div>
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: `repeat(${stages.length}, minmax(0,1fr))`, gap: 8 }}>
+        {stages.map(s => (
+          <DashStageCard key={s.n} stageObj={s} total={total}
+            isBottleneck={s.n - 1 === bottleneckIdx}
+            isActive={activeStage === s.n - 1}
+            onClick={() => onStageClick && onStageClick(s.n - 1)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashTransitionsChart({ stages }) {
+  const maxWk = Math.max(...stages.map(s => s.week), 1);
+  const total  = stages.reduce((a, s) => a + s.week, 0);
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '16px 18px 14px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', letterSpacing: '-0.01em' }}>Stage transitions this week</div>
+          <div style={{ fontSize: 11, color: '#64748B', marginTop: 2 }}>Schools that crossed into each stage · last 7 days</div>
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#0B2545', background: '#EEF2F7', padding: '3px 8px', borderRadius: 99 }}>
+          {total} crossings
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 6, alignItems: 'flex-end', height: 124 }}>
+        {stages.map(s => {
+          const catColors = STAGE_CATEGORY_COLORS[s.cat] || {};
+          const h = Math.max((s.week / maxWk) * 108, s.week > 0 ? 3 : 1);
+          return (
+            <div key={s.n} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%', gap: 4 }}>
+              <div style={{ position: 'relative', width: '100%', borderRadius: '3px 3px 0 0', height: h, background: catColors.dot || '#CBD5E1', opacity: s.week > 0 ? 1 : 0.18 }}>
+                {s.week > 0 && <span style={{ position: 'absolute', top: -16, left: '50%', transform: 'translateX(-50%)', fontSize: 9, color: '#0F172A', fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{s.week}</span>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 6, marginTop: 8, paddingTop: 8, borderTop: '1px solid #EEF0F4' }}>
+        {stages.map(s => (
+          <div key={s.n} style={{ fontSize: 9, color: '#64748B', textAlign: 'center', fontFamily: 'monospace', letterSpacing: '.04em' }}>
+            S{String(s.n).padStart(2, '0')}
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 14, marginTop: 12, fontSize: 11, color: '#64748B', alignItems: 'center', flexWrap: 'wrap' }}>
+        {Object.keys(STAGE_CATEGORY_LABELS).map(cat => (
+          <span key={cat} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, display: 'inline-block', background: STAGE_CATEGORY_COLORS[cat].dot }} />
+            {STAGE_CATEGORY_LABELS[cat]}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashBottlenecksSidebar({ bottlenecks, maxDrop }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, padding: '16px 18px 14px' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A', marginBottom: 4 }}>Top bottlenecks</div>
+      <div style={{ fontSize: 11, color: '#64748B', marginBottom: 14 }}>Stages with the largest school drop-off from the prior stage</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {bottlenecks.map(b => {
+          const catColors = STAGE_CATEGORY_COLORS[b.cat] || {};
+          return (
+            <div key={b.n}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ flex: '0 0 28px', fontFamily: 'monospace', fontSize: 10, color: '#64748B', fontWeight: 600 }}>
+                  S{String(b.n).padStart(2, '0')}
+                </span>
+                <span style={{ width: 6, height: 6, borderRadius: 2, background: catColors.dot, flexShrink: 0 }} />
+                <span style={{ flex: '1 1 auto', minWidth: 0, fontSize: 12, color: '#0F172A', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {b.name}
+                </span>
+                <span style={{ fontSize: 11, color: '#BE123C', fontFamily: 'monospace', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                  −{b.drop.toLocaleString()}
+                </span>
+              </div>
+              <div style={{ height: 4, borderRadius: 99, background: '#F1F2F5', overflow: 'hidden', marginTop: 4 }}>
+                <div style={{ height: '100%', background: '#BE123C', width: (b.drop / maxDrop * 100) + '%' }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -3635,6 +3900,29 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
     projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
   );
 
+  // R19: cumulative counts + bottleneck data for redesigned stage section
+  const totalS = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0) || 2601;
+  const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a,c)=>a+c,0));
+  const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i-1]) - c);
+  const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
+  const stageData = STAGE_KEYS.map((key, i) => ({
+    n: i+1, key, name: SCHOOL_STAGES[i], cat: STAGE_CATEGORY[key],
+    count: cumCounts[i], pct: Math.round(cumCounts[i] / totalS * 100),
+    week: VEL_SEED[i] || 0, days: DWELL_SEED[i] || 0,
+  }));
+  const bottlenecks = stageData
+    .map((s, i) => ({ ...s, drop: drops[i] }))
+    .filter((_, i) => i >= 1)
+    .sort((a, b) => b.drop - a.drop)
+    .slice(0, 4);
+  const maxDrop = bottlenecks.length ? Math.max(...bottlenecks.map(b => b.drop)) : 1;
+  const stagesByCat = {
+    mechanical:    stageData.filter(s => s.cat === 'mechanical'),
+    electrical:    stageData.filter(s => s.cat === 'electrical'),
+    commissioning: stageData.filter(s => s.cat === 'commissioning'),
+    handover:      stageData.filter(s => s.cat === 'handover'),
+  };
+
   const filteredProjects = stageFilter == null
     ? projects
     : projects.filter(p => p.schoolDist && p.schoolDist[stageFilter] > 0);
@@ -3645,8 +3933,8 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
     { label: 'Open Projects',        value: openCount, trend: -8.0, spark: [9,9,9,8,8,8,7,7,7,7,8,openCount] },
     { label: 'Closed / Handed Over', value: closedCount, trend: 12.5, spark: [0,0,0,1,1,1,2,2,2,2,2,closedCount] },
     { label: 'Total Schools',        value: totalSchools.toLocaleString(), trend: 0, spark: [400,600,800,1000,1000,1000,1000,1000,1000,1000,1000,totalSchools] },
-    { label: 'Schools Energized',    value: energizedSchools.toLocaleString(), trend: 18.4, spark: [20,40,80,140,200,280,360,420,500,560,620,energizedSchools] },
-    { label: 'Overall Progress',     value: overall, suffix: '%', trend: 6.1, spark: [12,18,24,28,32,36,40,44,48,52,56,overall] },
+    { label: 'Schools Energized',    value: energizedSchools.toLocaleString(), trend: 1, deltaSuffix: 'this week', spark: [20,40,80,140,200,280,360,420,500,560,620,energizedSchools] },
+    { label: 'Overall Progress',     value: overall, suffix: '%', trend: 2.4, deltaSuffix: 'vs last week', spark: [12,18,24,28,32,36,40,44,48,52,56,overall] },
   ];
 
   // M1: page header w/ H1 for non-exec roles. Exec roles already have the KPI strip below as their header.
@@ -3680,25 +3968,29 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
         </div>
       )}
 
-      {/* R16 #2: widget renamed "Project/Program Execution Lifecycle" → "School Execution Stages",
-          18 stages colour-grouped by category (Mechanical/Electrical/Commissioning/Handover). */}
-      <Card>
+      {/* R19: Transitions chart + Bottlenecks sidebar (VP/Managers only) */}
+      {canViewFinancials(currentUser) && (
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'minmax(0,1fr) 300px' }}>
+          <DashTransitionsChart stages={stageData} />
+          <DashBottlenecksSidebar bottlenecks={bottlenecks} maxDrop={maxDrop} />
+        </div>
+      )}
+
+      {/* R19 / R16 #2: School Execution Stages — 18 cards in 4 tinted category panels */}
+      <div>
         <SectionTitle
           icon="bar-chart-3"
           title="School Execution Stages"
-          subtitle="18 stages across Mechanical · Electrical · Commissioning · Handover — click any stage to filter the project grid below"
+          subtitle="18 stages grouped by category · click any card to filter the project grid below"
           action={stageFilter != null && <Button variant="ghost" size="sm" icon="x" onClick={() => setStageFilter(null)}>Clear filter</Button>}
         />
-        <StageStrip counts={stageCounts} onClickStage={setStageFilter} activeStage={stageFilter} />
-        <div className="mt-3 flex items-center gap-4 text-[11px] text-ink-500 ink-muted-on-dark flex-wrap">
-          {Object.keys(STAGE_CATEGORY_LABELS).map(cat => (
-            <span key={cat} className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: STAGE_CATEGORY_COLORS[cat].dot }} />
-              {STAGE_CATEGORY_LABELS[cat]}
-            </span>
-          ))}
+        <div className="space-y-3 mt-3">
+          <DashCategoryPanel catKey="mechanical"    stages={stagesByCat.mechanical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
+          <DashCategoryPanel catKey="electrical"    stages={stagesByCat.electrical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
+          <DashCategoryPanel catKey="commissioning" stages={stagesByCat.commissioning} total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
+          <DashCategoryPanel catKey="handover"      stages={stagesByCat.handover}      total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
         </div>
-      </Card>
+      </div>
 
       {/* Project grid */}
       <div>
@@ -3896,6 +4188,7 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
 
   const [openStage, setOpenStage] = React.useState(null);
   const [tab, setTab] = React.useState('Overview');
+  const [activeFunnelStage, setActiveFunnelStage] = React.useState(null);
   const [lifecycleEditOpen, setLifecycleEditOpen] = React.useState(false);
   const store = (typeof useStore === 'function') ? useStore() : null;
   const {
@@ -3993,31 +4286,109 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           onClose={() => setLifecycleEditOpen(false)} />
       )}
 
-      {/* School stage distribution */}
-      {project.schoolDist && (
-        <Card>
-          <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`} />
-          <div className="grid grid-cols-13 gap-1.5" style={{ gridTemplateColumns: 'repeat(13, minmax(0, 1fr))' }}>
-            {SCHOOL_STAGES.map((s, i) => {
-              const c = project.schoolDist[i] || 0;
-              const max = Math.max(...project.schoolDist, 1);
-              return (
-                <div key={s} className="border border-soft rounded-md p-2">
-                  <div className="flex items-end h-10 mb-1">
-                    <div className="w-full rounded-t-sm" style={{
-                      height: 12 + (c / max) * 34,
-                      background: i < 3 ? '#13315C' : i < 11 ? '#2A5A9A' : '#B8860B',
-                      opacity: c === 0 ? 0.25 : 1,
-                    }} />
+      {/* R19: School stage distribution — horizontal funnel + 18-cell scrub strip */}
+      {project.schoolDist && (() => {
+        const totalFunnel = projSchoolCount;
+        const distSum = project.schoolDist.reduce((a,c)=>a+c,0);
+        const notStartedCount = Math.max(0, totalFunnel - distSum);
+        const funnelSegs = [
+          { n: null, label: 'Not started', cat: 'none', count: notStartedCount, bg: '#E5E7EB', fg: '#475569' },
+          ...STAGE_KEYS.map((key, i) => {
+            const cat = STAGE_CATEGORY[key];
+            const cc  = STAGE_CATEGORY_COLORS[cat] || {};
+            return { n: i, label: SCHOOL_STAGES[i], cat, count: project.schoolDist[i] || 0, bg: cc.dot || '#94A3B8', fg: '#fff' };
+          }),
+        ];
+        return (
+          <Card>
+            <SectionTitle icon="school" title={`School Execution Stages — ${projSchoolCount} schools`} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 11, color: '#64748B' }}>
+              <span>← Earlier in pipeline</span>
+              <span>Later in pipeline →</span>
+            </div>
+
+            {/* Horizontal funnel */}
+            <div style={{ display: 'flex', height: 42, borderRadius: 6, overflow: 'hidden', background: '#F1F2F5' }}>
+              {funnelSegs.map((seg, si) => {
+                const w = totalFunnel > 0 ? (seg.count / totalFunnel) * 100 : 0;
+                if (w < 0.5) return null;
+                const isActive = seg.n !== null && activeFunnelStage === seg.n;
+                return (
+                  <div key={si}
+                    style={{ width: w + '%', background: seg.bg, borderRight: '1px solid rgba(255,255,255,0.5)',
+                      position: 'relative', cursor: seg.n !== null ? 'pointer' : 'default',
+                      outline: isActive ? '2px solid #0B2545' : 'none',
+                      outlineOffset: isActive ? '-2px' : 0, zIndex: isActive ? 2 : 1 }}
+                    onClick={() => seg.n !== null && setActiveFunnelStage(seg.n)}
+                    title={seg.label + ' · ' + seg.count + ' schools'}>
+                    {w > 4 && (
+                      <span style={{ position: 'absolute', top: '50%', left: '50%',
+                        transform: 'translate(-50%,-50%)', color: seg.fg, fontSize: 11,
+                        fontWeight: 600, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                        {seg.count}
+                      </span>
+                    )}
                   </div>
-                  <div className="text-[9px] text-ink-500 leading-tight">{i + 1}. {s}</div>
-                  <div className="text-[13px] font-bold tnum">{c}</div>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
+                );
+              })}
+            </div>
+
+            {/* 18-cell mini strip */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 4, marginTop: 12 }}>
+              {STAGE_KEYS.map((key, i) => {
+                const cat    = STAGE_CATEGORY[key];
+                const cc     = STAGE_CATEGORY_COLORS[cat] || {};
+                const count  = project.schoolDist[i] || 0;
+                const pct    = totalFunnel > 0 ? Math.round(count / totalFunnel * 100) : 0;
+                const isActive = activeFunnelStage === i;
+                return (
+                  <div key={key}
+                    style={{ background: isActive ? '#fff' : '#FAFAFA',
+                      border: isActive ? '1px solid #0B2545' : '1px solid #EAECEF',
+                      borderRadius: 6, padding: '8px 6px 6px', cursor: 'pointer' }}
+                    onClick={() => setActiveFunnelStage(isActive ? null : i)}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontFamily: 'monospace', fontSize: 9, color: '#64748B', fontWeight: 600 }}>{i + 1}</span>
+                      <span style={{ width: 6, height: 6, borderRadius: 2, background: cc.dot, display: 'inline-block' }} />
+                    </div>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', lineHeight: 1, marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{count}</div>
+                    <div style={{ fontSize: 9, color: '#64748B', marginTop: 1, fontVariantNumeric: 'tabular-nums' }}>{pct}%</div>
+                    <div style={{ height: 3, borderRadius: 99, background: '#EAECEF', overflow: 'hidden', marginTop: 6 }}>
+                      <div style={{ height: '100%', background: cc.dot, width: Math.max(pct, 0.4) + '%' }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Filter chip */}
+            {activeFunnelStage !== null && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px 6px 12px', background: '#EFF6FF', border: '1px solid #BFDBFE',
+                  borderRadius: 99, fontSize: 11, color: '#1E40AF', fontWeight: 500 }}>
+                  Filtered:
+                  <span style={{ fontWeight: 600, marginLeft: 2 }}>
+                    S{String(activeFunnelStage + 1).padStart(2, '0')} · {SCHOOL_STAGES[activeFunnelStage]}
+                  </span>
+                  <span style={{ width: 14, height: 14, borderRadius: 99, background: '#BFDBFE',
+                    color: '#1E3A8A', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 10, fontWeight: 700, cursor: 'pointer' }}
+                    onClick={() => setActiveFunnelStage(null)}>×</span>
+                </span>
+                <span style={{ fontSize: 11, color: '#64748B' }}>
+                  {project.schoolDist[activeFunnelStage] || 0} schools at this stage ·{' '}
+                  <button onClick={() => onOpenSchools && onOpenSchools(project.id)}
+                    style={{ color: '#1E40AF', background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, padding: 0 }}>
+                    View all schools →
+                  </button>
+                </span>
+              </div>
+            )}
+          </Card>
+        );
+      })()}
 
       {/* Tabs */}
       <Card padding="p-0">
@@ -4525,116 +4896,199 @@ function SchoolsCompactTable({ rows, canAdd, onOpen, onDelete, onContractorChang
 //   blank "—"     → not started
 //   "In Progress" → started but not done (statusId === 'in-progress')
 //   date          → completed (use stage.completedDate, formatted dd MMM)
+// R19 Item #2 — funnel + 18-cell scrub strip + filter chip + simple identity table.
+// Each school's "current stage" = the highest index with done=true (or -1 if none).
+// Funnel segments are sized by the count at each stage; the 24-px strip below is
+// the click target. A removable filter chip persists the user's selection and
+// narrows the identity table underneath.
 function SchoolsStagesTable({ rows, onOpen }) {
-  // Build the header-row category-group spans from the new STAGE_KEYS layout.
-  // Each entry: { category, label, color, span } where span = number of stage
-  // columns this category covers.
-  const categoryGroups = React.useMemo(() => {
-    const groups = [];
-    let current = null;
-    STAGE_KEYS.forEach(k => {
-      const cat = STAGE_CATEGORY[k];
-      if (!current || current.category !== cat) {
-        current = {
-          category: cat,
-          label: STAGE_CATEGORY_LABELS[cat] || cat,
-          color: STAGE_CATEGORY_COLORS[cat] || { dot: '#0B2545', soft: '#F8FAFC', text: '#0F172A' },
-          span: 0,
-        };
-        groups.push(current);
-      }
-      current.span++;
-    });
-    return groups;
+  const [funnelStage, setFunnelStage] = React.useState(null);
+
+  // currentStageIndex per school: highest index with done=true, or -1 (not started).
+  const stageOf = React.useCallback((s) => {
+    if (!s.stages) return -1;
+    let last = -1;
+    for (let i = 0; i < s.stages.length; i++) if (s.stages[i] && s.stages[i].done) last = i;
+    return last;
   }, []);
+
+  // Distribution per stage index (0..17). Add a synthetic "not started" bucket at -1.
+  const dist = React.useMemo(() => {
+    const out = STAGE_KEYS.map(() => 0);
+    let notStarted = 0;
+    rows.forEach(s => {
+      const i = stageOf(s);
+      if (i < 0) notStarted++;
+      else out[i]++;
+    });
+    return { perStage: out, notStarted };
+  }, [rows, stageOf]);
+
+  const filteredRows = React.useMemo(() => {
+    if (funnelStage == null) return rows;
+    return rows.filter(s => stageOf(s) === funnelStage);
+  }, [rows, funnelStage, stageOf]);
+
+  const totalRows = rows.length;
+  const nfmt = new Intl.NumberFormat('en-US');
+
+  // Build funnel segments including the not-started bucket on the far left.
+  const segs = [
+    { i: -1, label: 'Not started', cat: 'none', count: dist.notStarted, bg: '#E5E7EB', fg: '#475569' },
+    ...STAGE_KEYS.map((key, i) => {
+      const cat = STAGE_CATEGORY[key];
+      const cc = STAGE_CATEGORY_COLORS[cat] || {};
+      return { i, key, label: SCHOOL_STAGES[i], cat, count: dist.perStage[i], bg: cc.dot, fg: '#fff' };
+    }),
+  ];
+  const activeStageName = funnelStage != null ? SCHOOL_STAGES[funnelStage] : null;
+  const activeKey       = funnelStage != null ? STAGE_KEYS[funnelStage]    : null;
+  const activeCat       = activeKey ? STAGE_CATEGORY[activeKey] : null;
+  const activeColor     = activeCat ? STAGE_CATEGORY_COLORS[activeCat] : null;
 
   return (
     <Card padding="p-0">
-      <div className="overflow-auto scrollbar-thin" style={{ maxHeight: 'calc(100vh - 360px)' }}>
+      <div className="p-4 border-b border-soft">
+        <div className="flex items-baseline justify-between mb-2">
+          <div className="text-sm font-semibold ink-on-dark">Schools at each stage</div>
+          <div className="text-[11px] text-ink-500">{nfmt.format(totalRows)} schools · click any stage to filter</div>
+        </div>
+        {/* Horizontal funnel — single tall row, segments proportional to counts. */}
+        <div style={{ display: 'flex', height: 42, borderRadius: 6, overflow: 'hidden', background: '#F1F2F5' }}>
+          {segs.map(seg => {
+            const w = totalRows > 0 ? (seg.count / totalRows) * 100 : 0;
+            if (w < 0.5) return null;
+            const isActive = seg.i !== -1 && funnelStage === seg.i;
+            return (
+              <div key={seg.i}
+                onClick={() => seg.i !== -1 && setFunnelStage(funnelStage === seg.i ? null : seg.i)}
+                title={seg.label + ' · ' + nfmt.format(seg.count) + ' schools'}
+                style={{
+                  width: w + '%', background: seg.bg, borderRight: '1px solid rgba(255,255,255,0.5)',
+                  position: 'relative', cursor: seg.i !== -1 ? 'pointer' : 'default',
+                  outline: isActive ? '2px solid #0B2545' : 'none',
+                  outlineOffset: isActive ? '-2px' : 0, zIndex: isActive ? 2 : 1,
+                }}>
+                {w > 4 && (
+                  <span style={{ position: 'absolute', top: '50%', left: '50%',
+                    transform: 'translate(-50%,-50%)', color: seg.fg, fontSize: 11, fontWeight: 600,
+                    whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                    {seg.i !== -1 ? 'S' + String(seg.i + 1).padStart(2, '0') + ' · ' : ''}{nfmt.format(seg.count)}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* 24-px scrub strip — one mini-cell per stage, click to filter. */}
+        <div data-testid="stages-view-scrub-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(18, 1fr)', gap: 3, marginTop: 10, height: 24 }}>
+          {STAGE_KEYS.map((key, i) => {
+            const cat = STAGE_CATEGORY[key];
+            const cc = STAGE_CATEGORY_COLORS[cat] || {};
+            const isActive = funnelStage === i;
+            const count = dist.perStage[i];
+            return (
+              <button key={key} type="button"
+                onClick={() => setFunnelStage(isActive ? null : i)}
+                title={`S${String(i + 1).padStart(2, '0')} · ${SCHOOL_STAGES[i]} · ${count}`}
+                style={{
+                  border: isActive ? '1px solid #0B2545' : '0.5px solid #E2E8F0',
+                  borderRadius: 4, padding: 0, background: isActive ? '#fff' : '#FAFAFA',
+                  display: 'flex', alignItems: 'stretch', cursor: 'pointer', overflow: 'hidden',
+                }}>
+                <span style={{ width: 4, background: cc.dot, flexShrink: 0 }} />
+                <span style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 10, fontVariantNumeric: 'tabular-nums', color: isActive ? '#0B2545' : '#475569', fontWeight: 600 }}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Filter chip — appears only when a stage is selected. */}
+        {funnelStage != null && (
+          <div className="mt-3" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              padding: '4px 6px 4px 10px',
+              background: '#fff', border: `1px solid ${activeColor?.dot || '#0B2545'}`,
+              borderRadius: 99, fontSize: 11, fontWeight: 500, color: '#0F172A',
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: 99, background: activeColor?.dot }} />
+              Filtered by stage: <span className="font-semibold">S{String(funnelStage + 1).padStart(2, '0')} · {activeStageName}</span>
+              <span style={{ fontSize: 10, color: '#64748B' }}>({nfmt.format(filteredRows.length)} of {nfmt.format(totalRows)})</span>
+              <button type="button" onClick={() => setFunnelStage(null)}
+                aria-label="Clear stage filter"
+                style={{ width: 16, height: 16, borderRadius: 99, background: '#F1F5F9', color: '#64748B',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, cursor: 'pointer', border: 'none' }}>×</button>
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Identity table — same compact layout, narrowed to the active stage if any. */}
+      <div className="overflow-auto scrollbar-thin" style={{ maxHeight: 'calc(100vh - 480px)' }}>
         <table className="w-full text-xs">
           <thead className="surface-2 border-b border-soft sticky top-0">
-            {/* Category band — color-coded background per group */}
             <tr>
-              <th colSpan={3} className="px-3 py-1.5 surface-2 sticky left-0 z-10" />
-              {categoryGroups.map(g => (
-                <th key={g.category} colSpan={g.span}
-                    className="text-center px-2 py-1.5 font-semibold text-[10px] uppercase tracking-wider border-l border-r border-soft"
-                    style={{ background: g.color.soft, color: g.color.text }}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full" style={{ background: g.color.dot }} />
-                    {g.label}
-                  </span>
-                </th>
-              ))}
-              <th className="surface-2" />
-            </tr>
-            {/* Stage names row */}
-            <tr>
-              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap sticky left-0 surface-2 z-10">School ID</th>
-              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap min-w-[200px]">School name</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">School ID</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap min-w-[260px]">School name</th>
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">City</th>
-              {STAGE_KEYS.map((k, i) => {
-                const cat = STAGE_CATEGORY[k];
-                const color = STAGE_CATEGORY_COLORS[cat] || {};
-                return (
-                  <th key={k} className="text-center px-2 py-2 font-semibold whitespace-nowrap min-w-[78px]"
-                      title={SCHOOL_STAGES[i]}>
-                    <div className="flex flex-col items-center">
-                      <span className="text-[10px] text-ink-500 tnum">{i + 1}</span>
-                      <span className="text-[10px] leading-tight" style={{ color: color.text }}>
-                        {SCHOOL_STAGES[i].split(' ').slice(0, 2).join(' ')}
-                      </span>
-                    </div>
-                  </th>
-                );
-              })}
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Level / Gender</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Contractor</th>
+              <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Current stage</th>
               <th className="text-left px-3 py-2 font-semibold whitespace-nowrap">Remark</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map(s => (
-              <tr key={s.id} className="border-b border-soft hover-row cursor-pointer" onClick={() => onOpen(s.id)}>
-                <td className="px-3 py-2 font-mono text-[11px] sticky left-0 bg-white surface">{s.id}</td>
-                <td className="px-3 py-2">
-                  <div className="font-medium">{s.nameEn || s.name}</div>
-                  {s.nameAr && <div className="text-[10px] text-ink-500" dir="rtl">{s.nameAr}</div>}
-                </td>
-                <td className="px-3 py-2 text-ink-700">{s.city}</td>
-                {STAGE_KEYS.map((k, i) => {
-                  const st = s.stages && s.stages[i];
-                  const done = !!(st && st.done);
-                  const inProgress = !done && st && st.statusId === 'in-progress';
-                  const date = st && (st.completedDate || st.date);
-                  return (
-                    <td key={k} className="text-center px-2 py-2">
-                      {done ? (
-                        <div className="flex flex-col items-center">
-                          <span className="text-emerald-600"><Icon name="check" size={14} strokeWidth={3} /></span>
-                          {date && <span className="text-[9px] text-ink-500">{new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>}
-                        </div>
-                      ) : inProgress ? (
-                        <span className="text-[10px] text-sky-600 font-medium">In Progress</span>
-                      ) : (
-                        <span className="text-ink-200">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-                <td className="px-3 py-2"><Pill tone={s.remark === 'Active' ? 'ok' : 'warn'}>{s.remark}</Pill></td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={STAGE_KEYS.length + 4} className="text-center py-8 text-xs text-ink-500 italic">No schools match these filters.</td></tr>
+            {filteredRows.map(s => {
+              const i = stageOf(s);
+              const key = i >= 0 ? STAGE_KEYS[i] : null;
+              const cat = key ? STAGE_CATEGORY[key] : null;
+              const cc = cat ? STAGE_CATEGORY_COLORS[cat] : null;
+              const contractor = (window.CONTRACTORS || []).find(c => c.id === s.contractor);
+              return (
+                <tr key={s.id} className="border-b border-soft hover-row cursor-pointer" onClick={() => onOpen(s.id)}>
+                  <td className="px-3 py-2 font-mono text-[11px]">{s.id}</td>
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{s.nameEn || s.name}</div>
+                    {s.nameAr && <div className="text-[10px] text-ink-500" dir="rtl">{s.nameAr}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-ink-700">{s.city}</td>
+                  <td className="px-3 py-2 text-ink-700">{s.level} / {s.gender}</td>
+                  <td className="px-3 py-2 text-ink-700">{contractor?.name || '—'}</td>
+                  <td className="px-3 py-2">
+                    {i >= 0 ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '2px 8px 2px 6px', borderRadius: 99,
+                        background: cc?.soft, color: cc?.text, fontWeight: 500, fontSize: 11 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: 99, background: cc?.dot }} />
+                        S{String(i + 1).padStart(2, '0')} · {SCHOOL_STAGES[i]}
+                      </span>
+                    ) : <span className="text-ink-500 italic text-[11px]">Not started</span>}
+                  </td>
+                  <td className="px-3 py-2"><Pill tone={s.remark === 'Active' ? 'ok' : 'warn'}>{s.remark}</Pill></td>
+                </tr>
+              );
+            })}
+            {filteredRows.length === 0 && (
+              <tr><td colSpan={7} className="text-center py-8 text-xs text-ink-500 italic">
+                {funnelStage != null ? `No schools currently at stage S${String(funnelStage + 1).padStart(2, '0')} · ${activeStageName}.` : 'No schools match these filters.'}
+              </td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <div className="px-3 py-2 border-t border-soft text-[11px] text-ink-500">Stages view — {rows.length} schools across 18 School Execution Stages (Mechanical · Electrical · Commissioning · Handover).</div>
+      <div className="px-3 py-2 border-t border-soft text-[11px] text-ink-500">
+        Stages view — {nfmt.format(filteredRows.length)} of {nfmt.format(totalRows)} schools across 18 School Execution Stages.
+      </div>
     </Card>
   );
 }
 
-Object.assign(window, { PageSchoolsList });
+Object.assign(window, { PageSchoolsList, SchoolsStagesTable });
 
 </script>
 <script type="text/babel">
@@ -8115,9 +8569,12 @@ function PageVPDashboard({ onOpenEscalation, currentUser }) {
         <h1 className="text-2xl font-semibold">Portfolio at a glance</h1>
       </div>
       <ExecutiveKPIStrip projects={projects} totalSchools={totalSchools} energizedAll={energizedAll} handedAll={handedAll} avgProgress={avgProgress} />
-      <ExecutiveProgressTrend />
+      {/* R19 Item #1: the empty "Program progress trend" chart is removed entirely —
+          its slot is filled by the "Stage transitions this week" + Top bottlenecks
+          pair (rendered inside PageDashboard for VP/Managers). The cumulative
+          progress curve was a placeholder that never carried real data. */}
       <ExecutiveFinancialSummary finRollup={finRollup} />
-      {/* R16 #3: Stage Execution KPIs replace the prior "Recent activity" panel on VP + Manager dashboards. */}
+      {/* R16 #3 → R19: Stage Execution KPIs (now redesigned with tinted category panels). */}
       <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />
       <SectionTitle icon="alert-circle" title={escalationsDirectedHeading(me)} subtitle={`${directed.length} open · click any row for full thread`} />
       {directed.length === 0
@@ -8200,7 +8657,8 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
       )}
 
       {/* Exec: Progress trend chart */}
-      {isExec && <ExecutiveProgressTrend />}
+      {/* R19: ExecutiveProgressTrend removed from Manager dashboard too — replaced by
+          the Stage transitions chart (in PageDashboard, exec-gated). */}
 
       {/* Exec: Financial summary card */}
       {isExec && <ExecutiveFinancialSummary finRollup={finRollup} />}
@@ -8395,17 +8853,37 @@ function computeStageKpis(schools) {
 function StageExecutionKPIs({ schools }) {
   const data = React.useMemo(() => computeStageKpis(schools), [schools]);
   const total = (schools || []).length;
-  const totalDoneStages = data.reduce((a, k) => a + k.count, 0);
-  const overallPct = total ? Math.round((totalDoneStages / (data.length * total)) * 100) : 0;
+  const energized = countEnergized(schools || []);
+  // "Currently in pipeline" = schools that have at least one stage completed but
+  // haven't finished the final stage (handover_client). The selector mirrors the
+  // dashboard counter so the two views never drift.
+  const inPipeline = (schools || []).filter(s => {
+    if (!s.stages) return false;
+    const first = s.stages[0]; const last = s.stages[s.stages.length - 1];
+    return first && first.done && !(last && last.done);
+  }).length;
   const grouped = ['mechanical', 'electrical', 'commissioning', 'handover'].map(cat => ({
     cat, label: STAGE_CATEGORY_LABELS[cat],
     items: data.filter(d => d.category === cat),
     color: STAGE_CATEGORY_COLORS[cat],
   }));
+  const nfmt = new Intl.NumberFormat('en-US');
   return (
     <Card>
-      <SectionTitle icon="bar-chart-3" title="Stage Execution KPIs"
-        subtitle={`Across ${total.toLocaleString()} schools — ${overallPct}% overall completion · 18 active stages tracked.`} />
+      {/* R19 Item #1 — heading "Stage Execution · all 18 stages" with a right-aligned
+          totals strip ("N schools total · N currently in pipeline · N energized"). */}
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Icon name="bar-chart-3" size={16} />
+            <h3 className="text-sm font-semibold ink-on-dark">Stage Execution · all 18 stages</h3>
+          </div>
+          <div className="text-[11px] text-ink-500 ink-muted-on-dark mt-0.5">Grouped by category · click any card to filter projects and schools</div>
+        </div>
+        <div className="text-[11px] text-ink-500 ink-muted-on-dark tnum">
+          {nfmt.format(total)} schools total · <span className="text-navy-900 ink-on-dark font-medium">{nfmt.format(inPipeline)}</span> currently in pipeline · <span className="text-emerald-600 font-medium">{nfmt.format(energized)}</span> energized
+        </div>
+      </div>
       <div className="space-y-3">
         {grouped.map(g => (
           <div key={g.cat}>

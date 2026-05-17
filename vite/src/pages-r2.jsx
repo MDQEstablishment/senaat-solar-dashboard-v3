@@ -302,9 +302,12 @@ function PageVPDashboard({ onOpenEscalation, currentUser }) {
         <h1 className="text-2xl font-semibold">Portfolio at a glance</h1>
       </div>
       <ExecutiveKPIStrip projects={projects} totalSchools={totalSchools} energizedAll={energizedAll} handedAll={handedAll} avgProgress={avgProgress} />
-      <ExecutiveProgressTrend />
+      {/* R19 Item #1: the empty "Program progress trend" chart is removed entirely —
+          its slot is filled by the "Stage transitions this week" + Top bottlenecks
+          pair (rendered inside PageDashboard for VP/Managers). The cumulative
+          progress curve was a placeholder that never carried real data. */}
       <ExecutiveFinancialSummary finRollup={finRollup} />
-      {/* R16 #3: Stage Execution KPIs replace the prior "Recent activity" panel on VP + Manager dashboards. */}
+      {/* R16 #3 → R19: Stage Execution KPIs (now redesigned with tinted category panels). */}
       <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />
       <SectionTitle icon="alert-circle" title={escalationsDirectedHeading(me)} subtitle={`${directed.length} open · click any row for full thread`} />
       {directed.length === 0
@@ -387,7 +390,8 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
       )}
 
       {/* Exec: Progress trend chart */}
-      {isExec && <ExecutiveProgressTrend />}
+      {/* R19: ExecutiveProgressTrend removed from Manager dashboard too — replaced by
+          the Stage transitions chart (in PageDashboard, exec-gated). */}
 
       {/* Exec: Financial summary card */}
       {isExec && <ExecutiveFinancialSummary finRollup={finRollup} />}
@@ -582,17 +586,37 @@ function computeStageKpis(schools) {
 function StageExecutionKPIs({ schools }) {
   const data = React.useMemo(() => computeStageKpis(schools), [schools]);
   const total = (schools || []).length;
-  const totalDoneStages = data.reduce((a, k) => a + k.count, 0);
-  const overallPct = total ? Math.round((totalDoneStages / (data.length * total)) * 100) : 0;
+  const energized = countEnergized(schools || []);
+  // "Currently in pipeline" = schools that have at least one stage completed but
+  // haven't finished the final stage (handover_client). The selector mirrors the
+  // dashboard counter so the two views never drift.
+  const inPipeline = (schools || []).filter(s => {
+    if (!s.stages) return false;
+    const first = s.stages[0]; const last = s.stages[s.stages.length - 1];
+    return first && first.done && !(last && last.done);
+  }).length;
   const grouped = ['mechanical', 'electrical', 'commissioning', 'handover'].map(cat => ({
     cat, label: STAGE_CATEGORY_LABELS[cat],
     items: data.filter(d => d.category === cat),
     color: STAGE_CATEGORY_COLORS[cat],
   }));
+  const nfmt = new Intl.NumberFormat('en-US');
   return (
     <Card>
-      <SectionTitle icon="bar-chart-3" title="Stage Execution KPIs"
-        subtitle={`Across ${total.toLocaleString()} schools — ${overallPct}% overall completion · 18 active stages tracked.`} />
+      {/* R19 Item #1 — heading "Stage Execution · all 18 stages" with a right-aligned
+          totals strip ("N schools total · N currently in pipeline · N energized"). */}
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <Icon name="bar-chart-3" size={16} />
+            <h3 className="text-sm font-semibold ink-on-dark">Stage Execution · all 18 stages</h3>
+          </div>
+          <div className="text-[11px] text-ink-500 ink-muted-on-dark mt-0.5">Grouped by category · click any card to filter projects and schools</div>
+        </div>
+        <div className="text-[11px] text-ink-500 ink-muted-on-dark tnum">
+          {nfmt.format(total)} schools total · <span className="text-navy-900 ink-on-dark font-medium">{nfmt.format(inPipeline)}</span> currently in pipeline · <span className="text-emerald-600 font-medium">{nfmt.format(energized)}</span> energized
+        </div>
+      </div>
       <div className="space-y-3">
         {grouped.map(g => (
           <div key={g.cat}>

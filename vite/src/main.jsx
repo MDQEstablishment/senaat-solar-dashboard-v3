@@ -104,6 +104,7 @@ import './data.jsx';
 import './data-r2.jsx';
 import './icons.jsx';
 import './ui.jsx';
+import './components/StageCard.jsx';
 import './store-r2.jsx';
 import './store.jsx';
 import './chat-panel.jsx';

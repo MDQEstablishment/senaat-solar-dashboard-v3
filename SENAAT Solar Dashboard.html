@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Zamil Services Solar Programs Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter','ui-sans-serif','system-ui','sans-serif'] },
+        colors: {
+          navy:    { 900: '#0B2545', 800: '#13315C', 700: '#1B4378', 600: '#2A5A9A' },
+          gold:    { DEFAULT: '#B8860B', 600: '#A0750A', 400: '#D4A52A' },
+          ind:     { red: '#C8102E' },
+          ink:     { 900: '#0F172A', 700: '#475569', 500: '#94A3B8', 200: '#E2E8F0', 100: '#F1F5F9', 50: '#F8FAFC' },
+          ok:      '#16A34A',
+          warn:    '#EAB308',
+          danger:  '#DC2626',
+          info:    '#0284C7',
+        },
+        boxShadow: {
+          card: '0 1px 0 rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06)',
+          pop:  '0 8px 24px rgba(15,23,42,0.12), 0 2px 6px rgba(15,23,42,0.06)',
+        }
+      }
+    }
+  }
+</script>
+<style>
+  html, body { background: #F8FAFC; color: #0F172A; font-family: 'Inter', system-ui, sans-serif; }
+  .num, .tnum, table td, table th { font-variant-numeric: tabular-nums; }
+  .scrollbar-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 8px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .accent-gold     { --accent: #B8860B; --accent-600: #A0750A; --accent-400: #D4A52A; }
+  .accent-steel    { --accent: #2A5A9A; --accent-600: #1B4378; --accent-400: #4A7BC4; }
+  .accent-red      { --accent: #C8102E; --accent-600: #A50C25; --accent-400: #E64A65; }
+  .text-accent     { color: var(--accent); }
+  .bg-accent       { background: var(--accent); }
+  .bg-accent-soft  { background: color-mix(in srgb, var(--accent) 12%, white); }
+  .border-accent   { border-color: var(--accent); }
+  .ring-accent     { --tw-ring-color: var(--accent); }
+  .dark-mode { background: #061528; color: #E2E8F0; }
+  .dark-mode .surface { background: #0B2545; border-color: #13315C; color: #E2E8F0; }
+  .dark-mode .surface-2 { background: #13315C; border-color: #1B4378; color: #E2E8F0; }
+  .dark-mode .ink-on-dark { color: #E2E8F0; }
+  .dark-mode .ink-muted-on-dark { color: #94A3B8; }
+  .dark-mode .border-soft { border-color: #1B4378; }
+  .dark-mode .hover-row:hover { background: #13315C; }
+  .surface { background: #fff; border-color: #E2E8F0; color: #0F172A; }
+  .surface-2 { background: #F8FAFC; border-color: #E2E8F0; color: #0F172A; }
+  .border-soft { border-color: #E2E8F0; }
+  .hover-row:hover { background: #F8FAFC; }
+  /* checkered placeholder for map etc */
+  .placeholder-grid {
+    background-image:
+      linear-gradient(45deg, rgba(15,23,42,0.04) 25%, transparent 25%),
+      linear-gradient(-45deg, rgba(15,23,42,0.04) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, rgba(15,23,42,0.04) 75%),
+      linear-gradient(-45deg, transparent 75%, rgba(15,23,42,0.04) 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+  }
+  .stage-pill { transition: all .15s ease; }
+  .stage-pill:hover { transform: translateY(-1px); }
+  .slide-over-enter { animation: slideIn .22s ease-out; }
+  @keyframes slideIn { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="src/data-schools.jsx"></script>
+<script type="text/babel" src="src/data.jsx"></script>
+<script type="text/babel" src="src/data-r2.jsx"></script>
+<script type="text/babel" src="src/icons.jsx"></script>
+<script type="text/babel" src="src/ui.jsx"></script>
+<script type="text/babel" src="src/components/StageCard.jsx"></script>
+<script type="text/babel" src="src/store-r2.jsx"></script>
+<script type="text/babel" src="src/store.jsx"></script>
+<script type="text/babel" src="src/chat-panel.jsx"></script>
+<script type="text/babel" src="src/task-modal.jsx"></script>
+<script type="text/babel" src="src/shell.jsx"></script>
+<script type="text/babel" src="src/page-dashboard.jsx"></script>
+<script type="text/babel" src="src/page-project.jsx"></script>
+<script type="text/babel" src="src/page-schools-list.jsx"></script>
+<script type="text/babel" src="src/page-school-detail.jsx"></script>
+<script type="text/babel" src="src/page-vp.jsx"></script>
+<script type="text/babel" src="src/page-my-tasks.jsx"></script>
+<script type="text/babel" src="src/page-materials.jsx"></script>
+<script type="text/babel" src="src/page-financials.jsx"></script>
+<script type="text/babel" src="src/page-contractors.jsx"></script>
+<script type="text/babel" src="src/page-reports.jsx"></script>
+<script type="text/babel" src="src/page-settings.jsx"></script>
+<script type="text/babel" src="src/pages-r2.jsx"></script>
+<script type="text/babel" src="src/page-login.jsx"></script>
+<script type="text/babel" src="src/page-reports-zamil.jsx"></script>
+<script type="text/babel" src="src/app.jsx"></script>
+</body>
+</html>
