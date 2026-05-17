@@ -930,6 +930,71 @@ record('R27: portfolio role list = Manager / VP / Operations Manager / Program M
        !/Coordinator/.test(dataR27.match(/SCHOOL_EXECUTION_STAGES_ROLES = \[[^\]]+\]/)[0]) &&
        !/Material planning/.test(dataR27.match(/SCHOOL_EXECUTION_STAGES_ROLES = \[[^\]]+\]/)[0]));
 
+// ── K15. Round 28 — Map preview always renders + Project Locations widget ──
+const dataR28      = read('data.jsx');
+const mapR28       = read('components/MapPreview.jsx');
+const schoolDetR28 = read('page-school-detail.jsx');
+const projectR28   = read('page-project.jsx');
+const mainR28      = read('main.jsx');
+
+record('R28: REGION_CENTROIDS map defined with 13+ Saudi regions and exported',
+       /const REGION_CENTROIDS = \{[\s\S]{200,}\};/.test(dataR28) &&
+       /'Riyadh':\s*\{ lat: 24\.7136, lng: 46\.6753 \}/.test(dataR28) &&
+       /'Najran':\s*\{ lat: 17\.4924, lng: 44\.1277 \}/.test(dataR28) &&
+       /REGIONS, REGION_CENTROIDS/.test(dataR28));
+record('R28: components/MapPreview.jsx exists and exposes parseCoords + 3 components',
+       /function parseCoords\(str\)/.test(mapR28) &&
+       /function SchoolMapPreview/.test(mapR28) &&
+       /function ProjectMapPreview/.test(mapR28) &&
+       /function EditCoordsModal/.test(mapR28) &&
+       /parseCoords,\s+SchoolMapPreview, ProjectMapPreview, EditCoordsModal/.test(mapR28));
+record('R28: parseCoords requires lat,lng pair (single decimal returns null)',
+       /Number\.isFinite\(lat\) \|\| !Number\.isFinite\(lng\)/.test(mapR28) &&
+       /lat < -90 \|\| lat > 90 \|\| lng < -180 \|\| lng > 180/.test(mapR28));
+record('R28: main.jsx imports the new MapPreview component file',
+       /import '\.\/components\/MapPreview\.jsx';/.test(mainR28));
+record('R28: School Detail map ALWAYS renders (no gating on coords presence)',
+       !/{lat && lng && \(/.test(schoolDetR28) &&
+       /<window\.SchoolMapPreview school=\{school\}/.test(schoolDetR28));
+record('R28: Map fallback uses region centroid when school coords unparseable',
+       /const regionCentroid = school && school\.region \? REGION_CENTROIDS_\[school\.region\] : null/.test(mapR28) &&
+       /Approximate — centred on/.test(mapR28));
+record('R28: SchoolMapPreview surfaces an empty state with map-pin icon when no coords and no region centroid',
+       /data-testid="school-map-empty"/.test(mapR28) &&
+       /No coordinates yet for this school\./.test(mapR28));
+record('R28: SchoolMapPreview offers an "Add coordinates" / "Add precise coordinates" CTA',
+       /'Add precise coordinates'/.test(mapR28) &&
+       /'Add coordinates'/.test(mapR28));
+record('R28: Project Detail Overview renders Project Locations widget',
+       /<window\.ProjectMapPreview/.test(projectR28) &&
+       /function ProjectMapPreview/.test(mapR28) &&
+       /Project Locations/.test(mapR28));
+record('R28: ProjectMapPreview computes bbox from valid school coords; falls back to region centroid; falls back to empty state',
+       /data-testid="project-map-iframe-bbox"/.test(mapR28) &&
+       /data-testid="project-map-iframe-region"/.test(mapR28) &&
+       /data-testid="project-map-empty"/.test(mapR28));
+record('R28: ProjectMapPreview subtitle reports N of M schools have coordinates',
+       /\$\{withCoords\.toLocaleString\(\)\} of \$\{totalSchools\.toLocaleString\(\)\} schools have coordinates/.test(mapR28));
+record('R28: EditCoordsModal accepts lat + lng numeric inputs and a "Paste from Google Maps" helper',
+       /data-testid="edit-coords-lat"/.test(mapR28) &&
+       /data-testid="edit-coords-lng"/.test(mapR28) &&
+       /data-testid="edit-coords-paste"/.test(mapR28) &&
+       /step="0\.000001"/.test(mapR28));
+record('R28: EditCoordsModal validates ranges and saves coords back to store',
+       /fLat < -90 \|\| fLat > 90/.test(mapR28) &&
+       /fLng < -180 \|\| fLng > 180/.test(mapR28) &&
+       /onSave && onSave\(\{ lat: fLat, lng: fLng \}\)/.test(mapR28));
+record('R28: School Detail wires handleSaveCoords → updateSchool + logAudit("school.coords")',
+       /handleSaveCoords = \(\{ lat, lng \}\)/.test(schoolDetR28) &&
+       /updateSchool && updateSchool\(school\.id, \{ coords: next \}\)/.test(schoolDetR28) &&
+       /entityType: 'school\.coords'/.test(schoolDetR28));
+record('R28: School Detail mounts EditCoordsModal at page level',
+       /<window\.EditCoordsModal/.test(schoolDetR28) &&
+       /open=\{editCoordsOpen\}/.test(schoolDetR28) &&
+       /onSave=\{handleSaveCoords\}/.test(schoolDetR28));
+record('R28: EditCoordsModal flags the local-only persistence ("Saved locally for this session")',
+       /Saved locally for this session/.test(mapR28));
+
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic
 // to confirm the data flow.

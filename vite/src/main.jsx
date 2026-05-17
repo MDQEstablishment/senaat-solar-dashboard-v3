@@ -106,6 +106,7 @@ import './icons.jsx';
 import './ui.jsx';
 import './components/StageCard.jsx';
 import './components/StageChecklistTable.jsx';
+import './components/MapPreview.jsx';
 import './store-r2.jsx';
 import './store.jsx';
 import './chat-panel.jsx';

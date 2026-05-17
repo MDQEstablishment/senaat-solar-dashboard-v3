@@ -123,6 +123,27 @@ const PROJECT_STAGES = [
 
 const REGIONS = ['Dammam', 'Madinah', 'Qassim', 'Makkah', 'Al Jouf', 'Hail', 'Northern Borders', 'Najran', 'Jazan', 'Eastern', 'Riyadh'];
 
+// R28 — Region centroids (lat/lng of the regional capital city) used to render a
+// fallback map preview when a school's own coords are missing or unparseable.
+// Covers the 13 Saudi regions in the seed plus a few not currently used (Asir /
+// Tabuk / Al Bahah) for forward-compatibility if seed data expands.
+const REGION_CENTROIDS = {
+  'Riyadh':            { lat: 24.7136, lng: 46.6753 },
+  'Makkah':            { lat: 21.4225, lng: 39.8262 },
+  'Madinah':           { lat: 24.4709, lng: 39.6126 },
+  'Eastern':           { lat: 26.3927, lng: 49.9777 },  // Dammam metropolitan area
+  'Dammam':            { lat: 26.4207, lng: 50.0888 },  // legacy alias still in PROJECTS region list
+  'Qassim':            { lat: 26.3260, lng: 43.9750 },  // Buraydah
+  'Asir':              { lat: 18.2164, lng: 42.5053 },  // Abha
+  'Tabuk':             { lat: 28.3838, lng: 36.5550 },
+  'Hail':              { lat: 27.5219, lng: 41.6905 },
+  'Northern Borders':  { lat: 30.9753, lng: 41.0381 },  // Arar
+  'Jazan':             { lat: 16.8893, lng: 42.5611 },
+  'Najran':            { lat: 17.4924, lng: 44.1277 },
+  'Al Bahah':          { lat: 20.0129, lng: 41.4677 },
+  'Al Jouf':           { lat: 29.7858, lng: 40.2192 },  // Sakaka
+};
+
 // ROLES (Round 5 — Site Engineer removed)
 const ROLES = ['VP', 'Manager', 'Operations Manager', 'Program Manager', 'Project Manager', 'Material planning', 'Coordinator'];
 const PROGRAM_MANAGER_GROUP = ['Manager', 'Operations Manager', 'Program Manager'];
@@ -789,7 +810,7 @@ Object.assign(window, {
   SAR, SARfull, fmtDate,
   SCHOOL_STAGES, SCHOOL_STAGE_SHORT, STAGE_KEYS, STAGE_KEY_LABEL, STAGE_INDEX, LEGACY_SCHOOL_STAGES,
   STAGE_EXCEL_HEADERS, STAGE_CATEGORY, STAGE_CATEGORY_COLORS, STAGE_CATEGORY_LABELS, OLD_TO_NEW_STAGE,
-  REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
+  REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, REGION_CENTROIDS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
   canViewSchoolExecutionStages, SCHOOL_EXECUTION_STAGES_ROLES,

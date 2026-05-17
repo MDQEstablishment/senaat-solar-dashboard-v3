@@ -6,9 +6,25 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
   const {
     schools, chats, sendChatMessage, updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     stageStatuses, setSchoolStageStatus, stageHistory, toggleSchoolStage,
-    updateSchool, validateSchool,
+    updateSchool, validateSchool, logAudit,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
   } = useStore();
+  // R28 — edit-coordinates modal (opened from the map preview's empty-state button
+  // or its "Add precise coordinates" link when the school falls back to a region
+  // centroid). Lives at PageSchoolDetail level so the modal can persist across
+  // tab switches and the school re-renders the precise marker the moment a save
+  // updates store state.
+  const [editCoordsOpen, setEditCoordsOpen] = React.useState(false);
+  const handleSaveCoords = ({ lat, lng }) => {
+    const next = `${lat}, ${lng}`;
+    updateSchool && updateSchool(school.id, { coords: next });
+    if (logAudit && currentUser) logAudit({
+      actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+      action: 'UPDATE', entityType: 'school.coords', entityId: school.id,
+      entityLabel: school.code || school.id,
+      summary: `Updated coordinates for ${school.code || school.id} → ${next}`,
+    });
+  };
 
   const school = schools.find(s => s.id === schoolId);
   if (!school) return <div className="p-6">School not found.</div>;
@@ -97,10 +113,9 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
 
   const fld = (key, val) => editMode ? val : (form[key] || '—');
 
-  // Coords parsing for map preview
-  const coordsMatch = String(form.coords || '').match(/(-?\d+\.\d+)\s*[,\s]\s*(-?\d+\.\d+)/);
-  const lat = coordsMatch ? parseFloat(coordsMatch[1]) : null;
-  const lng = coordsMatch ? parseFloat(coordsMatch[2]) : null;
+  // R28 — coords parsing moved into the shared SchoolMapPreview / parseCoords
+  // helper (src/components/MapPreview.jsx). The old `lat`/`lng` locals were only
+  // used to gate the map render and are no longer needed here.
 
   return (
     <div className="p-6 grid grid-cols-12 gap-4 h-[calc(100vh-56px)]">
@@ -181,20 +196,12 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
                   onChange={v => updateSchoolRemark(school.id, v)} />
               </div>
 
-              {/* Mini map preview */}
-              {lat && lng && (
-                <div className="mt-2">
-                  <div className="text-[10px] uppercase tracking-wider text-ink-500 mb-1">Map preview</div>
-                  <iframe
-                    title="map"
-                    width="100%" height="220" frameBorder="0" scrolling="no"
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng-0.005},${lat-0.005},${lng+0.005},${lat+0.005}&layer=mapnik&marker=${lat},${lng}`}
-                    className="rounded-md border border-soft" />
-                  <a className="text-[11px] text-info underline" target="_blank" rel="noopener noreferrer"
-                     href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`}>
-                    Open in OpenStreetMap →
-                  </a>
-                </div>
+              {/* R28 — Map preview slot ALWAYS renders. SchoolMapPreview decides
+                  the branch internally: precise marker when coords parse, region
+                  centroid + "Approximate" caption when they don't, empty-state
+                  placeholder when neither. */}
+              {window.SchoolMapPreview && (
+                <window.SchoolMapPreview school={school} onEdit={() => setEditCoordsOpen(true)} />
               )}
 
               <div className="mt-2">
@@ -306,6 +313,15 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
             onSend={(msg) => sendChatMessage(school.id, msg)} />
         </div>
       </div>
+
+      {/* R28 — Edit coordinates modal (opened from the map preview). */}
+      {window.EditCoordsModal && (
+        <window.EditCoordsModal
+          open={editCoordsOpen}
+          school={school}
+          onClose={() => setEditCoordsOpen(false)}
+          onSave={handleSaveCoords} />
+      )}
     </div>
   );
 }

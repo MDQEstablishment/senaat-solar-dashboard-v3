@@ -371,6 +371,18 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           activeStage={activeFunnelStage}
           onSetStage={(i) => setActiveFunnelStage(i)} />
       )}
+
+      {/* R28 — Project Locations map. Always renders (precise pin bbox when any
+          school has lat,lng coords; region centroid otherwise; placeholder when
+          neither). The "Add coordinates" empty-state button bounces the user to
+          the schools list so they can drill into a specific school's editor. */}
+      {window.ProjectMapPreview && (
+        <window.ProjectMapPreview
+          project={project}
+          schools={(allSchools || ALL_SCHOOLS).filter(s => s.projectId === project.id)}
+          onEditExample={() => onOpenSchools && onOpenSchools(project.id)} />
+      )}
+
       {/* R25 — the per-school checkmark table was removed from Project Detail
           Overview. The single source of truth is now Schools List → Stages view.
           The 4-card category summary above stays. */}

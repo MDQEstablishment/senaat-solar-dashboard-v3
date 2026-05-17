@@ -646,6 +646,27 @@ const PROJECT_STAGES = [
 
 const REGIONS = ['Dammam', 'Madinah', 'Qassim', 'Makkah', 'Al Jouf', 'Hail', 'Northern Borders', 'Najran', 'Jazan', 'Eastern', 'Riyadh'];
 
+// R28 — Region centroids (lat/lng of the regional capital city) used to render a
+// fallback map preview when a school's own coords are missing or unparseable.
+// Covers the 13 Saudi regions in the seed plus a few not currently used (Asir /
+// Tabuk / Al Bahah) for forward-compatibility if seed data expands.
+const REGION_CENTROIDS = {
+  'Riyadh':            { lat: 24.7136, lng: 46.6753 },
+  'Makkah':            { lat: 21.4225, lng: 39.8262 },
+  'Madinah':           { lat: 24.4709, lng: 39.6126 },
+  'Eastern':           { lat: 26.3927, lng: 49.9777 },  // Dammam metropolitan area
+  'Dammam':            { lat: 26.4207, lng: 50.0888 },  // legacy alias still in PROJECTS region list
+  'Qassim':            { lat: 26.3260, lng: 43.9750 },  // Buraydah
+  'Asir':              { lat: 18.2164, lng: 42.5053 },  // Abha
+  'Tabuk':             { lat: 28.3838, lng: 36.5550 },
+  'Hail':              { lat: 27.5219, lng: 41.6905 },
+  'Northern Borders':  { lat: 30.9753, lng: 41.0381 },  // Arar
+  'Jazan':             { lat: 16.8893, lng: 42.5611 },
+  'Najran':            { lat: 17.4924, lng: 44.1277 },
+  'Al Bahah':          { lat: 20.0129, lng: 41.4677 },
+  'Al Jouf':           { lat: 29.7858, lng: 40.2192 },  // Sakaka
+};
+
 // ROLES (Round 5 — Site Engineer removed)
 const ROLES = ['VP', 'Manager', 'Operations Manager', 'Program Manager', 'Project Manager', 'Material planning', 'Coordinator'];
 const PROGRAM_MANAGER_GROUP = ['Manager', 'Operations Manager', 'Program Manager'];
@@ -1312,7 +1333,7 @@ Object.assign(window, {
   SAR, SARfull, fmtDate,
   SCHOOL_STAGES, SCHOOL_STAGE_SHORT, STAGE_KEYS, STAGE_KEY_LABEL, STAGE_INDEX, LEGACY_SCHOOL_STAGES,
   STAGE_EXCEL_HEADERS, STAGE_CATEGORY, STAGE_CATEGORY_COLORS, STAGE_CATEGORY_LABELS, OLD_TO_NEW_STAGE,
-  REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
+  REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, REGION_CENTROIDS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
   canViewSchoolExecutionStages, SCHOOL_EXECUTION_STAGES_ROLES,
@@ -2240,6 +2261,294 @@ function StageChecklistTable({
 }
 
 Object.assign(window, { StageChecklistTable });
+
+</script>
+<script type="text/babel">
+// src/components/MapPreview.jsx
+// R28 — Map preview slot that always renders.
+//
+// Exports (via window):
+//   • parseCoords(str)            → { lat, lng } | null. Strict pattern: two decimals
+//     separated by comma or whitespace. Single-number coords return null.
+//   • SchoolMapPreview            single-school card. Falls back to region centroid when
+//     coords don't parse, with an italic "Approximate" caption.
+//   • ProjectMapPreview           project-level card showing all schools in the project
+//     as an OSM bbox; if zero schools have valid coords, falls back to the project's
+//     region centroid; if neither, shows the empty-state placeholder card.
+//   • EditCoordsModal             two-input modal + "Paste from Google Maps" helper.
+//     onSave receives `{ lat, lng }`; the caller updates the school's coords string.
+//
+// All three components ALWAYS render their card shell — the empty state IS one of the
+// rendered branches. The client's brief: "Map widget always renders, even if no coords."
+function parseCoords(str) {
+  if (!str) return null;
+  const m = String(str).match(/(-?\d+(?:\.\d+)?)\s*[,\s]\s*(-?\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const lat = parseFloat(m[1]);
+  const lng = parseFloat(m[2]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return { lat, lng };
+}
+
+function _osmEmbedUrl({ lat, lng, span = 0.01 }) {
+  const half = span / 2;
+  return `https://www.openstreetmap.org/export/embed.html`
+    + `?bbox=${lng - half},${lat - half},${lng + half},${lat + half}`
+    + `&layer=mapnik&marker=${lat},${lng}`;
+}
+function _osmBboxEmbedUrl({ minLat, maxLat, minLng, maxLng, centerLat, centerLng }) {
+  // Pad bbox by ~10% so pins aren't at the edge.
+  const padLat = Math.max(0.005, (maxLat - minLat) * 0.1);
+  const padLng = Math.max(0.005, (maxLng - minLng) * 0.1);
+  return `https://www.openstreetmap.org/export/embed.html`
+    + `?bbox=${minLng - padLng},${minLat - padLat},${maxLng + padLng},${maxLat + padLat}`
+    + `&layer=mapnik&marker=${centerLat},${centerLng}`;
+}
+function _osmOpenInLink({ lat, lng, zoom = 14 }) {
+  return `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=${zoom}/${lat}/${lng}`;
+}
+
+// ── Single-school map ───────────────────────────────────────────────────────
+function SchoolMapPreview({ school, onEdit, height = 220 }) {
+  const REGION_CENTROIDS_ = window.REGION_CENTROIDS || {};
+  const precise = school ? parseCoords(school.coords) : null;
+  const regionCentroid = school && school.region ? REGION_CENTROIDS_[school.region] : null;
+  return (
+    <div data-testid="school-map-preview" className="mt-2">
+      <div className="flex items-baseline justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-ink-500">Map preview</div>
+        {!precise && onEdit && (
+          <button type="button" onClick={onEdit}
+            className="text-[11px] text-info underline hover:no-underline">
+            {regionCentroid ? 'Add precise coordinates' : 'Add coordinates'}
+          </button>
+        )}
+      </div>
+      {precise ? (
+        <>
+          <iframe
+            title="map"
+            data-testid="school-map-iframe-precise"
+            width="100%" height={height} frameBorder="0" scrolling="no"
+            src={_osmEmbedUrl({ lat: precise.lat, lng: precise.lng })}
+            className="rounded-md border border-soft" />
+          <a className="text-[11px] text-info underline" target="_blank" rel="noopener noreferrer"
+             href={_osmOpenInLink({ lat: precise.lat, lng: precise.lng, zoom: 17 })}>
+            Open in OpenStreetMap →
+          </a>
+        </>
+      ) : regionCentroid ? (
+        <>
+          <iframe
+            title="map"
+            data-testid="school-map-iframe-region"
+            width="100%" height={height} frameBorder="0" scrolling="no"
+            src={_osmEmbedUrl({ lat: regionCentroid.lat, lng: regionCentroid.lng, span: 0.5 })}
+            className="rounded-md border border-soft" />
+          <div className="text-[11px] text-ink-500 italic mt-1">
+            Approximate — centred on {school?.region || 'region'}
+          </div>
+        </>
+      ) : (
+        <div data-testid="school-map-empty"
+          className="rounded-md border border-dashed border-soft surface-2 flex flex-col items-center justify-center gap-2"
+          style={{ height }}>
+          <Icon name="map-pin" size={22} className="text-ink-300" />
+          <div className="text-[11px] text-ink-500 italic">No coordinates yet for this school.</div>
+          {onEdit && (
+            <button type="button" onClick={onEdit}
+              className="text-[11px] font-medium text-info underline hover:no-underline">
+              Add coordinates
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Project-level map ───────────────────────────────────────────────────────
+function ProjectMapPreview({ project, schools, onEditExample, height = 240 }) {
+  const REGION_CENTROIDS_ = window.REGION_CENTROIDS || {};
+  const pts = [];
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  (schools || []).forEach(s => {
+    const c = parseCoords(s.coords);
+    if (!c) return;
+    pts.push(c);
+    if (c.lat < minLat) minLat = c.lat;
+    if (c.lat > maxLat) maxLat = c.lat;
+    if (c.lng < minLng) minLng = c.lng;
+    if (c.lng > maxLng) maxLng = c.lng;
+  });
+  const totalSchools = (schools || []).length;
+  const withCoords = pts.length;
+  const regionCentroid = project && project.region ? REGION_CENTROIDS_[project.region] : null;
+  const subtitle = `${withCoords.toLocaleString()} of ${totalSchools.toLocaleString()} schools have coordinates`;
+
+  let body;
+  if (pts.length === 0) {
+    if (regionCentroid) {
+      body = (
+        <>
+          <iframe
+            title="project-region-map"
+            data-testid="project-map-iframe-region"
+            width="100%" height={height} frameBorder="0" scrolling="no"
+            src={_osmEmbedUrl({ lat: regionCentroid.lat, lng: regionCentroid.lng, span: 0.5 })}
+            className="rounded-md border border-soft" />
+          <div className="text-[11px] text-ink-500 italic mt-1">
+            Approximate — centred on {project.region} region. School pins will appear once any school has lat,lng coordinates.
+          </div>
+        </>
+      );
+    } else {
+      body = (
+        <div data-testid="project-map-empty"
+          className="rounded-md border border-dashed border-soft surface-2 flex flex-col items-center justify-center gap-2"
+          style={{ height }}>
+          <Icon name="map-pin" size={28} className="text-ink-300" />
+          <div className="text-xs text-ink-500 italic">No coordinates added yet for this project.</div>
+          {onEditExample && (
+            <button type="button" onClick={onEditExample}
+              className="text-[11px] font-medium text-info underline hover:no-underline">
+              Add coordinates
+            </button>
+          )}
+        </div>
+      );
+    }
+  } else if (pts.length === 1) {
+    body = (
+      <>
+        <iframe
+          title="project-single-map"
+          data-testid="project-map-iframe-single"
+          width="100%" height={height} frameBorder="0" scrolling="no"
+          src={_osmEmbedUrl({ lat: pts[0].lat, lng: pts[0].lng })}
+          className="rounded-md border border-soft" />
+        <a className="text-[11px] text-info underline" target="_blank" rel="noopener noreferrer"
+           href={_osmOpenInLink({ lat: pts[0].lat, lng: pts[0].lng, zoom: 16 })}>
+          Open in OpenStreetMap →
+        </a>
+      </>
+    );
+  } else {
+    const centerLat = (minLat + maxLat) / 2;
+    const centerLng = (minLng + maxLng) / 2;
+    body = (
+      <>
+        <iframe
+          title="project-bbox-map"
+          data-testid="project-map-iframe-bbox"
+          width="100%" height={height} frameBorder="0" scrolling="no"
+          src={_osmBboxEmbedUrl({ minLat, maxLat, minLng, maxLng, centerLat, centerLng })}
+          className="rounded-md border border-soft" />
+        <a className="text-[11px] text-info underline" target="_blank" rel="noopener noreferrer"
+           href={_osmOpenInLink({ lat: centerLat, lng: centerLng, zoom: 11 })}>
+          Open in OpenStreetMap →
+        </a>
+      </>
+    );
+  }
+
+  return (
+    <Card>
+      <SectionTitle icon="map-pin" title="Project Locations" subtitle={subtitle} />
+      <div data-testid="project-map-preview">{body}</div>
+    </Card>
+  );
+}
+
+// ── Edit-coords modal ────────────────────────────────────────────────────────
+function EditCoordsModal({ open, school, onClose, onSave }) {
+  const initial = school ? parseCoords(school.coords) : null;
+  const [lat, setLat] = React.useState(initial ? String(initial.lat) : '');
+  const [lng, setLng] = React.useState(initial ? String(initial.lng) : '');
+  const [pasted, setPasted] = React.useState('');
+  const [error, setError] = React.useState('');
+  // Reset when modal re-opens for a different school
+  React.useEffect(() => {
+    if (!open) return;
+    const next = school ? parseCoords(school.coords) : null;
+    setLat(next ? String(next.lat) : '');
+    setLng(next ? String(next.lng) : '');
+    setPasted('');
+    setError('');
+  }, [open, school?.id]);
+
+  const applyPasted = (str) => {
+    setPasted(str);
+    const parsed = parseCoords(str);
+    if (parsed) {
+      setLat(String(parsed.lat));
+      setLng(String(parsed.lng));
+      setError('');
+    } else if (str.trim()) {
+      setError('Could not read those coordinates. Expected "lat, lng" — for example 21.4225, 39.8262.');
+    } else {
+      setError('');
+    }
+  };
+
+  const onSubmit = (e) => {
+    e && e.preventDefault && e.preventDefault();
+    const fLat = parseFloat(lat);
+    const fLng = parseFloat(lng);
+    if (!Number.isFinite(fLat) || !Number.isFinite(fLng)) {
+      setError('Latitude and longitude must be numbers.');
+      return;
+    }
+    if (fLat < -90 || fLat > 90)   { setError('Latitude must be between −90 and 90.'); return; }
+    if (fLng < -180 || fLng > 180) { setError('Longitude must be between −180 and 180.'); return; }
+    onSave && onSave({ lat: fLat, lng: fLng });
+    onClose && onClose();
+  };
+
+  if (!open) return null;
+  return (
+    <Modal open={open} onClose={onClose} title={`Edit coordinates · ${school?.code || school?.id || ''}`} width="max-w-md">
+      <form onSubmit={onSubmit} className="space-y-3">
+        <div className="text-[11px] text-ink-500 bg-amber-50 border border-amber-200 rounded-md p-2.5">
+          Saved locally for this session. Will sync to database after backend wiring.
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-ink-700 mb-1 block">Paste from Google Maps</label>
+          <input value={pasted} onChange={e => applyPasted(e.target.value)} type="text"
+            placeholder="21.4225, 39.8262"
+            data-testid="edit-coords-paste"
+            className="w-full px-3 py-1.5 text-sm border border-ink-200 rounded-md focus:outline-none focus:ring-2 ring-accent" />
+          <div className="text-[10px] text-ink-500 mt-1">Tip: right-click any spot in Google Maps → click the coordinates → it copies as "lat, lng".</div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Latitude</label>
+            <input value={lat} onChange={e => setLat(e.target.value)} type="number" step="0.000001"
+              data-testid="edit-coords-lat"
+              className="w-full px-3 py-1.5 text-sm border border-ink-200 rounded-md focus:outline-none focus:ring-2 ring-accent" />
+          </div>
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Longitude</label>
+            <input value={lng} onChange={e => setLng(e.target.value)} type="number" step="0.000001"
+              data-testid="edit-coords-lng"
+              className="w-full px-3 py-1.5 text-sm border border-ink-200 rounded-md focus:outline-none focus:ring-2 ring-accent" />
+          </div>
+        </div>
+        {error && <div className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-md p-2">{error}</div>}
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="ghost" type="button" onClick={onClose}>Cancel</Button>
+          <Button variant="accent" type="submit" icon="check">Save coordinates</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+Object.assign(window, {
+  parseCoords,
+  SchoolMapPreview, ProjectMapPreview, EditCoordsModal,
+});
 
 </script>
 <script type="text/babel">
@@ -4758,6 +5067,18 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
           activeStage={activeFunnelStage}
           onSetStage={(i) => setActiveFunnelStage(i)} />
       )}
+
+      {/* R28 — Project Locations map. Always renders (precise pin bbox when any
+          school has lat,lng coords; region centroid otherwise; placeholder when
+          neither). The "Add coordinates" empty-state button bounces the user to
+          the schools list so they can drill into a specific school's editor. */}
+      {window.ProjectMapPreview && (
+        <window.ProjectMapPreview
+          project={project}
+          schools={(allSchools || ALL_SCHOOLS).filter(s => s.projectId === project.id)}
+          onEditExample={() => onOpenSchools && onOpenSchools(project.id)} />
+      )}
+
       {/* R25 — the per-school checkmark table was removed from Project Detail
           Overview. The single source of truth is now Schools List → Stages view.
           The 4-card category summary above stays. */}
@@ -5310,9 +5631,25 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
   const {
     schools, chats, sendChatMessage, updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     stageStatuses, setSchoolStageStatus, stageHistory, toggleSchoolStage,
-    updateSchool, validateSchool,
+    updateSchool, validateSchool, logAudit,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
   } = useStore();
+  // R28 — edit-coordinates modal (opened from the map preview's empty-state button
+  // or its "Add precise coordinates" link when the school falls back to a region
+  // centroid). Lives at PageSchoolDetail level so the modal can persist across
+  // tab switches and the school re-renders the precise marker the moment a save
+  // updates store state.
+  const [editCoordsOpen, setEditCoordsOpen] = React.useState(false);
+  const handleSaveCoords = ({ lat, lng }) => {
+    const next = `${lat}, ${lng}`;
+    updateSchool && updateSchool(school.id, { coords: next });
+    if (logAudit && currentUser) logAudit({
+      actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
+      action: 'UPDATE', entityType: 'school.coords', entityId: school.id,
+      entityLabel: school.code || school.id,
+      summary: `Updated coordinates for ${school.code || school.id} → ${next}`,
+    });
+  };
 
   const school = schools.find(s => s.id === schoolId);
   if (!school) return <div className="p-6">School not found.</div>;
@@ -5401,10 +5738,9 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
 
   const fld = (key, val) => editMode ? val : (form[key] || '—');
 
-  // Coords parsing for map preview
-  const coordsMatch = String(form.coords || '').match(/(-?\d+\.\d+)\s*[,\s]\s*(-?\d+\.\d+)/);
-  const lat = coordsMatch ? parseFloat(coordsMatch[1]) : null;
-  const lng = coordsMatch ? parseFloat(coordsMatch[2]) : null;
+  // R28 — coords parsing moved into the shared SchoolMapPreview / parseCoords
+  // helper (src/components/MapPreview.jsx). The old `lat`/`lng` locals were only
+  // used to gate the map render and are no longer needed here.
 
   return (
     <div className="p-6 grid grid-cols-12 gap-4 h-[calc(100vh-56px)]">
@@ -5485,20 +5821,12 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
                   onChange={v => updateSchoolRemark(school.id, v)} />
               </div>
 
-              {/* Mini map preview */}
-              {lat && lng && (
-                <div className="mt-2">
-                  <div className="text-[10px] uppercase tracking-wider text-ink-500 mb-1">Map preview</div>
-                  <iframe
-                    title="map"
-                    width="100%" height="220" frameBorder="0" scrolling="no"
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${lng-0.005},${lat-0.005},${lng+0.005},${lat+0.005}&layer=mapnik&marker=${lat},${lng}`}
-                    className="rounded-md border border-soft" />
-                  <a className="text-[11px] text-info underline" target="_blank" rel="noopener noreferrer"
-                     href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`}>
-                    Open in OpenStreetMap →
-                  </a>
-                </div>
+              {/* R28 — Map preview slot ALWAYS renders. SchoolMapPreview decides
+                  the branch internally: precise marker when coords parse, region
+                  centroid + "Approximate" caption when they don't, empty-state
+                  placeholder when neither. */}
+              {window.SchoolMapPreview && (
+                <window.SchoolMapPreview school={school} onEdit={() => setEditCoordsOpen(true)} />
               )}
 
               <div className="mt-2">
@@ -5610,6 +5938,15 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
             onSend={(msg) => sendChatMessage(school.id, msg)} />
         </div>
       </div>
+
+      {/* R28 — Edit coordinates modal (opened from the map preview). */}
+      {window.EditCoordsModal && (
+        <window.EditCoordsModal
+          open={editCoordsOpen}
+          school={school}
+          onClose={() => setEditCoordsOpen(false)}
+          onSave={handleSaveCoords} />
+      )}
     </div>
   );
 }
