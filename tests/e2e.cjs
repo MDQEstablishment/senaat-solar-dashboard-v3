@@ -469,12 +469,15 @@ record('R17 → R23: Project Detail Stages view surfaces all 18 stages',
 record('R17: legacy 12-stage map (Surveyed / SEC Approvals / Fix1 / Fix2 / Handed Over) removed from Stages view',
        !/const LEGACY_STAGE_MAP/.test(schoolsListR17) &&
        !/LEGACY_STAGE_MAP\.map/.test(schoolsListR17));
-record('R17 → R23: Stages view colours each stage segment by category',
-       /STAGE_CATEGORY_COLORS_\[cat\]/.test(read('components/StageChecklistTable.jsx')) &&
-       /STAGE_CATEGORY_\[key\]/.test(read('components/StageChecklistTable.jsx')));
-record('R17 → R23: Stages view renders a current-stage badge per school',
-       /Not started/.test(read('components/StageChecklistTable.jsx')) &&
-       /currentStageOf/.test(read('components/StageChecklistTable.jsx')));
+// R17 → R23 → R24: visual deliberately reverted to the classic R17 look — no
+// category-tinted header band, no current-stage pill per row, no sticky positions.
+// What we still assert is the *cell* content from R17: check + dd-MMM date for
+// done stages, em-dash otherwise, dense rows.
+record('R17 → R24: Stages view body cells render check icon + dd-MMM date for done stages',
+       /Icon name="check" size=\{14\} className="text-emerald-600" strokeWidth=\{3\}/.test(read('components/StageChecklistTable.jsx')) &&
+       /toLocaleDateString\('en-GB', \{ day: '2-digit', month: 'short' \}\)/.test(read('components/StageChecklistTable.jsx')));
+record('R17 → R24: Stages view body cells render em-dash for stages with no completedDate',
+       /<span className="text-slate-300" aria-hidden="true">—<\/span>/.test(read('components/StageChecklistTable.jsx')));
 
 // ── K5. Round 18 — shorter handover labels + Project Detail export uses 18 stages ──
 const dataJsxR18    = read('data.jsx');
@@ -632,14 +635,18 @@ const sctR20     = read('components/StageChecklistTable.jsx');
 record('R20 → R23: Schools List Stages view surfaces all 18 stages',
        /STAGE_KEYS_\.map\(\(key, i\)/.test(sctR20) &&
        /<SCT schools=\{rows\}/.test(schoolsR20));
-record('R20 → R23: Stages view renders 18 stage columns (S01-S18) in the checkmark header',
-       /S\{String\(i \+ 1\)\.padStart\(2, '0'\)\}/.test(sctR20));
-record('R20 → R23: Active row / column highlights via category colours',
-       /STAGE_CATEGORY_COLORS_\[cat\]/.test(sctR20) &&
-       /borderTop: `2px solid \$\{cc\.dot/.test(sctR20));
-record('R20 → R23: Completed stages render with check icon; empty stages with slate dot',
-       /Icon name="check-circle"/.test(sctR20) &&
-       /background: '#E2E8F0'/.test(sctR20));
+record('R20 → R24: Stages view renders 18 stage columns headered by column number + short label',
+       /\{i \+ 1\}/.test(sctR20) &&
+       /SCHOOL_STAGE_SHORT_\[i\]/.test(sctR20));
+// R24 deliberately drops category-tinted header backgrounds and the per-cell
+// category border — the client preferred the classic uniform table. We assert
+// the absence rather than the presence here.
+record('R20 → R24: classic table — no category-tinted header band on stage columns',
+       !/borderTop: `2px solid \$\{cc\.dot/.test(sctR20) &&
+       !/background: cc\.soft/.test(sctR20));
+record('R20 → R24: Completed stages render with check icon; empty stages with em-dash',
+       /Icon name="check" size=\{14\}/.test(sctR20) &&
+       /<span className="text-slate-300" aria-hidden="true">—<\/span>/.test(sctR20));
 record('R20 → R23: Clicking a stage filter narrows the table',
        /activeStage != null/.test(sctR20) &&
        /rows = rows\.filter\(s => \{[\s\S]{0,200}return st && \(st\.done \|\| st\.completedDate\)/.test(sctR20));
@@ -721,20 +728,21 @@ record('R22 #2 → R23: Project Detail Overview has per-school stage checkmark t
        /function ProjectStageChecklistTable/.test(projectR22) &&
        /const SCT = window\.StageChecklistTable/.test(projectR22) &&
        /data-testid="stage-checklist-table"/.test(sctR22));
-record('R22 #2 → R23: Stage completion checkmarks render only for stages with completedDate',
+record('R22 #2 → R24: Stage completion checkmarks render only for stages with completedDate',
        /const done = !!\(st && \(st\.completedDate \|\| st\.done\)\)/.test(sctR22) &&
-       /<Icon name="check-circle" size=\{16\} className="text-emerald-600/.test(sctR22));
-record('R22 #2 → R23: Table has sticky header row + sticky first column',
-       /position: 'sticky', top: 0, left: 0, zIndex: 3/.test(sctR22) &&
-       /position: 'sticky', left: 0, zIndex: 1/.test(sctR22));
-record('R22 #2 → R23: Search box filters school rows in the table',
-       /placeholder="Search by school name \/ ID \/ city"/.test(sctR22) &&
-       /aria-label="Search schools"/.test(sctR22) &&
-       /\(s\.nameEn \|\| ''\)\.toLowerCase\(\)\.includes\(lowered\)/.test(sctR22));
-record('R22 #2 → R23: Completed-only / In-progress-only filter toggle wired',
-       /id: 'completed',\s+label: 'Completed only'/.test(sctR22) &&
-       /id: 'in_progress',\s+label: 'In progress only'/.test(sctR22) &&
-       /statusFilter === 'completed'/.test(sctR22));
+       /<Icon name="check" size=\{14\} className="text-emerald-600"/.test(sctR22));
+// R24 deliberately drops the sticky thead + sticky first column and the
+// internal search / Completed-only / In-progress-only toolbar. The classic
+// table reads top-to-bottom and uses page-level filters above the table.
+record('R22 #2 → R24: classic table — no sticky thead, no sticky first column',
+       !/position: 'sticky', top: 0, left: 0, zIndex: 3/.test(sctR22) &&
+       !/position: 'sticky', left: 0, zIndex: 1/.test(sctR22));
+record('R22 #2 → R24: classic table — no internal search box (page-level filters drive rows)',
+       !/placeholder="Search by school name \/ ID \/ city"/.test(sctR22) &&
+       !/aria-label="Search schools"/.test(sctR22));
+record('R22 #2 → R24: classic table — no internal Completed-only / In-progress-only toggle',
+       !/id: 'completed',\s+label: 'Completed only'/.test(sctR22) &&
+       !/id: 'in_progress',\s+label: 'In progress only'/.test(sctR22));
 record('R22 #2 → R23: Legend row shows "green check = stage complete · — = not yet"',
        /stage complete/.test(sctR22) && /not yet/.test(sctR22));
 
@@ -763,8 +771,8 @@ const schoolsR23  = read('page-schools-list.jsx');
 const projectR23  = read('page-project.jsx');
 const mainR23     = read('main.jsx');
 
-record('R23: shared StageChecklistTable component exists and is window-exposed',
-       /function StageChecklistTable\(\{[\s\S]{0,300}hideInternalToolbar/.test(sctR23) &&
+record('R23 → R24: shared StageChecklistTable component exists and is window-exposed',
+       /function StageChecklistTable\(\{/.test(sctR23) &&
        /Object\.assign\(window, \{ StageChecklistTable \}\)/.test(sctR23) &&
        /import '\.\/components\/StageChecklistTable\.jsx';/.test(mainR23));
 record('R23: Schools List Stages view renders per-school checkmark table (not SchoolsStagesVertical)',
@@ -773,13 +781,12 @@ record('R23: Schools List Stages view renders per-school checkmark table (not Sc
        /<SCT schools=\{rows\} hideInternalToolbar=\{true\}/.test(schoolsR23));
 record('R23: SchoolsStagesVertical removed from page-schools-list.jsx window export',
        /Object\.assign\(window, \{ PageSchoolsList, SchoolsStagesTable \}\);/.test(schoolsR23));
-record('R23: Schools List checkmark table has sticky header + sticky first column',
-       /data-testid="stage-checklist-sticky-header"/.test(sctR23) &&
-       /position: 'sticky', top: 0, left: 0, zIndex: 3/.test(sctR23) &&
-       /position: 'sticky', left: 0, zIndex: 1/.test(sctR23));
-record('R23: Search box filters rows in Schools List Stages view',
-       /data-testid="stage-checklist-search"/.test(sctR23) &&
-       /\(s\.nameEn \|\| ''\)\.toLowerCase\(\)\.includes\(lowered\)/.test(sctR23));
+// R24 reverts the sticky thead + internal search added in R23. Assert the absence.
+record('R23 → R24: classic table — no sticky positioning anywhere in the shared component',
+       !/data-testid="stage-checklist-sticky-header"/.test(sctR23) &&
+       !/position: 'sticky'/.test(sctR23));
+record('R23 → R24: classic table — page-level filters drive rows (no internal search box)',
+       !/data-testid="stage-checklist-search"/.test(sctR23));
 record('R23: Compact view still renders simple stage pill list (Compact + Current stage column intact)',
        /Compact view/.test(schoolsR23) &&
        /SchoolsCompactTable/.test(schoolsR23));
@@ -787,11 +794,59 @@ record('R23: Project Detail still uses the shared checkmark table (no regression
        /<ProjectStageChecklistTable/.test(projectR23) &&
        /const SCT = window\.StageChecklistTable/.test(projectR23) &&
        /<SCT schools=\{schools\} activeStage=\{activeStage\}/.test(projectR23));
-record('R23: completedDate gates the green check (truthy completedDate or done flag)',
+record('R23 → R24: completedDate gates the green check (truthy completedDate or done flag)',
        /st && \(st\.completedDate \|\| st\.done\)/.test(sctR23) &&
-       /Icon name="check-circle" size=\{16\} className="text-emerald-600/.test(sctR23));
+       /Icon name="check" size=\{14\} className="text-emerald-600"/.test(sctR23));
 record('R23: legend row "green check = stage complete · — = not yet" preserved',
        /stage complete/.test(sctR23) && /not yet/.test(sctR23));
+
+// ── K12. Round 24 — restore classic R17 checkmark-table look on Schools List
+//                   + Project Detail, swap KPI strip to stage-driven metrics ───
+const sctR24      = read('components/StageChecklistTable.jsx');
+const schoolsR24  = read('page-schools-list.jsx');
+
+record('R24: classic <table> markup with border-collapse + slate-50 thead background',
+       /<table className="min-w-full text-sm border-collapse">/.test(sctR24) &&
+       /<tr className="bg-slate-50">/.test(sctR24));
+record('R24: stage column header shows just the column number (1..18), not S## prefix',
+       /\{i \+ 1\}/.test(sctR24) &&
+       !/S\{String\(i \+ 1\)\.padStart\(2, '0'\)\}\s*<\/div>\s*<div style/.test(sctR24));
+record('R24: per-stage cell renders check icon + dd-MMM date for done, em-dash for not done',
+       /Icon name="check" size=\{14\} className="text-emerald-600" strokeWidth=\{3\}/.test(sctR24) &&
+       /toLocaleDateString\('en-GB', \{ day: '2-digit', month: 'short' \}\)/.test(sctR24) &&
+       /<span className="text-slate-300" aria-hidden="true">—<\/span>/.test(sctR24));
+record('R24: rows alternate slate-50 / white with slate-100 hover',
+       /rowIdx % 2 === 0 \? 'bg-white' : 'bg-slate-50'/.test(sctR24) &&
+       /hover:bg-slate-100/.test(sctR24));
+record('R24: School column shows name (EN + AR) plus school code in font-mono',
+       /<div className="font-medium truncate"/.test(sctR24) &&
+       /<div className="text-\[10px\] text-ink-500 font-mono truncate">\{s\.id\}<\/div>/.test(sctR24));
+record('R24: City column rendered between School and stage columns',
+       /<th[\s\S]{0,200}City/.test(sctR24));
+record('R24: Remark column rendered at the end with category-tone Pill',
+       /<th[\s\S]{0,200}Remark/.test(sctR24) &&
+       /<Pill tone=\{s\.remark === 'Active'/.test(sctR24));
+record('R24: KPI strip shows Total schools / Energized / Handed over / Blocked-Excluded',
+       /label: 'Energized',\s*value: energizedCount/.test(schoolsR24) &&
+       /label: 'Handed over',\s*value: handedOverCount/.test(schoolsR24) &&
+       /label: 'Blocked \/ Excluded',\s*value: blockedExcludedCount/.test(schoolsR24));
+record('R24: ENERGIZED count is gated by STAGE_INDEX.energized completedDate',
+       /stageIdxByKey\('energized'\)/.test(schoolsR24) &&
+       /stages\[energizedIdx\] && \(s\.stages\[energizedIdx\]\.completedDate \|\| s\.stages\[energizedIdx\]\.done\)/.test(schoolsR24));
+record('R24: HANDED OVER count is gated by STAGE_INDEX.handover_client completedDate',
+       /stageIdxByKey\('handover_client'\)/.test(schoolsR24));
+record('R24: BLOCKED / EXCLUDED count comes from remark (Blocked / Access issue / Excluded)',
+       /s\.remark === 'Blocked' \|\| s\.remark === 'Access issue' \|\| s\.remark === 'Excluded'/.test(schoolsR24));
+record('R24: page-level filter dropdown is "All stages" (was "All status")',
+       /value: 'all', label: 'All stages'/.test(schoolsR24) &&
+       /SCHOOL_STAGES\.map\(\(label, i\) => \(\{ value: String\(i\), label:/.test(schoolsR24) &&
+       !/options=\{\[\{ value: 'all', label: 'All status'/.test(schoolsR24));
+record('R24: stage filter narrows rows to those with that stage marked done',
+       /const idx = Number\(stageFilter\)/.test(schoolsR24) &&
+       /st && \(st\.done \|\| st\.completedDate\)/.test(schoolsR24));
+record('R24: Project Detail Overview still uses the same shared classic table',
+       /<ProjectStageChecklistTable/.test(read('page-project.jsx')) &&
+       /const SCT = window\.StageChecklistTable/.test(read('page-project.jsx')));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

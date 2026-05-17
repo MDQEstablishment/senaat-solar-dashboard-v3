@@ -176,7 +176,10 @@ function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser
   const projSchools = React.useMemo(() => schools.filter(s => s.projectId === project.id), [schools, project.id]);
 
   const [q, setQ] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState('all');
+  // R24: page-level filter went from "All status" (school.status) to "All stages"
+  // (per-school × per-stage completion). 'all' = no narrowing; otherwise the value
+  // is a stage index 0..17 and rows must have that stage marked done.
+  const [stageFilter, setStageFilter] = React.useState('all');
   const [remarkFilter, setRemarkFilter] = React.useState('all');
   const [cityFilter, setCityFilter]     = React.useState('all');
   const [addOpen, setAddOpen]           = React.useState(false);
@@ -194,11 +197,15 @@ function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser
                     (CONTRACTORS.find(c => c.id === s.contractor) || {}).name || ''].join(' ').toLowerCase();
       if (!blob.includes(ql)) return false;
     }
-    if (statusFilter !== 'all' && s.status !== statusFilter) return false;
+    if (stageFilter !== 'all') {
+      const idx = Number(stageFilter);
+      const st = s.stages && s.stages[idx];
+      if (!(st && (st.done || st.completedDate))) return false;
+    }
     if (remarkFilter !== 'all' && s.remark !== remarkFilter) return false;
     if (cityFilter   !== 'all' && s.city !== cityFilter) return false;
     return true;
-  }), [projSchools, q, statusFilter, remarkFilter, cityFilter]);
+  }), [projSchools, q, stageFilter, remarkFilter, cityFilter]);
 
   // R18 #2: project-detail export now uses the shared 18-stage workbook builder
   // (same one as Reports tab → Export Report) so column structure stays identical
@@ -211,9 +218,23 @@ function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser
     await window.writeSchoolStagesWorkbook(built, filename, { sheetName: project.tag || 'Schools' });
   };
 
-  const completed = projSchools.filter(s => s.status === 'Completed').length;
-  const inProg    = projSchools.filter(s => s.status === 'In Progress').length;
-  const notStart  = projSchools.filter(s => s.status === 'Not Started').length;
+  // R24 — KPI strip switched from school.status counts to stage-driven metrics
+  // that match the client's screenshot.
+  //   ENERGIZED        = schools whose stages.energized (or "Energized") has a completedDate
+  //   HANDED OVER      = schools whose stages.handover_client (Client Handover) has one
+  //   BLOCKED/EXCLUDED = schools whose remark is Blocked / Access issue / Excluded
+  const stageIdxByKey = (k) => (window.STAGE_INDEX && window.STAGE_INDEX[k]) ?? -1;
+  const energizedIdx = stageIdxByKey('energized');
+  const handoverIdx  = stageIdxByKey('handover_client');
+  const energizedCount = projSchools.filter(s =>
+    energizedIdx >= 0 && s.stages && s.stages[energizedIdx] && (s.stages[energizedIdx].completedDate || s.stages[energizedIdx].done)
+  ).length;
+  const handedOverCount = projSchools.filter(s =>
+    handoverIdx >= 0 && s.stages && s.stages[handoverIdx] && (s.stages[handoverIdx].completedDate || s.stages[handoverIdx].done)
+  ).length;
+  const blockedExcludedCount = projSchools.filter(s =>
+    s.remark === 'Blocked' || s.remark === 'Access issue' || s.remark === 'Excluded'
+  ).length;
 
   return (
     <div className="p-6 space-y-4">
@@ -242,10 +263,10 @@ function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser
 
       <div className="grid grid-cols-4 gap-3">
         {[
-          { label: 'Total schools', value: projSchools.length },
-          { label: 'Completed',     value: completed,  tone: 'text-emerald-600' },
-          { label: 'In progress',   value: inProg,     tone: 'text-sky-600' },
-          { label: 'Not started',   value: notStart,   tone: 'text-ink-500' },
+          { label: 'Total schools',     value: projSchools.length },
+          { label: 'Energized',         value: energizedCount,       tone: 'text-emerald-600' },
+          { label: 'Handed over',       value: handedOverCount,      tone: 'text-sky-600' },
+          { label: 'Blocked / Excluded',value: blockedExcludedCount, tone: 'text-red-600' },
         ].map(k => (
           <Card key={k.label} padding="p-4">
             <div className="text-[11px] uppercase tracking-wider text-ink-500">{k.label}</div>
@@ -262,8 +283,11 @@ function PageSchoolsList({ project, onBack, onOpenSchool, onAddTask, currentUser
               placeholder="Search name (AR/EN), ID, meter, account, contractor, city…"
               className="pl-8 pr-3 py-1.5 text-sm rounded-md border border-ink-200 bg-white w-96 focus:outline-none focus:ring-2 ring-accent" />
           </div>
-          <Select value={statusFilter} onChange={setStatusFilter}
-            options={[{ value: 'all', label: 'All status' }, ...STATUS_VALUES.map(s => ({ value: s, label: s }))]} />
+          <Select value={stageFilter} onChange={setStageFilter}
+            options={[
+              { value: 'all', label: 'All stages' },
+              ...SCHOOL_STAGES.map((label, i) => ({ value: String(i), label: `${i + 1}. ${label}` })),
+            ]} />
           <Select value={remarkFilter} onChange={setRemarkFilter}
             options={[{ value: 'all', label: 'All remarks' }, ...REMARKS.map(r => ({ value: r, label: r }))]} />
           <Select value={cityFilter} onChange={setCityFilter}
