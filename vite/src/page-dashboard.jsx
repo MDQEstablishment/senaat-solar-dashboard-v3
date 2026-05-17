@@ -314,6 +314,36 @@ function DashBottlenecksSidebar({ bottlenecks, maxDrop }) {
   );
 }
 
+// R27 — Portfolio "School Execution Stages" widget. Used by PageVPDashboard
+// and PagePMDashboard (gated by canViewSchoolExecutionStages). Replaces the
+// older simpler StageExecutionKPIs row on those pages. Pulls stage data via the
+// existing computeDashStageData helper and renders 4 DashCategoryPanels.
+function SchoolExecutionStagesWidget({ projects, onStageClick }) {
+  const { stageData, totalS, bottleneckIdx, stagesByCat } = computeDashStageData(projects);
+  const [stageFilter, setStageFilter] = React.useState(null);
+  const handleClick = (i) => {
+    const next = stageFilter === i ? null : i;
+    setStageFilter(next);
+    if (onStageClick) onStageClick(next);
+  };
+  return (
+    <div>
+      <SectionTitle
+        icon="bar-chart-3"
+        title="School Execution Stages"
+        subtitle="Click any stage card to drill into schools at that stage."
+        action={stageFilter != null && <Button variant="ghost" size="sm" icon="x" onClick={() => handleClick(stageFilter)}>Clear filter</Button>}
+      />
+      <div className="space-y-3 mt-3">
+        <DashCategoryPanel catKey="mechanical"    stages={stagesByCat.mechanical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+        <DashCategoryPanel catKey="electrical"    stages={stagesByCat.electrical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+        <DashCategoryPanel catKey="commissioning" stages={stagesByCat.commissioning} total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+        <DashCategoryPanel catKey="handover"      stages={stagesByCat.handover}      total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+      </div>
+    </div>
+  );
+}
+
 function ProjectCard({ p, onOpen }) {
   const pm = PEOPLE.find(u => u.id === p.pmId);
   return (
@@ -545,21 +575,11 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
         </div>
       )}
 
-      {/* R19 / R16 #2: School Execution Stages — 18 cards in 4 tinted category panels */}
-      <div>
-        <SectionTitle
-          icon="bar-chart-3"
-          title="School Execution Stages"
-          subtitle="18 stages grouped by category · click any card to filter the project grid below"
-          action={stageFilter != null && <Button variant="ghost" size="sm" icon="x" onClick={() => setStageFilter(null)}>Clear filter</Button>}
-        />
-        <div className="space-y-3 mt-3">
-          <DashCategoryPanel catKey="mechanical"    stages={stagesByCat.mechanical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-          <DashCategoryPanel catKey="electrical"    stages={stagesByCat.electrical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-          <DashCategoryPanel catKey="commissioning" stages={stagesByCat.commissioning} total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-          <DashCategoryPanel catKey="handover"      stages={stagesByCat.handover}      total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-        </div>
-      </div>
+      {/* R27 — the "School Execution Stages" 4-panel widget moved off PageDashboard
+          (which is the Projects index for PM-group fallthrough roles) and onto the
+          portfolio-level dashboards (PageVPDashboard / PagePMDashboard) instead.
+          See SchoolExecutionStagesWidget below + the role gate canViewSchoolExecutionStages.
+          The Projects index now renders only the heading + project grid. */}
 
       {/* Project grid */}
       <div>
@@ -593,5 +613,5 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
 Object.assign(window, {
   PageDashboard, NewProjectModal,
   DashTransitionsChart, DashBottlenecksSidebar, DashCategoryPanel, DashStageCard,
-  computeDashStageData,
+  computeDashStageData, SchoolExecutionStagesWidget,
 });

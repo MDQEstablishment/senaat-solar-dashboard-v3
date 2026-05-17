@@ -403,8 +403,11 @@ record('R16 #3: Stage Execution KPIs render 18 cards',
        /function StageExecutionKPIs/.test(pagesR2R16) &&
        /STAGE_KEYS\.map\(\(key, idx\)/.test(pagesR2R16) &&
        /Stage Execution · all 18 stages/.test(pagesR2R16));
-record('R16 #3: VP dashboard renders StageExecutionKPIs',
-       /<StageExecutionKPIs\s+schools=\{schools \|\| ALL_SCHOOLS\}/.test(pagesR2R16));
+// R16 #3 → R27: the VP dashboard's stage-execution rollup is now rendered by
+// the SchoolExecutionStagesWidget (richer 4-panel design with the per-stage
+// cards). The intent — VP dashboard surfaces stage execution — is preserved.
+record('R16 #3 → R27: VP dashboard renders the portfolio School Execution Stages widget',
+       /canViewSchoolExecutionStages\(me\)[\s\S]{0,200}<window\.SchoolExecutionStagesWidget/.test(pagesR2R16));
 record('R16 #3: page-vp.jsx no longer renders Recent activity panel',
        !/title="Recent activity"/.test(vpJsxR16) &&
        /<StageExecutionKPIs/.test(vpJsxR16));
@@ -893,6 +896,39 @@ record('R25 #2: Project Detail still renders the 4-card category summary',
        /function ProjectStageSummaryCards/.test(projectR25));
 record('R25 #2: Project Detail keeps the Project Execution Lifecycle widget (untouched)',
        /Project Execution Lifecycle/.test(projectR25));
+
+// ── K14. Round 27 — School Execution Stages widget moves from Projects index
+//                    to portfolio dashboards (VP + Manager + Ops + Pgm) ───────
+const dataR27    = read('data.jsx');
+const dashR27    = read('page-dashboard.jsx');
+const pagesR27   = read('pages-r2.jsx');
+
+record('R27: canViewSchoolExecutionStages role gate defined + exported',
+       /const SCHOOL_EXECUTION_STAGES_ROLES = \['Manager', 'VP', 'Operations Manager', 'Program Manager'\]/.test(dataR27) &&
+       /function canViewSchoolExecutionStages/.test(dataR27) &&
+       /canViewSchoolExecutionStages, SCHOOL_EXECUTION_STAGES_ROLES/.test(dataR27));
+record('R27: SchoolExecutionStagesWidget component defined and exposed on window',
+       /function SchoolExecutionStagesWidget/.test(dashR27) &&
+       /SchoolExecutionStagesWidget,/.test(dashR27));
+record('R27: widget subtitle reads "Click any stage card to drill into schools at that stage."',
+       /Click any stage card to drill into schools at that stage\./.test(dashR27));
+record('R27: PageDashboard (Projects index for PM-group) no longer renders the 4-panel block inline',
+       !/18 stages grouped by category · click any card to filter the project grid below/.test(dashR27) &&
+       !/<DashCategoryPanel catKey="mechanical"[\s\S]{0,200}onStageClick=\{setStageFilter\}/.test(dashR27) &&
+       /Project grid/.test(dashR27));
+record('R27: PageVPDashboard mounts SchoolExecutionStagesWidget behind canViewSchoolExecutionStages gate',
+       /canViewSchoolExecutionStages\(me\)[\s\S]{0,200}<window\.SchoolExecutionStagesWidget projects=\{projects\}/.test(pagesR27));
+record('R27: PagePMDashboard mounts SchoolExecutionStagesWidget behind canViewSchoolExecutionStages gate',
+       /canViewSchoolExecutionStages\(currentUser\)[\s\S]{0,200}<window\.SchoolExecutionStagesWidget projects=\{projects\}/.test(pagesR27));
+record('R27: old <StageExecutionKPIs schools=...> call sites removed from PageVPDashboard + PagePMDashboard',
+       (pagesR27.match(/<StageExecutionKPIs schools/g) || []).length === 0);
+record('R27: widget placement is after DashStageInsights and before ExecutiveFinancialSummary on VP dashboard',
+       /<DashStageInsights projects=\{projects\} \/>[\s\S]{0,400}<window\.SchoolExecutionStagesWidget[\s\S]{0,400}<ExecutiveFinancialSummary/.test(pagesR27));
+record('R27: portfolio role list = Manager / VP / Operations Manager / Program Manager only (PM/Coord/Material excluded)',
+       /'Manager', 'VP', 'Operations Manager', 'Program Manager'/.test(dataR27) &&
+       !/Project Manager/.test(dataR27.match(/SCHOOL_EXECUTION_STAGES_ROLES = \[[^\]]+\]/)[0]) &&
+       !/Coordinator/.test(dataR27.match(/SCHOOL_EXECUTION_STAGES_ROLES = \[[^\]]+\]/)[0]) &&
+       !/Material planning/.test(dataR27.match(/SCHOOL_EXECUTION_STAGES_ROLES = \[[^\]]+\]/)[0]));
 
 // ── L. Simulated end-to-end: Anas → New Project → Add School ─────────────
 // We run a minimal pure-JS version of the addProject + validateSchool/addSchool logic

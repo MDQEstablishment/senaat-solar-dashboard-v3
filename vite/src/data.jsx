@@ -139,6 +139,13 @@ function canCreateProject(u)  { return !!u && NEW_PROJECT_USERS.indexOf(u.id) !=
 function canEscalateToVP(u)   { return !!u && ESCALATE_TO_VP_USERS.indexOf(u.id) !== -1; }
 function canViewAuditLog(u)   { return !!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1; }
 function canViewSettings(u)   { return !!u && SETTINGS_USERS.indexOf(u.id) !== -1; }
+// R27: portfolio-level roles see the richer "School Execution Stages" widget on
+// their dashboards. PM / Coordinator / Material planning don't (their workload
+// is per-project, so the 18-stage portfolio rollup is noise for them).
+const SCHOOL_EXECUTION_STAGES_ROLES = ['Manager', 'VP', 'Operations Manager', 'Program Manager'];
+function canViewSchoolExecutionStages(u) {
+  return !!u && SCHOOL_EXECUTION_STAGES_ROLES.indexOf(u.role) !== -1;
+}
 
 // Round 13 M2: single source of truth for "Schools Energized" — Round 16 looks up by
 // stage key (STAGE_INDEX.energized) rather than a hardcoded array index so future
@@ -785,6 +792,7 @@ Object.assign(window, {
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
+  canViewSchoolExecutionStages, SCHOOL_EXECUTION_STAGES_ROLES,
   countEnergized, countHandedOver, countCOCSigned, stageByKey,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,
   MATERIALS, MATERIALS_CATALOG, MATERIALS_USAGE,

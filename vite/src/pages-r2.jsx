@@ -319,9 +319,13 @@ function PageVPDashboard({ onOpenEscalation, currentUser }) {
           PageDashboard renders for non-exec views, now surfaced on the VP dashboard
           too. Both come from window.* so the data computation lives in one place. */}
       <DashStageInsights projects={projects} />
+      {/* R27: "School Execution Stages" (4 tinted category panels with the rich
+          per-stage cards) moved here from the Projects index, gated by role.
+          Replaces the older simpler StageExecutionKPIs row that lived in this slot. */}
+      {canViewSchoolExecutionStages(me) && window.SchoolExecutionStagesWidget && (
+        <window.SchoolExecutionStagesWidget projects={projects} />
+      )}
       <ExecutiveFinancialSummary finRollup={finRollup} />
-      {/* R16 #3 → R19: Stage Execution KPIs (now redesigned with tinted category panels). */}
-      <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />
       <SectionTitle icon="alert-circle" title={escalationsDirectedHeading(me)} subtitle={`${directed.length} open · click any row for full thread`} />
       {directed.length === 0
         ? <NoDirectedEscalations />
@@ -422,11 +426,15 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
       {/* R19.1: Stage transitions + Top bottlenecks pair (Manager exec view). */}
       {isExec && <DashStageInsights projects={projects} />}
 
+      {/* R27: portfolio-level "School Execution Stages" widget (between Transitions
+          and Financial summary, gated by role). Replaces the older flat 4-card
+          StageExecutionKPIs strip that previously lived after Financial summary. */}
+      {canViewSchoolExecutionStages(currentUser) && window.SchoolExecutionStagesWidget && (
+        <window.SchoolExecutionStagesWidget projects={projects} />
+      )}
+
       {/* Exec: Financial summary card */}
       {isExec && <ExecutiveFinancialSummary finRollup={finRollup} />}
-
-      {/* R16 #3: Stage Execution KPIs replace the prior "Recent activity" panel on Manager/PgmMgr dashboards. */}
-      {isExec && <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />}
 
       {/* R16 #4: Top escalations now filter to items directed at the current user only. */}
       <SectionTitle icon="alert-circle"

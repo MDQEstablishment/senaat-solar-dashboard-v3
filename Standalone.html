@@ -662,6 +662,13 @@ function canCreateProject(u)  { return !!u && NEW_PROJECT_USERS.indexOf(u.id) !=
 function canEscalateToVP(u)   { return !!u && ESCALATE_TO_VP_USERS.indexOf(u.id) !== -1; }
 function canViewAuditLog(u)   { return !!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1; }
 function canViewSettings(u)   { return !!u && SETTINGS_USERS.indexOf(u.id) !== -1; }
+// R27: portfolio-level roles see the richer "School Execution Stages" widget on
+// their dashboards. PM / Coordinator / Material planning don't (their workload
+// is per-project, so the 18-stage portfolio rollup is noise for them).
+const SCHOOL_EXECUTION_STAGES_ROLES = ['Manager', 'VP', 'Operations Manager', 'Program Manager'];
+function canViewSchoolExecutionStages(u) {
+  return !!u && SCHOOL_EXECUTION_STAGES_ROLES.indexOf(u.role) !== -1;
+}
 
 // Round 13 M2: single source of truth for "Schools Energized" — Round 16 looks up by
 // stage key (STAGE_INDEX.energized) rather than a hardcoded array index so future
@@ -1308,6 +1315,7 @@ Object.assign(window, {
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
+  canViewSchoolExecutionStages, SCHOOL_EXECUTION_STAGES_ROLES,
   countEnergized, countHandedOver, countCOCSigned, stageByKey,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,
   MATERIALS, MATERIALS_CATALOG, MATERIALS_USAGE,
@@ -4073,6 +4081,36 @@ function DashBottlenecksSidebar({ bottlenecks, maxDrop }) {
   );
 }
 
+// R27 — Portfolio "School Execution Stages" widget. Used by PageVPDashboard
+// and PagePMDashboard (gated by canViewSchoolExecutionStages). Replaces the
+// older simpler StageExecutionKPIs row on those pages. Pulls stage data via the
+// existing computeDashStageData helper and renders 4 DashCategoryPanels.
+function SchoolExecutionStagesWidget({ projects, onStageClick }) {
+  const { stageData, totalS, bottleneckIdx, stagesByCat } = computeDashStageData(projects);
+  const [stageFilter, setStageFilter] = React.useState(null);
+  const handleClick = (i) => {
+    const next = stageFilter === i ? null : i;
+    setStageFilter(next);
+    if (onStageClick) onStageClick(next);
+  };
+  return (
+    <div>
+      <SectionTitle
+        icon="bar-chart-3"
+        title="School Execution Stages"
+        subtitle="Click any stage card to drill into schools at that stage."
+        action={stageFilter != null && <Button variant="ghost" size="sm" icon="x" onClick={() => handleClick(stageFilter)}>Clear filter</Button>}
+      />
+      <div className="space-y-3 mt-3">
+        <DashCategoryPanel catKey="mechanical"    stages={stagesByCat.mechanical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+        <DashCategoryPanel catKey="electrical"    stages={stagesByCat.electrical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+        <DashCategoryPanel catKey="commissioning" stages={stagesByCat.commissioning} total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+        <DashCategoryPanel catKey="handover"      stages={stagesByCat.handover}      total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={handleClick} />
+      </div>
+    </div>
+  );
+}
+
 function ProjectCard({ p, onOpen }) {
   const pm = PEOPLE.find(u => u.id === p.pmId);
   return (
@@ -4304,21 +4342,11 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
         </div>
       )}
 
-      {/* R19 / R16 #2: School Execution Stages — 18 cards in 4 tinted category panels */}
-      <div>
-        <SectionTitle
-          icon="bar-chart-3"
-          title="School Execution Stages"
-          subtitle="18 stages grouped by category · click any card to filter the project grid below"
-          action={stageFilter != null && <Button variant="ghost" size="sm" icon="x" onClick={() => setStageFilter(null)}>Clear filter</Button>}
-        />
-        <div className="space-y-3 mt-3">
-          <DashCategoryPanel catKey="mechanical"    stages={stagesByCat.mechanical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-          <DashCategoryPanel catKey="electrical"    stages={stagesByCat.electrical}    total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-          <DashCategoryPanel catKey="commissioning" stages={stagesByCat.commissioning} total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-          <DashCategoryPanel catKey="handover"      stages={stagesByCat.handover}      total={totalS} bottleneckIdx={bottleneckIdx} activeStage={stageFilter} onStageClick={setStageFilter} />
-        </div>
-      </div>
+      {/* R27 — the "School Execution Stages" 4-panel widget moved off PageDashboard
+          (which is the Projects index for PM-group fallthrough roles) and onto the
+          portfolio-level dashboards (PageVPDashboard / PagePMDashboard) instead.
+          See SchoolExecutionStagesWidget below + the role gate canViewSchoolExecutionStages.
+          The Projects index now renders only the heading + project grid. */}
 
       {/* Project grid */}
       <div>
@@ -4352,7 +4380,7 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
 Object.assign(window, {
   PageDashboard, NewProjectModal,
   DashTransitionsChart, DashBottlenecksSidebar, DashCategoryPanel, DashStageCard,
-  computeDashStageData,
+  computeDashStageData, SchoolExecutionStagesWidget,
 });
 
 </script>
@@ -8768,9 +8796,13 @@ function PageVPDashboard({ onOpenEscalation, currentUser }) {
           PageDashboard renders for non-exec views, now surfaced on the VP dashboard
           too. Both come from window.* so the data computation lives in one place. */}
       <DashStageInsights projects={projects} />
+      {/* R27: "School Execution Stages" (4 tinted category panels with the rich
+          per-stage cards) moved here from the Projects index, gated by role.
+          Replaces the older simpler StageExecutionKPIs row that lived in this slot. */}
+      {canViewSchoolExecutionStages(me) && window.SchoolExecutionStagesWidget && (
+        <window.SchoolExecutionStagesWidget projects={projects} />
+      )}
       <ExecutiveFinancialSummary finRollup={finRollup} />
-      {/* R16 #3 → R19: Stage Execution KPIs (now redesigned with tinted category panels). */}
-      <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />
       <SectionTitle icon="alert-circle" title={escalationsDirectedHeading(me)} subtitle={`${directed.length} open · click any row for full thread`} />
       {directed.length === 0
         ? <NoDirectedEscalations />
@@ -8871,11 +8903,15 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
       {/* R19.1: Stage transitions + Top bottlenecks pair (Manager exec view). */}
       {isExec && <DashStageInsights projects={projects} />}
 
+      {/* R27: portfolio-level "School Execution Stages" widget (between Transitions
+          and Financial summary, gated by role). Replaces the older flat 4-card
+          StageExecutionKPIs strip that previously lived after Financial summary. */}
+      {canViewSchoolExecutionStages(currentUser) && window.SchoolExecutionStagesWidget && (
+        <window.SchoolExecutionStagesWidget projects={projects} />
+      )}
+
       {/* Exec: Financial summary card */}
       {isExec && <ExecutiveFinancialSummary finRollup={finRollup} />}
-
-      {/* R16 #3: Stage Execution KPIs replace the prior "Recent activity" panel on Manager/PgmMgr dashboards. */}
-      {isExec && <StageExecutionKPIs schools={schools || ALL_SCHOOLS} />}
 
       {/* R16 #4: Top escalations now filter to items directed at the current user only. */}
       <SectionTitle icon="alert-circle"
