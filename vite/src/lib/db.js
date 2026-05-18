@@ -87,11 +87,311 @@ export function bgUpdate(table, id, patch, label = table) {
 export function bgDelete(table, id, label = table) {
   bg(() => supabase.from(table).delete().eq('id', id), `delete ${label}`);
 }
+// Convenience: delete by composite WHERE (used for photos table — no string PK).
+export function bgDeleteWhere(table, where, label = table) {
+  bg(() => {
+    let q = supabase.from(table).delete();
+    for (const [col, val] of Object.entries(where)) q = q.eq(col, val);
+    return q;
+  }, `delete ${label}`);
+}
 // Convenience: upsert (for app_settings).
 export function bgUpsert(table, row, label = table) {
   bg(() => supabase.from(table).upsert(row), `upsert ${label}`);
 }
 
+// ── Translation helpers (in-memory row → DB row) ───────────────────────────
+// Each helper picks ONLY the columns that exist in the live R30 schema and
+// applies the necessary renames/enum conversions. Unknown patch keys are
+// silently dropped (the in-memory store may carry extra UI-only state).
+
+const PROJECT_STATUS_ENUM = {
+  'On Track':'on_track','At Risk':'at_risk','Delayed':'delayed',
+  'Complete':'completed','Completed':'completed','On Hold':'on_hold',
+};
+const TASK_STATUS_ENUM = {
+  'Open':'todo','To Do':'todo','Todo':'todo',
+  'In Progress':'in_progress','Blocked':'blocked','Done':'done',
+};
+const ESC_STATUS_ENUM = {
+  'Open':'open','In Progress':'in_progress','Resolved':'resolved','Closed':'closed',
+};
+const URGENCY_ENUM = {
+  'Low':'low','Medium':'medium','High':'high','Critical':'critical',
+};
+const DN_STATUS_ENUM = {
+  'draft':'draft','received':'received','disputed':'disputed',
+  'verified':'verified','rejected':'disputed',
+};
+const SCHOOL_REMARK_ENUM = {
+  'On Schedule':'active','Ahead':'active','Active':'active',
+  'Behind':'delayed','Blocked':'blocked','In Progress':'active',
+};
+const SCHOOL_REMARK_ENUM_DIRECT = {
+  // allow callers to pass already-canonical values
+  'active':'active','access_issue':'access_issue','delayed':'delayed','blocked':'blocked','excluded':'excluded',
+};
+function mapEnum(value, table, fallback) {
+  if (value == null) return fallback;
+  if (table[value]) return table[value];
+  return fallback;
+}
+
+// Coords: legacy stores raw strings like "26.37 N, 49.99 E" or "26.37,49.99".
+// Live schema expects "lat,lng" decimal text or NULL.
+function normalizeCoords(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const cleaned = s.replace(/[NSEWnsew]/g, '').replace(/\s+/g, ' ').trim();
+  const parts = cleaned.split(/[\s,]+/).filter(Boolean);
+  if (parts.length !== 2) return null;
+  const lat = parseFloat(parts[0]);
+  const lng = parseFloat(parts[1]);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return `${lat},${lng}`;
+}
+function levelGenderConcat(level, gender) {
+  const l = (level || '').trim(), g = (gender || '').trim();
+  if (l && g) return `${l} / ${g}`;
+  return l || g || null;
+}
+
+export function toDbProject(p) {
+  return {
+    id: p.id,
+    name: p.name || 'Untitled program',
+    region: p.region || '',
+    city: p.city || null,
+    contract_value: Number(p.value) || 0,
+    currency: 'SAR',
+    start_date: p.start || null,
+    target_date: p.target || null,
+    schools_count: p.sites || 0,
+    assigned_pm_id: userUuid(p.pmId),
+    project_type: 'school',
+    status: mapEnum(p.status, PROJECT_STATUS_ENUM, 'on_track'),
+    overall_progress: Number(p.progress) || 0,
+  };
+}
+export function toDbProjectPatch(patch) {
+  const out = {};
+  if ('name' in patch)     out.name = patch.name;
+  if ('region' in patch)   out.region = patch.region || '';
+  if ('city' in patch)     out.city = patch.city || null;
+  if ('value' in patch)    out.contract_value = Number(patch.value) || 0;
+  if ('start' in patch)    out.start_date = patch.start || null;
+  if ('target' in patch)   out.target_date = patch.target || null;
+  if ('sites' in patch)    out.schools_count = patch.sites || 0;
+  if ('pmId' in patch)     out.assigned_pm_id = userUuid(patch.pmId);
+  if ('status' in patch)   out.status = mapEnum(patch.status, PROJECT_STATUS_ENUM, 'on_track');
+  if ('progress' in patch) out.overall_progress = Number(patch.progress) || 0;
+  return out;
+}
+
+export function toDbProfile(u) {
+  const regions = Array.isArray(u.region) ? u.region : (u.region ? [u.region] : []);
+  return {
+    id: userUuid(u.id),
+    full_name: u.name,
+    email: u.email,
+    role: ROLE_TO_ENUM[u.role] || null,
+    mobile: u.mobile || null,
+    default_regions: regions,
+    archived: !!u.archived,
+  };
+}
+export function toDbProfilePatch(patch) {
+  const out = {};
+  if ('name' in patch)     out.full_name = patch.name;
+  if ('email' in patch)    out.email = patch.email;
+  if ('role' in patch)     out.role = ROLE_TO_ENUM[patch.role] || null;
+  if ('mobile' in patch)   out.mobile = patch.mobile || null;
+  if ('region' in patch)   out.default_regions = Array.isArray(patch.region) ? patch.region : (patch.region ? [patch.region] : []);
+  if ('archived' in patch) out.archived = !!patch.archived;
+  return out;
+}
+
+export function toDbTask(t) {
+  return {
+    id: t.id,
+    title: t.title || 'Untitled task',
+    description: t.description || '',
+    project_id: t.projectId || null,
+    school_id: t.schoolId || null,
+    assigned_to_id: userUuid(t.assigneeId),
+    created_by_id: userUuid(t.createdById),
+    status: mapEnum(t.status, TASK_STATUS_ENUM, 'todo'),
+    due_date: t.due || null,
+    created_at: t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
+  };
+}
+export function toDbTaskPatch(patch) {
+  const out = {};
+  if ('title' in patch)       out.title = patch.title;
+  if ('description' in patch) out.description = patch.description || '';
+  if ('projectId' in patch)   out.project_id = patch.projectId || null;
+  if ('schoolId' in patch)    out.school_id = patch.schoolId || null;
+  if ('assigneeId' in patch)  out.assigned_to_id = userUuid(patch.assigneeId);
+  if ('status' in patch)      out.status = mapEnum(patch.status, TASK_STATUS_ENUM, 'todo');
+  if ('due' in patch)         out.due_date = patch.due || null;
+  if (patch.status === 'Done' && !('completed_at' in out)) out.completed_at = new Date().toISOString();
+  return out;
+}
+
+export function toDbSchool(s) {
+  return {
+    id: s.id,
+    project_id: s.projectId,
+    name_en: s.nameEn || null,
+    name_ar: s.nameAr || null,
+    city: s.city || null,
+    region: s.region || null,
+    level_gender: levelGenderConcat(s.level, s.gender),
+    sec_meter: s.meter || null,
+    account_no: s.account || null,
+    contractor_name: s.contractor || null,
+    coords: normalizeCoords(s.coords),
+    remark: mapEnum(s.remark || s.status, { ...SCHOOL_REMARK_ENUM_DIRECT, ...SCHOOL_REMARK_ENUM }, 'active'),
+    stages: s.stages || {},
+  };
+}
+export function toDbSchoolPatch(patch) {
+  const out = {};
+  if ('projectId' in patch)   out.project_id = patch.projectId;
+  if ('nameEn' in patch)      out.name_en = patch.nameEn || null;
+  if ('nameAr' in patch)      out.name_ar = patch.nameAr || null;
+  if ('city' in patch)        out.city = patch.city || null;
+  if ('region' in patch)      out.region = patch.region || null;
+  if ('level' in patch || 'gender' in patch) out.level_gender = levelGenderConcat(patch.level, patch.gender);
+  if ('meter' in patch)       out.sec_meter = patch.meter || null;
+  if ('account' in patch)     out.account_no = patch.account || null;
+  if ('contractor' in patch)  out.contractor_name = patch.contractor || null;
+  if ('coords' in patch)      out.coords = normalizeCoords(patch.coords);
+  if ('remark' in patch)      out.remark = mapEnum(patch.remark, { ...SCHOOL_REMARK_ENUM_DIRECT, ...SCHOOL_REMARK_ENUM }, 'active');
+  if ('stages' in patch)      out.stages = patch.stages || {};
+  return out;
+}
+
+export function toDbContractor(c) {
+  const regions = c.region ? [c.region] : [];
+  const scores = [c.schedule, c.quality, c.hse, c.docs].filter(v => typeof v === 'number');
+  const kpiScore = scores.length ? Math.round((scores.reduce((a,b)=>a+b,0) / scores.length) * 10) / 10 : 0;
+  return {
+    id: c.id,
+    company_name: c.name,
+    category: c.category || null,
+    cr_number: c.cr || null,
+    license_number: c.license || null,
+    contact_person: c.contact || null,
+    phone: c.phone || null,
+    email: c.email || null,
+    default_regions: regions,
+    kpi_score: kpiScore,
+    archived: !!c.archived,
+  };
+}
+export function toDbContractorPatch(patch) {
+  const out = {};
+  if ('name' in patch)     out.company_name = patch.name;
+  if ('category' in patch) out.category = patch.category || null;
+  if ('cr' in patch)       out.cr_number = patch.cr || null;
+  if ('license' in patch)  out.license_number = patch.license || null;
+  if ('contact' in patch)  out.contact_person = patch.contact || null;
+  if ('phone' in patch)    out.phone = patch.phone || null;
+  if ('email' in patch)    out.email = patch.email || null;
+  if ('region' in patch)   out.default_regions = patch.region ? [patch.region] : [];
+  if ('archived' in patch) out.archived = !!patch.archived;
+  return out;
+}
+
+export function toDbDeliveryNote(n) {
+  return {
+    id: n.id,
+    project_id: n.projectId || null,
+    school_id: n.schoolId || null,
+    stage_key: n.stageKey || null,
+    delivery_date: n.deliveryDate || null,
+    supplier: n.supplier || null,
+    contractor: n.contractor || null,
+    received_by: n.receivedBy || null,
+    signature_path: n.signatureDataUrl || n.signaturePath || null,
+    notes: n.notes || null,
+    status: mapEnum(n.status, DN_STATUS_ENUM, 'draft'),
+    created_by_id: userUuid(n.createdBy),
+    created_at: n.createdAt ? new Date(n.createdAt).toISOString() : new Date().toISOString(),
+  };
+}
+export function toDbDeliveryNoteItems(noteId, items) {
+  return (items || []).map((it, idx) => ({
+    delivery_note_id: noteId,
+    description: it.description || null,
+    quantity: (it.quantity == null || it.quantity === '') ? null : Number(it.quantity),
+    unit: it.unit || null,
+    position: idx,
+  }));
+}
+export function toDbDeliveryNotePatch(patch) {
+  const out = { updated_at: new Date().toISOString() };
+  if ('projectId' in patch)    out.project_id = patch.projectId || null;
+  if ('schoolId' in patch)     out.school_id = patch.schoolId || null;
+  if ('stageKey' in patch)     out.stage_key = patch.stageKey || null;
+  if ('deliveryDate' in patch) out.delivery_date = patch.deliveryDate || null;
+  if ('supplier' in patch)     out.supplier = patch.supplier || null;
+  if ('contractor' in patch)   out.contractor = patch.contractor || null;
+  if ('receivedBy' in patch)   out.received_by = patch.receivedBy || null;
+  if ('signatureDataUrl' in patch) out.signature_path = patch.signatureDataUrl || null;
+  if ('notes' in patch)        out.notes = patch.notes || null;
+  if ('status' in patch)       out.status = mapEnum(patch.status, DN_STATUS_ENUM, 'draft');
+  return out;
+}
+
+export function toDbEscalation(e) {
+  return {
+    id: e.id,
+    title: e.title || '',
+    description: e.reason || e.description || null,
+    project_id: e.projectId || null,
+    school_id: e.schoolId || null,
+    status: mapEnum(e.status, ESC_STATUS_ENUM, 'open'),
+    urgency: mapEnum(e.urgency, URGENCY_ENUM, 'medium'),
+    raised_by_id: userUuid(e.fromUserId),
+    raised_to_role: ROLE_TO_ENUM[e.toRole] || null,
+    currently_with_id: userUuid(e.currentlyWith || e.toUserId),
+    assigned_to_id: userUuid(e.currentlyWith || e.toUserId),
+    days_open: e.daysOpen || 0,
+    created_at: e.opened ? new Date(e.opened).toISOString() : new Date().toISOString(),
+    resolved_at: e.resolvedDate ? new Date(e.resolvedDate).toISOString() : null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export function toDbAudit(entry) {
+  return {
+    entity_type: entry.entityType || null,
+    entity_id: entry.entityId || null,
+    action: entry.action || null,
+    user_id: userUuid(entry.actorId),
+    user_name: entry.actorName || null,
+    user_role: ROLE_TO_ENUM[entry.actorRole] || entry.actorRole || null,
+    payload: { before: entry.before ?? null, after: entry.after ?? null, entityLabel: entry.entityLabel ?? null },
+    summary: entry.summary || null,
+    created_at: entry.timestamp ? new Date(entry.timestamp).toISOString() : new Date().toISOString(),
+  };
+}
+
 if (typeof window !== 'undefined') {
-  Object.assign(window, { USER_UUID, userUuid, legacyUserId, ROLE_TO_ENUM, ENUM_TO_ROLE, bg, bgInsert, bgUpdate, bgDelete, bgUpsert });
+  Object.assign(window, {
+    USER_UUID, userUuid, legacyUserId, ROLE_TO_ENUM, ENUM_TO_ROLE,
+    bg, bgInsert, bgUpdate, bgDelete, bgDeleteWhere, bgUpsert,
+    toDbProject, toDbProjectPatch,
+    toDbProfile, toDbProfilePatch,
+    toDbTask, toDbTaskPatch,
+    toDbSchool, toDbSchoolPatch,
+    toDbContractor, toDbContractorPatch,
+    toDbDeliveryNote, toDbDeliveryNoteItems, toDbDeliveryNotePatch,
+    toDbEscalation,
+    toDbAudit,
+  });
 }

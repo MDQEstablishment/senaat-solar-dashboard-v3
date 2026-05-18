@@ -47,7 +47,37 @@ function AppInner() {
       if (currentUser) sessionStorage.setItem('zamil_demo_user', JSON.stringify({ id: currentUser.id }));
       else sessionStorage.removeItem('zamil_demo_user');
     } catch {}
+    // R30.1 — expose currentUser to non-React code (mutators use this for
+    // photos.uploaded_by_id and any other audit-attribution needs).
+    if (typeof window !== 'undefined') window.__currentUser = currentUser;
   }, [currentUser]);
+
+  // R30.1 — Supabase auth gate. When USE_SUPABASE is on we drive the React
+  // currentUser from supabase.auth state. Demo mode (?dev=1) bypasses this.
+  React.useEffect(() => {
+    if (typeof window === 'undefined' || !window.USE_SUPABASE || !window.supabase) return;
+    const resolvePerson = (sessionUser) => {
+      if (!sessionUser || !window.PEOPLE) return null;
+      const lc = (sessionUser.email || '').toLowerCase();
+      return window.PEOPLE.find(p => (p.email || '').toLowerCase() === lc) || null;
+    };
+    // 1) Hydrate existing session on mount.
+    window.supabase.auth.getSession().then(({ data }) => {
+      const u = data?.session?.user;
+      if (!u) return;
+      const person = resolvePerson(u);
+      if (person) setCurrentUser(person);
+    });
+    // 2) Subscribe to future auth changes.
+    const { data: sub } = window.supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') { setCurrentUser(null); return; }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+        const person = resolvePerson(session?.user);
+        if (person) setCurrentUser(person);
+      }
+    });
+    return () => { try { sub?.subscription?.unsubscribe(); } catch {} };
+  }, []);
 
   // H3: URL hash sync (cheap router — back/forward navigates between pages).
   // We use hash routing because the app uses internal state, not real <Route>s.
@@ -108,6 +138,9 @@ function AppInner() {
       action: 'LOGOUT', entityType: 'session', entityId: currentUser.id, entityLabel: currentUser.name,
       summary: `${currentUser.name} signed out`,
     });
+    if (typeof window !== 'undefined' && window.USE_SUPABASE && window.supabase) {
+      try { window.supabase.auth.signOut(); } catch {}
+    }
     setCurrentUser(null);
     setPage('home');
   };

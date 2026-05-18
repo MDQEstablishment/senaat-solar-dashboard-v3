@@ -3,6 +3,15 @@ import React from 'react';
 // Recycle Bin REMOVED (hard-delete with confirmation). Site Engineer removed from targets.
 
 function useStoreR2(base) {
+  // R30.1 — single shared helper for app_settings key/value upserts.
+  const __bgSetting = (key, value, actor) => {
+    if (!window.bgUpsert) return;
+    window.bgUpsert('app_settings', {
+      key, value,
+      updated_by: window.userUuid ? window.userUuid(actor?.id) : null,
+      updated_at: new Date().toISOString(),
+    }, key);
+  };
   const [escalations, setEscalations]       = React.useState(() => ESCALATIONS_DEFAULT);
   const [stageStatuses, setStageStatuses]   = React.useState(() => STAGE_STATUSES_DEFAULT);
   const [lifecycleStages, setLifecycleStages] = React.useState(() => LIFECYCLE_STAGES_DEFAULT);
@@ -123,14 +132,57 @@ function useStoreR2(base) {
   const [schoolStagePhotos, setSchoolStagePhotos] = React.useState(() => ({}));
   const [deliveryNotes, setDeliveryNotes]         = React.useState(() => (typeof DELIVERY_NOTES_SEED !== 'undefined' ? DELIVERY_NOTES_SEED : []));
 
+  // Photo persistence helper — writes/removes rows in the `photos` table to mirror
+  // the local list. Diff is by storage_path (each upload to imageStorage produces
+  // a unique path). uploaded_by_id is sourced from window.__currentUser (set by
+  // app.jsx); falls back to NULL when no session.
+  const __syncPhotos = (oldList, newList, baseRow) => {
+    if (!window.bgInsert || !window.bgDeleteWhere) return;
+    const oldPaths = new Set((oldList || []).map(p => p.path));
+    const newPaths = new Set((newList || []).map(p => p.path));
+    const uploaderUuid = window.userUuid ? window.userUuid(window.__currentUser?.id) : null;
+    for (const p of (newList || [])) {
+      if (!oldPaths.has(p.path)) {
+        window.bgInsert('photos', {
+          kind: baseRow.kind,
+          project_id: baseRow.project_id || null,
+          school_id: baseRow.school_id || null,
+          stage_key: baseRow.stage_key || null,
+          delivery_note_id: baseRow.delivery_note_id || null,
+          storage_path: p.path,
+          bytes: p.bytes || null,
+          width: p.width || null,
+          height: p.height || null,
+          uploaded_by_id: uploaderUuid,
+        }, 'photo');
+      }
+    }
+    for (const p of (oldList || [])) {
+      if (!newPaths.has(p.path)) {
+        window.bgDeleteWhere('photos', { storage_path: p.path }, 'photo');
+      }
+    }
+  };
   const setProjectCoverFor = (projectId, list) => {
-    setProjectCover(m => ({ ...m, [projectId]: list && list[0] ? list[0] : null }));
+    setProjectCover(m => {
+      const oldCover = m[projectId];
+      const newCover = (list && list[0]) || null;
+      __syncPhotos(oldCover ? [oldCover] : [], newCover ? [newCover] : [], { kind: 'project_cover', project_id: projectId });
+      return { ...m, [projectId]: newCover };
+    });
   };
   const setProjectGalleryFor = (projectId, list) => {
-    setProjectGallery(m => ({ ...m, [projectId]: list || [] }));
+    setProjectGallery(m => {
+      __syncPhotos(m[projectId] || [], list || [], { kind: 'project_gallery', project_id: projectId });
+      return { ...m, [projectId]: list || [] };
+    });
   };
   const setSchoolStagePhotosFor = (schoolId, stageKey, list) => {
-    setSchoolStagePhotos(m => ({ ...m, [`${schoolId}|${stageKey}`]: list || [] }));
+    setSchoolStagePhotos(m => {
+      const key = `${schoolId}|${stageKey}`;
+      __syncPhotos(m[key] || [], list || [], { kind: 'school_stage', school_id: schoolId, stage_key: stageKey });
+      return { ...m, [key]: list || [] };
+    });
   };
   const getSchoolStagePhotos = (schoolId, stageKey) => {
     return schoolStagePhotos[`${schoolId}|${stageKey}`] || [];
@@ -157,6 +209,11 @@ function useStoreR2(base) {
       createdBy:  currentUser?.id || null,
     };
     setDeliveryNotes(ns => [note, ...ns]);
+    if (window.bgInsert) {
+      window.bgInsert('delivery_notes', window.toDbDeliveryNote(note), 'delivery note');
+      const itemRows = window.toDbDeliveryNoteItems(id, note.items);
+      if (itemRows.length) window.bgInsert('delivery_note_items', itemRows, 'delivery note items');
+    }
     setTimeout(() => {
       if (typeof logAudit === 'function') logAudit({
         actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
@@ -169,6 +226,7 @@ function useStoreR2(base) {
   };
   const updateDeliveryNote = (id, patch, currentUser) => {
     setDeliveryNotes(ns => ns.map(n => n.id === id ? { ...n, ...patch, updatedAt: new Date().toISOString() } : n));
+    if (window.bgUpdate) window.bgUpdate('delivery_notes', id, window.toDbDeliveryNotePatch(patch), 'delivery note');
     setTimeout(() => {
       if (typeof logAudit === 'function') logAudit({
         actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
@@ -179,6 +237,7 @@ function useStoreR2(base) {
   };
   const deleteDeliveryNote = (id, currentUser) => {
     setDeliveryNotes(ns => ns.filter(n => n.id !== id));
+    if (window.bgDelete) window.bgDelete('delivery_notes', id, 'delivery note');
     setTimeout(() => {
       if (typeof logAudit === 'function') logAudit({
         actorId: currentUser?.id, actorName: currentUser?.name, actorRole: currentUser?.role,
@@ -210,6 +269,7 @@ function useStoreR2(base) {
     if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS)) {
       window.CONTRACTORS.unshift(c);
     }
+    if (window.bgInsert) window.bgInsert('contractors', window.toDbContractor(c), 'contractor');
     if (currentUser && typeof logAudit === 'function') {
       setTimeout(() => logAudit({
         actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
@@ -225,6 +285,7 @@ function useStoreR2(base) {
       const i = window.CONTRACTORS.findIndex(c => c.id === id);
       if (i >= 0) window.CONTRACTORS[i] = { ...window.CONTRACTORS[i], ...patch };
     }
+    if (window.bgUpdate) window.bgUpdate('contractors', id, window.toDbContractorPatch(patch), 'contractor');
     if (currentUser && typeof logAudit === 'function') {
       setTimeout(() => logAudit({
         actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
@@ -240,6 +301,7 @@ function useStoreR2(base) {
       const i = window.CONTRACTORS.findIndex(c => c.id === id);
       if (i >= 0) window.CONTRACTORS.splice(i, 1);
     }
+    if (window.bgDelete) window.bgDelete('contractors', id, 'contractor');
     if (currentUser && typeof logAudit === 'function') {
       setTimeout(() => logAudit({
         actorId: currentUser.id, actorName: currentUser.name, actorRole: currentUser.role,
@@ -265,6 +327,12 @@ function useStoreR2(base) {
     };
     setUsers(us => [u, ...us]);
     if (typeof window !== 'undefined' && Array.isArray(window.PEOPLE)) window.PEOPLE.unshift(u);
+    // Note: profiles.id is FK to auth.users.id but R30.1 has the constraint
+    // dropped operator-side (per R30.1 brief). New profile rows here have no
+    // matching auth.users until an admin creates one via Supabase Auth UI.
+    if (window.bgInsert && window.userUuid && window.userUuid(id)) {
+      window.bgInsert('profiles', window.toDbProfile(u), 'profile');
+    }
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'CREATE', entityType: 'user', entityId: id, entityLabel: u.name,
@@ -278,6 +346,9 @@ function useStoreR2(base) {
       const i = window.PEOPLE.findIndex(u => u.id === id);
       if (i >= 0) window.PEOPLE[i] = { ...window.PEOPLE[i], ...patch };
     }
+    if (window.bgUpdate && window.userUuid && window.userUuid(id)) {
+      window.bgUpdate('profiles', window.userUuid(id), window.toDbProfilePatch(patch), 'profile');
+    }
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'user', entityId: id, entityLabel: patch.name || id,
@@ -287,6 +358,9 @@ function useStoreR2(base) {
   const archiveUser = (id, actor) => {
     let target = null;
     setUsers(us => { target = us.find(u => u.id === id); return us.map(u => u.id === id ? { ...u, archived: true, active: false } : u); });
+    if (window.bgUpdate && window.userUuid && window.userUuid(id)) {
+      window.bgUpdate('profiles', window.userUuid(id), { archived: true }, 'profile archive');
+    }
     if (actor && target && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'user', entityId: id, entityLabel: target.name,
@@ -328,7 +402,9 @@ function useStoreR2(base) {
     setRolePermissions(rp => {
       before = !!(rp[role] && rp[role][feature]);
       after = !before;
-      return { ...rp, [role]: { ...(rp[role] || {}), [feature]: after } };
+      const next = { ...rp, [role]: { ...(rp[role] || {}), [feature]: after } };
+      __bgSetting('role.permissions', next, actor);
+      return next;
     });
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
@@ -338,7 +414,9 @@ function useStoreR2(base) {
     }), 0);
   };
   const resetRolePermissions = (actor) => {
-    setRolePermissions(buildDefaultPerms());
+    const next = buildDefaultPerms();
+    setRolePermissions(next);
+    __bgSetting('role.permissions', next, actor);
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'role_permission', entityId: 'all', entityLabel: 'All roles',
@@ -359,7 +437,11 @@ function useStoreR2(base) {
   };
   React.useEffect(() => { applyCssVars(themeColors); }, [themeColors]);
   const updateThemeColor = (key, value, actor) => {
-    setThemeColors(c => ({ ...c, [key]: value }));
+    setThemeColors(c => {
+      const next = { ...c, [key]: value };
+      __bgSetting('theme.colors', next, actor);
+      return next;
+    });
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'branding', entityId: 'color:' + key, entityLabel: key,
@@ -368,6 +450,7 @@ function useStoreR2(base) {
   };
   const updateThemeLogo = (dataUrl, name, actor) => {
     setThemeLogo({ dataUrl, name });
+    __bgSetting('theme.logo', { dataUrl, name }, actor);
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'branding', entityId: 'logo', entityLabel: name || 'logo',
@@ -377,6 +460,8 @@ function useStoreR2(base) {
   const resetBranding = (actor) => {
     setThemeColors({ ...DEFAULT_THEME });
     setThemeLogo(null);
+    __bgSetting('theme.colors', { ...DEFAULT_THEME }, actor);
+    __bgSetting('theme.logo', { dataUrl: null, name: null }, actor);
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'branding', entityId: 'reset', entityLabel: 'Brand reset',
@@ -398,7 +483,11 @@ function useStoreR2(base) {
   };
   const [notificationTemplates, setNotificationTemplates] = React.useState(() => ({ ...DEFAULT_TEMPLATES }));
   const updateNotificationTemplate = (eventId, patch, actor) => {
-    setNotificationTemplates(t => ({ ...t, [eventId]: { ...(t[eventId] || {}), ...patch } }));
+    setNotificationTemplates(t => {
+      const next = { ...t, [eventId]: { ...(t[eventId] || {}), ...patch } };
+      __bgSetting('notification.templates', next, actor);
+      return next;
+    });
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'notification_template', entityId: eventId, entityLabel: eventId,
@@ -417,6 +506,7 @@ function useStoreR2(base) {
       const next = [e, ...log];
       return next.length > 5000 ? next.slice(0, 5000) : next;
     });
+    if (window.bgInsert) window.bgInsert('audit_log', window.toDbAudit(e), 'audit');
     return e;
   };
 
@@ -435,6 +525,17 @@ function useStoreR2(base) {
       history: [{ who: data.fromUserId, when: today, action: 'Created', note: data.reason || ('Escalated to ' + target.toRole) }],
     };
     setEscalations(es => [e, ...es]);
+    if (window.bgInsert) {
+      window.bgInsert('escalations', window.toDbEscalation(e), 'escalation');
+      window.bgInsert('escalation_history', {
+        escalation_id: id,
+        from_user_id: window.userUuid(data.fromUserId),
+        to_user_id: null,
+        action: 'Created',
+        note: data.reason || ('Escalated to ' + target.toRole),
+        created_at: new Date().toISOString(),
+      }, 'escalation history');
+    }
     base.pushNotif({ kind: 'overdue', text: 'New escalation: ' + data.title, target: { kind: 'escalation', id } });
     return e;
   };
@@ -442,12 +543,35 @@ function useStoreR2(base) {
     setEscalations(es => es.map(e => e.id === id
       ? { ...e, history: [...e.history, { who, when: new Date().toISOString().slice(0, 10), action: 'Comment', note }] }
       : e));
+    if (window.bgInsert) window.bgInsert('escalation_history', {
+      escalation_id: id,
+      from_user_id: window.userUuid(who),
+      to_user_id: null,
+      action: 'Comment',
+      note: note || '',
+      created_at: new Date().toISOString(),
+    }, 'escalation comment');
   };
   const resolveEscalation = (id, who, note) => {
     setEscalations(es => es.map(e => e.id === id
       ? { ...e, status: 'Resolved', currentlyWith: null, resolvedDate: new Date().toISOString().slice(0, 10),
           history: [...e.history, { who, when: new Date().toISOString().slice(0, 10), action: 'Resolved', note }] }
       : e));
+    if (window.bgUpdate) window.bgUpdate('escalations', id, {
+      status: 'resolved',
+      currently_with_id: null,
+      assigned_to_id: null,
+      resolved_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }, 'escalation');
+    if (window.bgInsert) window.bgInsert('escalation_history', {
+      escalation_id: id,
+      from_user_id: window.userUuid(who),
+      to_user_id: null,
+      action: 'Resolved',
+      note: note || '',
+      created_at: new Date().toISOString(),
+    }, 'escalation resolve');
   };
   const escalateFurther = (id, fromUserId, target, note) => {
     const today = new Date().toISOString().slice(0, 10);
@@ -456,12 +580,28 @@ function useStoreR2(base) {
       chain: [...(e.chain || []), { fromUserId, toUserId: target.toUserId, toRole: target.toRole, when: today, action: 'Forwarded' }],
       history: [...e.history, { who: fromUserId, when: today, action: 'Forwarded', note: 'Forwarded to ' + target.toRole + (note ? ': ' + note : '') }],
     } : e));
+    const toUuid = window.userUuid ? window.userUuid(target.toUserId) : null;
+    if (window.bgUpdate) window.bgUpdate('escalations', id, {
+      currently_with_id: toUuid,
+      assigned_to_id: toUuid,
+      raised_to_role: window.ROLE_TO_ENUM[target.toRole] || null,
+      updated_at: new Date().toISOString(),
+    }, 'escalation forward');
+    if (window.bgInsert) window.bgInsert('escalation_history', {
+      escalation_id: id,
+      from_user_id: window.userUuid(fromUserId),
+      to_user_id: toUuid,
+      action: 'Forwarded',
+      note: 'Forwarded to ' + target.toRole + (note ? ': ' + note : ''),
+      created_at: new Date().toISOString(),
+    }, 'escalation forward history');
   };
 
   // ---- Stage flexible status ----
   // Round 10: simple two-state toggle for school stages (Done ⇄ Not Started)
   const toggleSchoolStage = (schoolId, stageIdx, currentUser) => {
     let before = 'not-started', after = 'done';
+    let nextStages = null;
     base._setSchools(ss => ss.map(s => {
       if (s.id !== schoolId) return s;
       const stages = s.stages.slice();
@@ -475,11 +615,13 @@ function useStoreR2(base) {
         date: !st.done ? new Date().toISOString() : null,
         by: currentUser ? currentUser.id : st.by,
       };
+      nextStages = stages;
       // Recompute status
       const doneCount = stages.filter(x => x.done).length;
       const newStatus = doneCount === stages.length ? 'Completed' : doneCount > 0 ? 'In Progress' : 'Not Started';
       return { ...s, stages, status: newStatus, lastUpdate: { by: currentUser?.id, when: new Date().toISOString() } };
     }));
+    if (window.bgUpdate && nextStages) window.bgUpdate('schools', schoolId, { stages: nextStages }, 'school stage toggle');
     if (currentUser) {
       const stageLabel = SCHOOL_STAGES[stageIdx] || ('Stage ' + (stageIdx + 1));
       setTimeout(() => {
@@ -614,6 +756,7 @@ function useStoreR2(base) {
       materialUsage: [],
     };
     base._setSchools(ss => [school, ...ss]);
+    if (window.bgInsert) window.bgInsert('schools', window.toDbSchool(school), 'school');
     return { ok: true, school };
   };
   const updateSchool = (id, patch) => {
@@ -626,11 +769,13 @@ function useStoreR2(base) {
       if (!v.ok) return v;
     }
     base._setSchools(ss => ss.map(s => s.id === id ? { ...s, ...patch } : s));
+    if (window.bgUpdate) window.bgUpdate('schools', id, window.toDbSchoolPatch(patch), 'school');
     return { ok: true };
   };
   const deleteSchool = (id) => {
     // Hard-delete (no recycle bin in Round 5)
     base._setSchools(ss => ss.filter(x => x.id !== id));
+    if (window.bgDelete) window.bgDelete('schools', id, 'school');
   };
 
   // ---- Materials catalog CRUD ----

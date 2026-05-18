@@ -104,6 +104,8 @@ import './data.jsx';
 import './data-r2.jsx';
 import './icons.jsx';
 import './ui.jsx';
+import './lib/supabase.js';
+import './lib/db.js';
 import './lib/image.js';
 import './lib/storage.js';
 import './components/StageCard.jsx';

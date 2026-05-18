@@ -15,7 +15,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const SRC = path.join(__dirname, 'src');
+// R30.1 — src moved under vite/ when the repo adopted the Vite layout.
+const SRC = path.join(__dirname, '..', 'vite', 'src');
 
 const results = [];
 function record(name, pass, detail) { results.push({ name, pass, detail: detail || '' }); }
@@ -1349,8 +1350,8 @@ record('R29.6: VP reaches Storage via the auditLogOnly path (sidebar Audit Log l
        _cap.aud(_users.vp) && !_cap.set(_users.vp));
 
 // GitHub remote path: vite.config base + README + built index.html all reference senaat-solar-dashboard-v3
-const _viteConfig    = fs.readFileSync(path.join(__dirname, 'vite.config.js'), 'utf8');
-const _readmeMd      = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8');
+const _viteConfig    = fs.readFileSync(path.join(__dirname, '..', 'vite', 'vite.config.js'), 'utf8');
+const _readmeMd      = fs.readFileSync(path.join(__dirname, '..', 'vite', 'README.md'), 'utf8');
 const _builtIndexPath = path.join(__dirname, '..', 'index.html');
 const _builtIndex    = fs.existsSync(_builtIndexPath) ? fs.readFileSync(_builtIndexPath, 'utf8') : '';
 record('R29.5: vite.config.js base path = /senaat-solar-dashboard-v3/',
@@ -1406,7 +1407,7 @@ record('R29.5: EditCoordsModal exposes Paste from Google Maps helper',
 
 // Image upload flow guarantees (R29 covered; matrix re-assert)
 // The 10 MB guard lives in src/lib/image.js (compressImage throws); ImageUploader surfaces it via reportError.
-const _imageLib = fs.readFileSync(path.join(__dirname, 'src', 'lib', 'image.js'), 'utf8');
+const _imageLib = fs.readFileSync(path.join(SRC, 'lib', 'image.js'), 'utf8');
 record('R29.5: compressImage rejects files over IMAGE_LIMITS.maxInputBytes (10 MB cap)',
        /file\.size > IMAGE_LIMITS\.maxInputBytes/.test(_imageLib));
 record('R29.5: ImageUploader surfaces compressImage errors via reportError → onError prop / alert fallback',
@@ -1455,6 +1456,156 @@ record('R29.6: Coordinator dashboard still does NOT render Stage Transitions',
 record('R29.6: auditLogOnly still denies access to users outside AUDIT_LOG_USERS',
        /if \(!canViewAuditLog\(currentUser\)\)/.test(settingsJsx_M) &&
        /Access denied — Audit Log is restricted\./.test(settingsJsx_M));
+
+// ── O. R30.1 Supabase wiring tests ─────────────────────────────────────────
+// The "round-trip" verification language in the R30.1 brief is realized here
+// as static wiring assertions — confirming that:
+//   (a) Sign-in path calls supabase.auth.signInWithPassword (real auth, not demo).
+//   (b) Image upload paths reach the photos table via window.bgInsert.
+//   (c) Delivery-note create path mirrors to delivery_notes + delivery_note_items.
+//   (d) EditCoordsModal → updateSchool → bgUpdate('schools', …, toDbSchoolPatch).
+// True end-to-end Supabase round-trip verification requires a live browser +
+// backend; the operator runs that out-of-band against the deployed app. These
+// static checks ensure the wiring is correct so the runtime path is sound.
+const _libDb       = fs.readFileSync(path.join(SRC, 'lib', 'db.js'), 'utf8');
+const _libSupabase = fs.readFileSync(path.join(SRC, 'lib', 'supabase.js'), 'utf8');
+const _storeJsx    = fs.readFileSync(path.join(SRC, 'store.jsx'), 'utf8');
+const _storeR2Jsx  = fs.readFileSync(path.join(SRC, 'store-r2.jsx'), 'utf8');
+const _loginJsx    = fs.readFileSync(path.join(SRC, 'page-login.jsx'), 'utf8');
+const _appJsx      = fs.readFileSync(path.join(SRC, 'app.jsx'), 'utf8');
+const _mainJsx     = fs.readFileSync(path.join(SRC, 'main.jsx'), 'utf8');
+const _buildStd    = fs.readFileSync(path.join(__dirname, '..', 'build-standalone.py'), 'utf8');
+
+// (a) Sign-in round-trip
+record('R30.1: page-login calls supabase.auth.signInWithPassword (real auth path)',
+       /supabase\.auth\.signInWithPassword\(\{ email, password \}\)/.test(_loginJsx));
+record('R30.1: page-login resolves session.user.email → PEOPLE entry',
+       /window\.PEOPLE\.find\(p => \(p\.email \|\| ''\)\.toLowerCase\(\) === lc\)/.test(_loginJsx));
+record('R30.1: page-login signs out when authenticated email has no PEOPLE match',
+       /supabase\.auth\.signOut\(\)/.test(_loginJsx) && /no profile found for/.test(_loginJsx));
+record('R30.1: page-login keeps demo dropdown ONLY when !USE_SUPABASE (?dev=1 escape hatch)',
+       /\{!useSupabase && \(/.test(_loginJsx));
+record('R30.1: app.jsx subscribes to supabase.auth.onAuthStateChange (driven by USE_SUPABASE)',
+       /window\.supabase\.auth\.onAuthStateChange/.test(_appJsx) &&
+       /window\.USE_SUPABASE && window\.supabase/.test(_appJsx));
+record('R30.1: app.jsx hydrates existing session via supabase.auth.getSession on mount',
+       /window\.supabase\.auth\.getSession\(\)/.test(_appJsx));
+record('R30.1: app.jsx handleSignOut calls supabase.auth.signOut when USE_SUPABASE',
+       /window\.supabase\.auth\.signOut\(\)/.test(_appJsx));
+record('R30.1: main.jsx imports lib/supabase.js + lib/db.js so foundation activates',
+       /import '\.\/lib\/supabase\.js';/.test(_mainJsx) &&
+       /import '\.\/lib\/db\.js';/.test(_mainJsx));
+
+// (b) Image upload round-trip — setProjectCoverFor / setProjectGalleryFor /
+//     setSchoolStagePhotosFor all diff old/new lists and bgInsert/bgDeleteWhere
+//     into the photos table.
+record('R30.1: setProjectCoverFor / setProjectGalleryFor / setSchoolStagePhotosFor diff photos via __syncPhotos',
+       /const __syncPhotos = \(oldList, newList, baseRow\) =>/.test(_storeR2Jsx) &&
+       /__syncPhotos\(oldCover \? \[oldCover\] : \[\], newCover \? \[newCover\] : \[\], \{ kind: 'project_cover'/.test(_storeR2Jsx) &&
+       /__syncPhotos\(m\[projectId\] \|\| \[\], list \|\| \[\], \{ kind: 'project_gallery'/.test(_storeR2Jsx) &&
+       /__syncPhotos\(m\[key\] \|\| \[\], list \|\| \[\], \{ kind: 'school_stage'/.test(_storeR2Jsx));
+record('R30.1: __syncPhotos inserts new rows into photos via bgInsert + storage_path key',
+       /window\.bgInsert\('photos'/.test(_storeR2Jsx) &&
+       /storage_path: p\.path/.test(_storeR2Jsx));
+record('R30.1: __syncPhotos deletes removed rows via bgDeleteWhere on storage_path',
+       /window\.bgDeleteWhere\('photos', \{ storage_path: p\.path \}/.test(_storeR2Jsx));
+record('R30.1: __syncPhotos sources uploaded_by_id from window.__currentUser via userUuid',
+       /window\.userUuid\(window\.__currentUser\?\.id\)/.test(_storeR2Jsx));
+record('R30.1: app.jsx exposes currentUser to window.__currentUser for non-React readers',
+       /window\.__currentUser = currentUser/.test(_appJsx));
+
+// (c) Delivery-note round-trip
+record('R30.1: addDeliveryNote bgInserts to delivery_notes + delivery_note_items',
+       /window\.bgInsert\('delivery_notes', window\.toDbDeliveryNote/.test(_storeR2Jsx) &&
+       /window\.bgInsert\('delivery_note_items', itemRows/.test(_storeR2Jsx));
+record('R30.1: updateDeliveryNote bgUpdates delivery_notes with toDbDeliveryNotePatch',
+       /window\.bgUpdate\('delivery_notes', id, window\.toDbDeliveryNotePatch\(patch\)/.test(_storeR2Jsx));
+record('R30.1: deleteDeliveryNote bgDeletes delivery_notes (items cascade via FK)',
+       /window\.bgDelete\('delivery_notes', id/.test(_storeR2Jsx));
+record('R30.1: toDbDeliveryNote maps signatureDataUrl → signature_path',
+       /signature_path: n\.signatureDataUrl \|\| n\.signaturePath \|\| null/.test(_libDb));
+record("R30.1: toDbDeliveryNote maps legacy 'rejected' status → 'disputed' via DN_STATUS_ENUM",
+       /'rejected':'disputed'/.test(_libDb));
+
+// (d) EditCoordsModal → updateSchool round-trip
+record('R30.1: updateSchool bgUpdates schools with toDbSchoolPatch (covers EditCoordsModal coords save)',
+       /base\._setSchools\(ss => ss\.map\(s => s\.id === id \? \{ \.\.\.s, \.\.\.patch \} : s\)\);\s*\n\s*if \(window\.bgUpdate\) window\.bgUpdate\('schools', id, window\.toDbSchoolPatch\(patch\)/.test(_storeR2Jsx));
+record('R30.1: toDbSchoolPatch normalizes coords (strips N/S/E/W, validates range, NULL on failure)',
+       /function normalizeCoords\(raw\) \{/.test(_libDb) &&
+       /replace\(\/\[NSEWnsew\]\/g/.test(_libDb) &&
+       /if \(lat < -90 \|\| lat > 90 \|\| lng < -180 \|\| lng > 180\) return null/.test(_libDb));
+
+// Mutator wiring breadth — every mutator that should reach Supabase does so.
+record('R30.1: store.jsx addProject / updateProject / deleteProject all bg the projects table',
+       /bgInsert\('projects'/.test(_storeJsx) &&
+       /bgUpdate\('projects', id/.test(_storeJsx) &&
+       /bgDelete\('projects', id/.test(_storeJsx));
+record('R30.1: store.jsx addTask / updateTask bg the tasks table; sendTaskMessage bgs task_messages',
+       /bgInsert\('tasks'/.test(_storeJsx) &&
+       /bgUpdate\('tasks', id/.test(_storeJsx) &&
+       /bgInsert\('task_messages'/.test(_storeJsx));
+record('R30.1: updateSchoolStage + updateSchoolRemark bg schools.stages / schools.remark',
+       /bgUpdate\('schools', schoolId, \{ stages: nextStages \}/.test(_storeJsx) &&
+       /bgUpdate\('schools', schoolId, window\.toDbSchoolPatch\(\{ remark \}\)/.test(_storeJsx));
+record('R30.1: addContractor / updateContractor / deleteContractor bg the contractors table',
+       /bgInsert\('contractors'/.test(_storeR2Jsx) &&
+       /bgUpdate\('contractors', id/.test(_storeR2Jsx) &&
+       /bgDelete\('contractors', id/.test(_storeR2Jsx));
+record('R30.1: addUser / updateUser / archiveUser bg the profiles table',
+       /bgInsert\('profiles'/.test(_storeR2Jsx) &&
+       /bgUpdate\('profiles', window\.userUuid\(id\)/.test(_storeR2Jsx));
+record('R30.1: addEscalation / resolveEscalation / escalateFurther bg escalations + escalation_history',
+       /bgInsert\('escalations'/.test(_storeR2Jsx) &&
+       /bgUpdate\('escalations', id/.test(_storeR2Jsx) &&
+       /bgInsert\('escalation_history'/.test(_storeR2Jsx));
+record('R30.1: toggleSchoolStage bgs schools.stages jsonb',
+       /window\.bgUpdate\('schools', schoolId, \{ stages: nextStages \}, 'school stage toggle'\)/.test(_storeR2Jsx));
+record('R30.1: addSchool / updateSchool / deleteSchool bg the schools table',
+       /window\.bgInsert\('schools', window\.toDbSchool\(school\)/.test(_storeR2Jsx) &&
+       /window\.bgUpdate\('schools', id, window\.toDbSchoolPatch\(patch\)/.test(_storeR2Jsx) &&
+       /window\.bgDelete\('schools', id, 'school'\)/.test(_storeR2Jsx));
+record('R30.1: logAudit bgs audit_log',
+       /window\.bgInsert\('audit_log', window\.toDbAudit\(e\)/.test(_storeR2Jsx));
+record('R30.1: theme / notification / role-permission settings bgUpsert app_settings',
+       /__bgSetting\('theme\.colors'/.test(_storeR2Jsx) &&
+       /__bgSetting\('theme\.logo'/.test(_storeR2Jsx) &&
+       /__bgSetting\('notification\.templates'/.test(_storeR2Jsx) &&
+       /__bgSetting\('role\.permissions'/.test(_storeR2Jsx));
+
+// Foundation health (lib/supabase.js + lib/db.js)
+record('R30.1: lib/supabase.js exports supabase + USE_SUPABASE; sets window.* for non-ESM readers',
+       /export const supabase/.test(_libSupabase) &&
+       /export const USE_SUPABASE/.test(_libSupabase) &&
+       /window\.supabase\s*=\s*supabase/.test(_libSupabase));
+record('R30.1: lib/db.js exports bg / bgInsert / bgUpdate / bgDelete / bgDeleteWhere / bgUpsert',
+       /export function bg\(/.test(_libDb) &&
+       /export function bgInsert\(/.test(_libDb) &&
+       /export function bgUpdate\(/.test(_libDb) &&
+       /export function bgDelete\(/.test(_libDb) &&
+       /export function bgDeleteWhere\(/.test(_libDb) &&
+       /export function bgUpsert\(/.test(_libDb));
+record('R30.1: lib/db.js translation helpers cover all wired tables',
+       /export function toDbProject\(/.test(_libDb) &&
+       /export function toDbProfile\(/.test(_libDb) &&
+       /export function toDbTask\(/.test(_libDb) &&
+       /export function toDbSchool\(/.test(_libDb) &&
+       /export function toDbContractor\(/.test(_libDb) &&
+       /export function toDbDeliveryNote\(/.test(_libDb) &&
+       /export function toDbEscalation\(/.test(_libDb) &&
+       /export function toDbAudit\(/.test(_libDb));
+record('R30.1: bg() respects USE_SUPABASE — silent no-op when ?dev=1 forces in-memory mode',
+       /if \(!USE_SUPABASE\) return;/.test(_libDb));
+
+// Standalone build (Item 6)
+record('R30.1: build-standalone.py injects @supabase/supabase-js v2 UMD CDN',
+       /cdn\.jsdelivr\.net\/npm\/@supabase\/supabase-js@2\/dist\/umd\/supabase\.min\.js/.test(_buildStd));
+record('R30.1: build-standalone.py injects a Supabase init block before the first text/babel',
+       /def supabase_init_block\(\)/.test(_buildStd) &&
+       /window\.supabase\.createClient/.test(_buildStd) &&
+       /first_babel = re\.search\(r'<script type="text\/babel"', tpl\)/.test(_buildStd));
+record('R30.1: build-standalone.py inlines lib/db.js (window-based supabase) into standalone',
+       /db_js = \(SRC \/ "lib" \/ "db\.js"\)\.read_text/.test(_buildStd) &&
+       /db_js\.replace\("supabase\.from\(", "window\.supabase\.from\("\)/.test(_buildStd));
 
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;

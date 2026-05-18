@@ -34,10 +34,17 @@ function StoreProvider({ children }) {
       currentStage: 0,
     };
     setProjects(ps => [...ps, proj]);
+    if (window.bgInsert) window.bgInsert('projects', window.toDbProject(proj), 'project');
     return proj;
   };
-  const updateProject = (id, patch) => setProjects(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p));
-  const deleteProject = (id) => setProjects(ps => ps.filter(p => p.id !== id));
+  const updateProject = (id, patch) => {
+    setProjects(ps => ps.map(p => p.id === id ? { ...p, ...patch } : p));
+    if (window.bgUpdate) window.bgUpdate('projects', id, window.toDbProjectPatch(patch), 'project');
+  };
+  const deleteProject = (id) => {
+    setProjects(ps => ps.filter(p => p.id !== id));
+    if (window.bgDelete) window.bgDelete('projects', id, 'project');
+  };
 
   // ----- Tasks -----
   const addTask = (t) => {
@@ -58,6 +65,7 @@ function StoreProvider({ children }) {
       messages: [],
     };
     setTasks(ts => [task, ...ts]);
+    if (window.bgInsert) window.bgInsert('tasks', window.toDbTask(task), 'task');
     // Notify assignee
     if (task.assigneeId) {
       pushNotif({
@@ -71,12 +79,21 @@ function StoreProvider({ children }) {
 
   const updateTask = (id, patch) => {
     setTasks(ts => ts.map(t => t.id === id ? { ...t, ...patch } : t));
+    if (window.bgUpdate) window.bgUpdate('tasks', id, window.toDbTaskPatch(patch), 'task');
   };
 
   const sendTaskMessage = (taskId, msg) => {
     setTasks(ts => ts.map(t => t.id === taskId
       ? { ...t, messages: [...t.messages, { id: `tm${Date.now()}`, ...msg, when: new Date().toISOString() }] }
       : t));
+    if (window.bgInsert && window.userUuid && window.userUuid(msg.userId)) {
+      window.bgInsert('task_messages', {
+        task_id: taskId,
+        author_id: window.userUuid(msg.userId),
+        body: msg.text || '',
+        created_at: new Date().toISOString(),
+      }, 'task message');
+    }
     const task = tasks.find(t => t.id === taskId);
     if (task && task.assigneeId !== msg.userId) {
       pushNotif({ kind: 'reminder', text: `Message on task: ${task.title}`, target: { kind: 'task', id: taskId } });
@@ -118,13 +135,16 @@ function StoreProvider({ children }) {
 
   // ----- Schools -----
   const updateSchoolStage = (schoolId, stageIndex, payload) => {
+    let nextStages = null;
     setSchools(ss => ss.map(s => {
       if (s.id !== schoolId) return s;
       const stages = s.stages.slice();
       stages[stageIndex] = { ...stages[stageIndex], ...payload };
+      nextStages = stages;
       const lastUpdate = { by: payload.by, when: payload.date };
       return { ...s, stages, lastUpdate };
     }));
+    if (window.bgUpdate && nextStages) window.bgUpdate('schools', schoolId, { stages: nextStages }, 'school stage');
     pushNotif({
       kind: 'stage',
       text: `Stage "${SCHOOL_STAGES[stageIndex]}" updated for school`,
@@ -134,6 +154,7 @@ function StoreProvider({ children }) {
 
   const updateSchoolRemark = (schoolId, remark) => {
     setSchools(ss => ss.map(s => s.id === schoolId ? { ...s, remark } : s));
+    if (window.bgUpdate) window.bgUpdate('schools', schoolId, window.toDbSchoolPatch({ remark }), 'school remark');
   };
 
   const addSchoolPhoto = (schoolId, stageIndex, label) => {
