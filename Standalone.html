@@ -5450,12 +5450,38 @@ Object.assign(window, { TaskModal, TaskDetailPanel });
 </script>
 <script type="text/babel">
 // src/shell.jsx
+import { useStore } from './store.jsx';
+import { useStore as useStoreR2 } from './store-r2.jsx';
 // Updated shell — sidebar nav adapts to role; topbar wires notifications, role switcher, sign-out
 // Round 12: Vite migration. Adds H1 global search w/ 250ms debounce + grouped dropdown,
 // H4 button semantics, H5 responsive drawer (hamburger under lg), M1/M2/M3 aria.
 
 function isPgmGroup(role) {
   return PROGRAM_MANAGER_GROUP.indexOf(role) !== -1;
+}
+
+
+// R30.14: filter sidebar items based on Settings → Roles & Permissions matrix
+// Matrix features: Dashboard, Projects, Materials, Financials, Contractors, Reports, Employees, Settings
+const SIDEBAR_ITEM_TO_FEATURE = {
+  'home':           'Dashboard',
+  'my-projects':    'Dashboard',
+  'projects':       'Projects',
+  'reports':        'Reports',
+  'financials':     'Financials',
+  'contractors':    'Contractors',
+  'settings':       'Settings',
+  // Items NOT in the matrix are always shown (role-driven only):
+  // escalations, my-escalations, delivery-notes, audit-log, tasks, my-schools
+};
+function applyMatrix(items, role) {
+  if (!rolePermissions || !rolePermissions[role]) return items;
+  const perms = rolePermissions[role];
+  return items.filter(it => {
+    const feature = SIDEBAR_ITEM_TO_FEATURE[it.id];
+    if (!feature) return true;  // not matrix-controlled — always show
+    return perms[feature] !== false;
+  });
 }
 
 function navForRole(role, currentUser) {
@@ -5475,13 +5501,13 @@ function navForRole(role, currentUser) {
     : [];
 
   if (role === 'VP') {
-    // R30.13: Reports removed from VP sidebar per client request (handled via Settings UI conceptually)
     return [
       { id: 'home',        label: 'Dashboard',   icon: 'home' },
       { id: 'projects',    label: 'Programs',    icon: 'folder-kanban' },
       { id: 'escalations', label: 'Escalations', icon: 'alert-circle' },
       ...finItem,
       ...deliveryNotesItem,
+      { id: 'reports',     label: 'Reports',     icon: 'file-text' },
       ...auditLogItem,
     ];
   }
@@ -5552,7 +5578,11 @@ function navHrefFor(id) {
 }
 
 function Sidebar({ active, onNav, currentUser, role, mobileOpen, onMobileClose }) {
-  const items = navForRole(role, currentUser);
+  // R30.14: read role permissions matrix from store and filter sidebar items.
+  // Settings → Roles & Permissions toggles now actually drive visibility.
+  const store = (typeof useStore === 'function') ? useStore() : {};
+  const rolePermissions = store.rolePermissions;
+  const items = applyMatrix(navForRole(role, currentUser), role, rolePermissions);
 
   // H5: Escape closes mobile drawer
   React.useEffect(() => {
