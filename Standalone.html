@@ -5475,13 +5475,13 @@ function navForRole(role, currentUser) {
     : [];
 
   if (role === 'VP') {
+    // R30.13: Reports removed from VP sidebar per client request (handled via Settings UI conceptually)
     return [
       { id: 'home',        label: 'Dashboard',   icon: 'home' },
       { id: 'projects',    label: 'Programs',    icon: 'folder-kanban' },
       { id: 'escalations', label: 'Escalations', icon: 'alert-circle' },
       ...finItem,
       ...deliveryNotesItem,
-      { id: 'reports',     label: 'Reports',     icon: 'file-text' },
       ...auditLogItem,
     ];
   }
