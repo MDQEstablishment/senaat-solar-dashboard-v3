@@ -1792,6 +1792,83 @@ record('R30.3a: app.jsx handleRoleChange guard returns BEFORE the PEOPLE.find + 
 record('R30.3a: dev-mode (?dev=1 → USE_SUPABASE=false) keeps the Select dropdown — fallback branch still in shell.jsx',
        /:\s*<Select value=\{role\} onChange=\{onRoleChange\} options=\{ROLES\}/.test(_shellJsx_r303a));
 
+// ── R. R30.3b — Polish round (Sentry / flash-of-login / stage data / audit chart / .gitignore) ──
+const _sentryJs    = fs.readFileSync(path.join(SRC, 'lib', 'sentry.js'), 'utf8');
+const _mainJsx_r303b = fs.readFileSync(path.join(SRC, 'main.jsx'), 'utf8');
+const _appJsx_r303b  = fs.readFileSync(path.join(SRC, 'app.jsx'), 'utf8');
+const _dashJsx_r303b = fs.readFileSync(path.join(SRC, 'page-dashboard.jsx'), 'utf8');
+const _pagesR2_r303b = fs.readFileSync(path.join(SRC, 'pages-r2.jsx'), 'utf8');
+const _pkgJson      = fs.readFileSync(path.join(__dirname, '..', 'vite', 'package.json'), 'utf8');
+const _rootGitignore= fs.readFileSync(path.join(__dirname, '..', '.gitignore'), 'utf8');
+
+// Item 1 — Sentry
+record('R30.3b: vite/package.json declares @sentry/react dependency',
+       /"@sentry\/react":\s*"\^?[0-9]/.test(_pkgJson));
+record('R30.3b: lib/sentry.js imports @sentry/react and re-exports ErrorBoundary + captureException',
+       /import \* as Sentry from '@sentry\/react';/.test(_sentryJs) &&
+       /export const ErrorBoundary = Sentry\.ErrorBoundary;/.test(_sentryJs) &&
+       /export const captureException = /.test(_sentryJs));
+record('R30.3b: lib/sentry.js initSentry is gated on USE_SUPABASE (dev mode skips entirely)',
+       /export function initSentry\(\) \{[\s\S]*?if \(!USE_SUPABASE\) return;/.test(_sentryJs));
+record('R30.3b: lib/sentry.js Sentry.init carries tracesSampleRate 0.1 + replays disabled + release r30.3b',
+       /tracesSampleRate:\s*0\.1/.test(_sentryJs) &&
+       /replaysSessionSampleRate:\s*0/.test(_sentryJs) &&
+       /replaysOnErrorSampleRate:\s*0/.test(_sentryJs) &&
+       /const RELEASE = 'r30\.3b';/.test(_sentryJs));
+record('R30.3b: lib/sentry.js auto-inits on module load (calls initSentry() at file tail)',
+       /\/\/ Auto-init on module load[\s\S]*?initSentry\(\);/.test(_sentryJs));
+record('R30.3b: main.jsx imports SentryErrorBoundary + wraps SessionShell in it',
+       /import \{ ErrorBoundary as SentryErrorBoundary \} from '\.\/lib\/sentry\.js';/.test(_mainJsx_r303b) &&
+       /<SentryErrorBoundary fallback=\{SentryFallback\}[\s\S]*?<SessionShell \/>/.test(_mainJsx_r303b));
+record('R30.3b: main.jsx defines SentryFallback with retry button (resetError)',
+       /function SentryFallback\(\{ error, resetError \}\)/.test(_mainJsx_r303b) &&
+       /onClick=\{resetError\}/.test(_mainJsx_r303b));
+
+// Item 2 — Flash-of-login
+record('R30.3b: app.jsx hydrating state synchronously checks localStorage for zamil-auth token',
+       /const \[hydrating, setHydrating\] = React\.useState\(\(\) => \{[\s\S]*?localStorage\.getItem\('zamil-auth'\)[\s\S]*?return !!\(parsed && parsed\.access_token\);/.test(_appJsx_r303b));
+record('R30.3b: app.jsx renders branded splash (data-testid="r30-hydrating-splash") before login form',
+       /if \(!currentUser && hydrating\) \{[\s\S]*?data-testid="r30-hydrating-splash"/.test(_appJsx_r303b) &&
+       /Restoring your session/.test(_appJsx_r303b));
+record('R30.3b: app.jsx splash has 5s safety net so a hung auth never blocks the user permanently',
+       /setTimeout\(\(\) => setHydrating\(false\), 5000\)/.test(_appJsx_r303b));
+record('R30.3b: app.jsx resolveSession / getSession / SIGNED_OUT all flip hydrating → false',
+       /if \(!session\?\.\user\) \{ setHydrating\(false\); return; \}/.test(_appJsx_r303b) &&
+       /else setHydrating\(false\);/.test(_appJsx_r303b) &&
+       /event === 'SIGNED_OUT'[\s\S]*?setHydrating\(false\)/.test(_appJsx_r303b));
+
+// Item 3 — .gitignore
+record('R30.3b: .gitignore at repo root ignores vite/dist/ and dist/',
+       /^vite\/dist\/\s*$/m.test(_rootGitignore) && /^dist\/\s*$/m.test(_rootGitignore));
+record('R30.3b: .gitignore comment explains assets/ stays tracked (deploy artifacts)',
+       /repo-root assets\/ ARE/.test(_rootGitignore));
+
+// Item 4 — Stage completion data (schoolDist computed in orchestrator)
+record('R30.3b: boot orchestrator computes schoolDist + progress + currentStage per project from fetched schools',
+       /R30\.3b Item 4[\s\S]*?for \(const p of projectsTranslated\) \{/.test(_appJsx_r303b) &&
+       /p\.schoolDist = dist;/.test(_appJsx_r303b) &&
+       /p\.progress = totalStages > 0 \? Math\.round\(\(doneStages \/ totalStages\) \* 100\)/.test(_appJsx_r303b));
+record('R30.3b: schoolDist computation mirrors data.jsx pipeline (filter schools by projectId, count done stages)',
+       /const ss = schoolsTranslated\.filter\(s => s\.projectId === p\.id\)/.test(_appJsx_r303b) &&
+       /ss\.reduce\(\(a, s\) => a \+ \(Array\.isArray\(s\.stages\) \? s\.stages\.filter\(st => st && st\.done\)\.length : 0\), 0\)/.test(_appJsx_r303b));
+
+// Item 5 — Stage transitions from audit_log
+record('R30.3b: page-dashboard.jsx exports computeWeeklyCrossingsFromAudit (filters last 7 days + entityType school_stage)',
+       /function computeWeeklyCrossingsFromAudit\(auditLog\) \{/.test(_dashJsx_r303b) &&
+       /e\.entityType !== 'school_stage'/.test(_dashJsx_r303b) &&
+       /const cutoff = Date\.now\(\) - 7 \* 86400000/.test(_dashJsx_r303b));
+record('R30.3b: computeDashStageData accepts auditLog arg + returns usingMockWeekly flag',
+       /function computeDashStageData\(projects, auditLog\)/.test(_dashJsx_r303b) &&
+       /const usingMockWeekly = liveWeekly == null;/.test(_dashJsx_r303b) &&
+       /return \{ stageCounts[\s\S]*?usingMockWeekly \}/.test(_dashJsx_r303b));
+record('R30.3b: DashStageInsights passes auditLog + renders "(demo data)" disclaimer when usingMockWeekly',
+       /const \{ auditLog \} = useStore\(\);/.test(_pagesR2_r303b) &&
+       /compute\(projects, auditLog\)/.test(_pagesR2_r303b) &&
+       /data-testid="weekly-crossings-mock-note"/.test(_pagesR2_r303b) &&
+       /no stage transitions recorded in last 7 days/.test(_pagesR2_r303b));
+record('R30.3b: PageDashboard inline stage section also uses computeWeeklyCrossingsFromAudit (sync with DashStageInsights)',
+       /computeWeeklyCrossingsFromAudit\(auditLog\)/.test(_dashJsx_r303b));
+
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;
 const fail = results.filter(r => !r.pass).length;

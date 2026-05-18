@@ -7,6 +7,9 @@ import React, { Suspense, lazy } from 'react';
 import * as ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, NavLink } from 'react-router-dom';
 import './index.css';
+// R30.3b — Sentry observability. Auto-inits on import; gated on USE_SUPABASE
+// so dev mode and the standalone build never report.
+import { ErrorBoundary as SentryErrorBoundary } from './lib/sentry.js';
 
 // ── Expose React on window (existing pattern uses bare `React.useState` etc.) ──
 window.React = React;
@@ -166,11 +169,36 @@ function SessionShell() {
   return <App />;
 }
 
+// ── Sentry fallback UI (R30.3b) ─────────────────────────────────────────────
+// Rendered when the React tree throws. In dev mode the SDK is not initialized,
+// so nothing reports — but the fallback still renders, so devs see a friendly
+// page instead of a blank screen.
+function SentryFallback({ error, resetError }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6" style={{ background: '#F8FAFC' }}>
+      <div className="max-w-md text-center" style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+        <div style={{ fontSize: 48, marginBottom: 12 }}>⚠</div>
+        <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0F172A', marginBottom: 8 }}>Something went wrong</h1>
+        <p style={{ fontSize: 14, color: '#475569', marginBottom: 20 }}>
+          The error has been reported to our team. Please try again, or reload the page.
+        </p>
+        <button onClick={resetError}
+          style={{ background: '#0B2545', color: 'white', padding: '10px 20px', borderRadius: 6,
+                   fontSize: 14, fontWeight: 500, border: 'none', cursor: 'pointer' }}>
+          Try again
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Mount ───────────────────────────────────────────────────────────────────
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <BrowserRouter basename={import.meta.env.BASE_URL || '/'}>
     <a href="#main-content" className="sr-only-focusable">Skip to main content</a>
-    <SessionShell />
+    <SentryErrorBoundary fallback={SentryFallback} showDialog={false}>
+      <SessionShell />
+    </SentryErrorBoundary>
   </BrowserRouter>
 );

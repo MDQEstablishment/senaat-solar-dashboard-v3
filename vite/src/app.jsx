@@ -17,6 +17,27 @@ function AppInner() {
   const [currentUser, setCurrentUser] = React.useState(null);
   const role = currentUser ? currentUser.role : null;
 
+  // R30.3b — Flash-of-login fix: synchronously check localStorage for a
+  // persisted Supabase session token before first render. If present, show
+  // a branded splash instead of the login form while INITIAL_SESSION resolves.
+  const [hydrating, setHydrating] = React.useState(() => {
+    if (typeof window === 'undefined' || !window.USE_SUPABASE) return false;
+    try {
+      const raw = window.localStorage.getItem('zamil-auth');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return !!(parsed && parsed.access_token);
+    } catch { return false; }
+  });
+  // Safety net: cap the splash at 5s in case auth never resolves (network down,
+  // SDK bug, expired token loop). After the cap the user falls through to the
+  // login form and can re-authenticate.
+  React.useEffect(() => {
+    if (!hydrating) return;
+    const t = setTimeout(() => setHydrating(false), 5000);
+    return () => clearTimeout(t);
+  }, [hydrating]);
+
   const [page, setPage] = React.useState('home');
   const [activeProjectId, setActiveProjectId] = React.useState(null);
   const [activeSchoolId,  setActiveSchoolId]  = React.useState(null);
@@ -98,6 +119,31 @@ function AppInner() {
       });
       const projectsTranslated   = rawProjects.map(window.fromDbProject);
       const schoolsTranslated    = rawSchools.map(window.fromDbSchool);
+
+      // R30.3b Item 4 — Compute schoolDist / progress / currentStage per
+      // project from the freshly-fetched schools. Mirrors data.jsx:665-680
+      // which does the same post-hoc in the in-memory pipeline. Without this,
+      // the in-memory PROJECTS array has these fields but Supabase-fetched
+      // ones don't, so DashStageInsights / DashCategoryPanel widgets render
+      // 0% across the board (the percentages are derived from p.schoolDist).
+      const STAGE_KEYS_W = window.STAGE_KEYS || [];
+      const stageCount = STAGE_KEYS_W.length;
+      if (stageCount > 0) {
+        for (const p of projectsTranslated) {
+          const ss = schoolsTranslated.filter(s => s.projectId === p.id);
+          const totalStages = ss.length * stageCount;
+          const doneStages = ss.reduce((a, s) => a + (Array.isArray(s.stages) ? s.stages.filter(st => st && st.done).length : 0), 0);
+          p.progress = totalStages > 0 ? Math.round((doneStages / totalStages) * 100) : (p.progress || 0);
+          const dist = STAGE_KEYS_W.map(() => 0);
+          ss.forEach(s => {
+            const reached = Array.isArray(s.stages) ? s.stages.filter(st => st && st.done).length : 0;
+            if (reached > 0) dist[reached - 1]++;
+          });
+          p.schoolDist = dist;
+          const maxIdx = dist.indexOf(Math.max(...dist));
+          p.currentStage = Math.min(stageCount - 1, Math.max(0, maxIdx));
+        }
+      }
       const contractorsTranslated= rawContractors.map(window.fromDbContractor);
       const tasksTranslated      = rawTasks.map(window.fromDbTask);
       const escalationsTranslated= rawEscalations.map(window.fromDbEscalation);
@@ -155,16 +201,18 @@ function AppInner() {
     if (typeof window === 'undefined' || !window.USE_SUPABASE || !window.supabase) return;
 
     const resolveSession = async (session) => {
-      if (!session?.user) return;
+      if (!session?.user) { setHydrating(false); return; }
       const profileRow = await window.bgFetchCurrentProfile(session.user.id);
       if (!profileRow) {
         // Authenticated but no profile row — sign back out (mirrors page-login.jsx
         // defensive behavior). Without this, the app would hang on a half-bound session.
         try { await window.supabase.auth.signOut(); } catch {}
+        setHydrating(false);
         return;
       }
       const profile = window.fromDbProfile(profileRow);
       setCurrentUser(profile);
+      setHydrating(false);
       // Kick off the bulk data load (idempotent — guarded by __bootRanRef).
       bootFromSupabase();
     };
@@ -172,6 +220,7 @@ function AppInner() {
     // 1) Hydrate existing session on mount.
     window.supabase.auth.getSession().then(({ data }) => {
       if (data?.session) resolveSession(data.session);
+      else setHydrating(false);  // No stored session — drop splash, show login.
     });
     // 2) Subscribe to future auth changes.
     const { data: sub } = window.supabase.auth.onAuthStateChange((event, session) => {
@@ -179,6 +228,7 @@ function AppInner() {
         __bootRanRef.current = false;
         setBootStatus(null);
         setCurrentUser(null);
+        setHydrating(false);
         return;
       }
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
@@ -266,6 +316,26 @@ function AppInner() {
     const u = PEOPLE.find(p => p.role === newRole);
     if (u) setCurrentUser(u);
   };
+
+  // R30.3b — Splash for returning users with a stored Supabase session token.
+  // Renders synchronously on first paint (no flash of login), gives way to the
+  // app once resolveSession resolves or to the login form if the token is stale.
+  if (!currentUser && hydrating) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-navy-900 text-white" data-testid="r30-hydrating-splash">
+        <div className="text-center">
+          {typeof ZamilLogo === 'function' && <ZamilLogo size={88} />}
+          <div className="text-2xl font-extrabold tracking-[0.10em] mt-4">Zamil Services</div>
+          <div className="text-sm text-amber-300 tracking-[0.10em] mt-2">Restoring your session…</div>
+          <div className="mt-6">
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-300 animate-pulse mx-0.5"></span>
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-300 animate-pulse mx-0.5" style={{ animationDelay: '0.15s' }}></span>
+            <span className="inline-block w-2 h-2 rounded-full bg-amber-300 animate-pulse mx-0.5" style={{ animationDelay: '0.3s' }}></span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Login screen
   if (!currentUser) {

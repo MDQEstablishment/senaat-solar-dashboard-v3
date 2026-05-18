@@ -1,0 +1,14 @@
+# R30.3b — Build output. The hashed bundles under repo-root assets/ ARE
+# tracked (they are the GitHub Pages deploy artifacts); vite/dist/ is the
+# transient Vite output regenerated on every `npm run build`.
+vite/dist/
+dist/
+
+# Node modules + editor cruft
+node_modules/
+.DS_Store
+*.log
+
+# Local environment overrides (not used yet, but covers R30.4 .env files)
+.env
+.env.local

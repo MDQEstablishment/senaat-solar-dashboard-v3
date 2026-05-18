@@ -338,14 +338,25 @@ function PageVPDashboard({ onOpenEscalation, currentUser }) {
 // chart, bottlenecks panel, and stage-data helper off window (set by
 // page-dashboard.jsx) so the logic isn't duplicated.
 function DashStageInsights({ projects }) {
+  const { auditLog } = useStore();
   const Chart = window.DashTransitionsChart;
   const Sidebar = window.DashBottlenecksSidebar;
   const compute = window.computeDashStageData;
   if (!Chart || !Sidebar || !compute) return null;
-  const { stageData, bottlenecks, maxDrop } = compute(projects);
+  // R30.3b — pass auditLog so the weekly-crossings overlay derives from real
+  // stage-update audit entries when available; falls back to mock with a
+  // "(demo data)" footnote otherwise.
+  const { stageData, bottlenecks, maxDrop, usingMockWeekly } = compute(projects, auditLog);
   return (
     <div data-testid="dash-transitions-row-exec" className="flex flex-col lg:flex-row gap-4">
-      <div className="lg:flex-[3] min-w-0"><Chart stages={stageData} /></div>
+      <div className="lg:flex-[3] min-w-0">
+        <Chart stages={stageData} />
+        {usingMockWeekly && (
+          <div className="text-[10px] text-ink-400 italic text-right mt-1" data-testid="weekly-crossings-mock-note">
+            (demo data — no stage transitions recorded in last 7 days)
+          </div>
+        )}
+      </div>
       <div className="lg:flex-1 min-w-0"><Sidebar bottlenecks={bottlenecks} maxDrop={maxDrop} /></div>
     </div>
   );

@@ -94,7 +94,31 @@ const DWELL_SEED = [9,7,8,6,11,8,9,7,8,6,7,5,14,21,14,10,7,0];
 // stage data, bottlenecks, and per-category groups from one place. The dashboard
 // renders this via PageDashboard; PageVPDashboard + PagePMDashboard reach in via
 // window.computeDashStageData.
-function computeDashStageData(projects) {
+//
+// R30.3b — accepts an optional `auditLog` arg. When the log has stage-transition
+// entries (entityType === 'school_stage') from the past 7 days, the "weekly
+// crossings" overlay derives from real audit data. Otherwise falls back to the
+// mock VEL_SEED array, and the returned `usingMockWeekly: true` flag lets the
+// caller render a "(demo data)" disclaimer.
+function computeWeeklyCrossingsFromAudit(auditLog) {
+  if (!auditLog || !auditLog.length) return null;
+  const cutoff = Date.now() - 7 * 86400000;
+  const counts = STAGE_KEYS.map(() => 0);
+  let total = 0;
+  for (const e of auditLog) {
+    if (!e || e.entityType !== 'school_stage') continue;
+    const ts = new Date(e.timestamp || 0).getTime();
+    if (!Number.isFinite(ts) || ts < cutoff) continue;
+    const parts = String(e.entityId || '').split(':');
+    const idx = parseInt(parts[1], 10);
+    if (Number.isFinite(idx) && idx >= 0 && idx < STAGE_KEYS.length) {
+      counts[idx]++;
+      total++;
+    }
+  }
+  return total > 0 ? counts : null;
+}
+function computeDashStageData(projects, auditLog) {
   const stageCounts = SCHOOL_STAGES.map((_, i) =>
     projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
   );
@@ -102,10 +126,13 @@ function computeDashStageData(projects) {
   const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a, c) => a + c, 0));
   const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i - 1]) - c);
   const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
+  const liveWeekly = computeWeeklyCrossingsFromAudit(auditLog);
+  const weekly = liveWeekly || VEL_SEED;
+  const usingMockWeekly = liveWeekly == null;
   const stageData = STAGE_KEYS.map((key, i) => ({
     n: i + 1, key, name: SCHOOL_STAGES[i], cat: STAGE_CATEGORY[key],
     count: cumCounts[i], pct: Math.round(cumCounts[i] / totalS * 100),
-    week: VEL_SEED[i] || 0, days: DWELL_SEED[i] || 0,
+    week: weekly[i] || 0, days: DWELL_SEED[i] || 0,
   }));
   const bottlenecks = stageData
     .map((s, i) => ({ ...s, drop: drops[i] }))
@@ -119,7 +146,7 @@ function computeDashStageData(projects) {
     commissioning: stageData.filter(s => s.cat === 'commissioning'),
     handover:      stageData.filter(s => s.cat === 'handover'),
   };
-  return { stageCounts, totalS, cumCounts, drops, bottleneckIdx, stageData, bottlenecks, maxDrop, stagesByCat };
+  return { stageCounts, totalS, cumCounts, drops, bottleneckIdx, stageData, bottlenecks, maxDrop, stagesByCat, usingMockWeekly };
 }
 
 function DashStageCard({ stageObj, total, isBottleneck, isActive, onClick }) {
@@ -480,7 +507,7 @@ function NewProjectModal({ open, onClose, onCreate, currentUser }) {
 }
 
 function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }) {
-  const { addProject, logAudit, schools: allSchools } = useStore() || {};
+  const { addProject, logAudit, schools: allSchools, auditLog } = useStore() || {};
   const [stageFilter, setStageFilter] = React.useState(null);
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
@@ -503,10 +530,16 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
   const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a,c)=>a+c,0));
   const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i-1]) - c);
   const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
+  // R30.3b — same audit-derived weekly crossings as DashStageInsights, so the
+  // PM-dashboard inline stages section stays in sync.
+  const _liveWeekly = (typeof computeWeeklyCrossingsFromAudit === 'function')
+    ? computeWeeklyCrossingsFromAudit(auditLog) : null;
+  const _weekly = _liveWeekly || VEL_SEED;
+  const usingMockWeekly = _liveWeekly == null;
   const stageData = STAGE_KEYS.map((key, i) => ({
     n: i+1, key, name: SCHOOL_STAGES[i], cat: STAGE_CATEGORY[key],
     count: cumCounts[i], pct: Math.round(cumCounts[i] / totalS * 100),
-    week: VEL_SEED[i] || 0, days: DWELL_SEED[i] || 0,
+    week: _weekly[i] || 0, days: DWELL_SEED[i] || 0,
   }));
   const bottlenecks = stageData
     .map((s, i) => ({ ...s, drop: drops[i] }))
