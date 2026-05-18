@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  base: '/senaat-solar-dashboard-v3/',
+  base: '/',
   plugins: [react({ jsxRuntime: 'automatic' })],
   resolve: {
     extensions: ['.js', '.jsx', '.json'],
