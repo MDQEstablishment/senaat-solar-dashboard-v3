@@ -1,6 +1,4 @@
 import React from 'react';
-import { useStore } from './store.jsx';
-import { useStore as useStoreR2 } from './store-r2.jsx';
 // Updated shell — sidebar nav adapts to role; topbar wires notifications, role switcher, sign-out
 // Round 12: Vite migration. Adds H1 global search w/ 250ms debounce + grouped dropdown,
 // H4 button semantics, H5 responsive drawer (hamburger under lg), M1/M2/M3 aria.
@@ -129,7 +127,7 @@ function navHrefFor(id) {
 function Sidebar({ active, onNav, currentUser, role, mobileOpen, onMobileClose }) {
   // R30.14: read role permissions matrix from store and filter sidebar items.
   // Settings → Roles & Permissions toggles now actually drive visibility.
-  const store = (typeof useStore === 'function') ? useStore() : {};
+  const store = (typeof window !== 'undefined' && typeof window.useStore === 'function') ? window.useStore() : {};
   const rolePermissions = store.rolePermissions;
   const items = applyMatrix(navForRole(role, currentUser), role, rolePermissions);
 
