@@ -13,6 +13,13 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, content-type, apikey, x-client-info',
+  'Access-Control-Max-Age': '86400',
+};
+
 const FROM_ADDRESS = 'SENAAT Dashboard <notifications@zamildashboard.com>';
 const APP_BASE_URL = 'https://zamildashboard.com';
 
@@ -27,7 +34,7 @@ interface NotifyBody {
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS },
   });
 }
 
@@ -71,6 +78,7 @@ function taskHtml(p: { recipient_name: string; actor_name: string; title: string
 }
 
 Deno.serve(async (req: Request) => {
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
   if (req.method !== 'POST') return json(405, { error: 'Method not allowed' });
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');

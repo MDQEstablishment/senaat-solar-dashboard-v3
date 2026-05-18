@@ -30,6 +30,13 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, content-type, apikey, x-client-info',
+  'Access-Control-Max-Age': '86400',
+};
+
 const ALLOWED_ROLES = new Set(['vp', 'manager', 'operations_manager']);
 
 interface CreateUserBody {
@@ -44,7 +51,7 @@ interface CreateUserBody {
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...CORS },
   });
 }
 
