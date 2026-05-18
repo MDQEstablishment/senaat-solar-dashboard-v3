@@ -12867,6 +12867,7 @@ function AppInner() {
   const [bootStatus, setBootStatus] = React.useState(null);
   const __bootRanRef = React.useRef(false);
   const __realtimeCleanupRef = React.useRef(null);  // R30.7
+  const __resolvedUserIdRef = React.useRef(null);  // R30.16
 
   // R30.2 — Boot orchestrator. Fetches all 8 tables in parallel, computes
   // PM→projectIds from the raw rows (joining UUIDs to legacy project ids),
@@ -12992,23 +12993,28 @@ function AppInner() {
 
     const resolveSession = async (session) => {
       if (!session?.user) { setHydrating(false); return; }
+      // R30.16 fix H2: dedupe — onAuthStateChange fires INITIAL_SESSION + SIGNED_IN
+      // back-to-back, was running bgFetchCurrentProfile 7× per page load.
+      if (__resolvedUserIdRef.current === session.user.id) {
+        setHydrating(false);
+        return;
+      }
+      __resolvedUserIdRef.current = session.user.id;
       const profileRow = await window.bgFetchCurrentProfile(session.user.id);
       if (!profileRow) {
-        // Authenticated but no profile row — sign back out (mirrors page-login.jsx
-        // defensive behavior). Without this, the app would hang on a half-bound session.
         try { await window.supabase.auth.signOut(); } catch {}
+        __resolvedUserIdRef.current = null;
         setHydrating(false);
         return;
       }
       const profile = window.fromDbProfile(profileRow);
       setCurrentUser(profile);
       setHydrating(false);
-      // Kick off the bulk data load (idempotent — guarded by __bootRanRef).
       bootFromSupabase().then(() => {
-        // R30.7 — Install realtime subscriptions for tasks / escalations / delivery_notes
-        // AFTER boot completes so we don't race with the initial bulk load.
+        // R30.16 fix H1: only install realtime ONCE per session, not on every
+        // bootFromSupabase().then() callback (which the auth state churn fired ~25/min).
         try {
-          if (typeof window !== 'undefined' && window.installRealtime) {
+          if (typeof window !== 'undefined' && window.installRealtime && !__realtimeCleanupRef.current) {
             __realtimeCleanupRef.current = window.installRealtime(store);
           }
         } catch (_) {}
@@ -13024,6 +13030,7 @@ function AppInner() {
     const { data: sub } = window.supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         __bootRanRef.current = false;
+        __resolvedUserIdRef.current = null;  // R30.16
         // R30.7 — Detach realtime channel so the next sign-in installs a fresh one.
         try {
           if (__realtimeCleanupRef.current) {
@@ -13217,7 +13224,43 @@ function AppInner() {
     : projects;
   const primaryProject = myProjects[0];
 
+
+  // R30.16: URL route guard — same matrix used by sidebar (Settings → Roles & Permissions)
+  // also blocks direct URL access. If VP/Reports is unchecked, typing /#/reports gets
+  // an "Access denied" screen instead of bypassing the matrix.
+  const PAGE_TO_FEATURE = {
+    'home': 'Dashboard', 'my-projects': 'Dashboard',
+    'projects': 'Projects', 'project-detail': 'Projects', 'schools-list': 'Projects', 'school-detail': 'Projects', 'my-schools': 'Projects',
+    'reports': 'Reports',
+    'financials': 'Financials',
+    'contractors': 'Contractors',
+    'settings': 'Settings',
+  };
+  const rolePermissions = store.rolePermissions;
+  const isPageAllowed = (pageId) => {
+    const feature = PAGE_TO_FEATURE[pageId];
+    if (!feature) return true; // not matrix-controlled
+    if (!rolePermissions || !rolePermissions[role]) return true; // matrix not loaded yet
+    return rolePermissions[role][feature] !== false;
+  };
+  const AccessDenied = () => (
+    <div className="p-12 text-center">
+      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-50 text-red-600 mb-4">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+      </div>
+      <h2 className="text-lg font-semibold text-ink-900">Access denied</h2>
+      <p className="text-sm text-ink-500 mt-2 max-w-md mx-auto">
+        Your role ({role}) does not have permission to access this page. If you believe this is wrong, contact your administrator to update Settings → Roles & Permissions.
+      </p>
+      <button type="button" onClick={() => setPage(role === 'Project Manager' ? 'my-projects' : 'home')}
+        className="mt-6 px-4 py-2 rounded-md bg-navy-900 text-white text-sm hover:opacity-90">
+        Back to Dashboard
+      </button>
+    </div>
+  );
+
   const renderPage = () => {
+    if (!isPageAllowed(page)) return <AccessDenied />;
     if (page === 'escalation-detail' && activeEscId) {
       return <PageEscalationDetail id={activeEscId} onBack={() => setPage(role === 'VP' ? 'home' : 'my-escalations')} currentUser={currentUser} />;
     }
