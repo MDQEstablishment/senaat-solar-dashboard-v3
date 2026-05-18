@@ -5472,7 +5472,7 @@ const SIDEBAR_ITEM_TO_FEATURE = {
   // Items NOT in the matrix are always shown (role-driven only):
   // escalations, my-escalations, delivery-notes, audit-log, tasks, my-schools
 };
-function applyMatrix(items, role) {
+function applyMatrix(items, role, rolePermissions) {
   if (!rolePermissions || !rolePermissions[role]) return items;
   const perms = rolePermissions[role];
   return items.filter(it => {
