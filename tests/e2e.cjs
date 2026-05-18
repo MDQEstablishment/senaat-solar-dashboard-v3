@@ -1771,6 +1771,27 @@ record('R30.2: bootFromSupabase silently no-ops when !window.USE_SUPABASE (dev m
 record('R30.2: auth effect entire body gated on USE_SUPABASE — dev mode never subscribes',
        /if \(typeof window === 'undefined' \|\| !window\.USE_SUPABASE \|\| !window\.supabase\) return;/.test(_appJsx_r302));
 
+// ── Q. R30.3a — Security hotfix: lock role switcher in production ──────────
+// In production mode (USE_SUPABASE && session present) the user's role MUST
+// come from the profiles row fetched at sign-in and must NOT be mutable via
+// the topbar dropdown. The dropdown was a demo affordance that escaped to
+// prod and let any signed-in user freely switch to VP from devtools or the
+// header pill.
+const _shellJsx_r303a = fs.readFileSync(path.join(SRC, 'shell.jsx'), 'utf8');
+const _appJsx_r303a   = fs.readFileSync(path.join(SRC, 'app.jsx'), 'utf8');
+
+record('R30.3a: shell.jsx renders a static role-badge (not the Select) when USE_SUPABASE && currentUser',
+       /window\.USE_SUPABASE && currentUser\)[\s\S]*?data-testid="role-badge"[\s\S]*?:\s*<Select value=\{role\} onChange=\{onRoleChange\}/.test(_shellJsx_r303a));
+record('R30.3a: shell.jsx role-badge is a non-interactive <span> (no onClick / no onChange / not a form control)',
+       /<span data-testid="role-badge"[\s\S]*?\{role\}\s*<\/span>/.test(_shellJsx_r303a) &&
+       !/<span data-testid="role-badge"[^>]*onClick=/.test(_shellJsx_r303a));
+record('R30.3a: app.jsx handleRoleChange has the USE_SUPABASE && currentUser guard with console.warn',
+       /const handleRoleChange = \(newRole\) => \{[\s\S]*?if \(typeof window !== 'undefined' && window\.USE_SUPABASE && currentUser\) \{[\s\S]*?console\.warn\('\[R30\.3a\] Role change blocked/.test(_appJsx_r303a));
+record('R30.3a: app.jsx handleRoleChange guard returns BEFORE the PEOPLE.find + setCurrentUser fallthrough',
+       /\[R30\.3a\] Role change blocked: user is auth-locked to profile\.role[\s\S]{1,40}return;[\s\S]*?const u = PEOPLE\.find/.test(_appJsx_r303a));
+record('R30.3a: dev-mode (?dev=1 → USE_SUPABASE=false) keeps the Select dropdown — fallback branch still in shell.jsx',
+       /:\s*<Select value=\{role\} onChange=\{onRoleChange\} options=\{ROLES\}/.test(_shellJsx_r303a));
+
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;
 const fail = results.filter(r => !r.pass).length;

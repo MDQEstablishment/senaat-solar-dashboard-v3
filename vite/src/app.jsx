@@ -254,8 +254,15 @@ function AppInner() {
     setPage('home');
   };
 
-  // Role switcher in topbar (demo only — pick first user with that role)
+  // Role switcher in topbar (demo only — pick first user with that role).
+  // R30.3a SECURITY HOTFIX: defensive guard. In production mode the dropdown
+  // is hidden (see shell.jsx) — this guard is a second line of defense in
+  // case the handler is invoked from devtools / a stale event handler.
   const handleRoleChange = (newRole) => {
+    if (typeof window !== 'undefined' && window.USE_SUPABASE && currentUser) {
+      console.warn('[R30.3a] Role change blocked: user is auth-locked to profile.role');
+      return;
+    }
     const u = PEOPLE.find(p => p.role === newRole);
     if (u) setCurrentUser(u);
   };

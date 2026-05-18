@@ -311,7 +311,17 @@ function TopBar({ role, onRoleChange, currentUser, search, onSearch, onOpenNotif
         <GlobalSearch onResultPick={onResultPick} />
       </div>
 
-      <Select value={role} onChange={onRoleChange} options={ROLES} className="!py-1 hidden md:block" />
+      {/* R30.3a SECURITY HOTFIX — role switcher is demo-only. In production
+          (USE_SUPABASE && signed-in session) the role is locked to the value
+          fetched from the profiles row on sign-in and rendered as a static
+          badge. The dropdown stays in ?dev=1 mode and the standalone build. */}
+      {(typeof window !== 'undefined' && window.USE_SUPABASE && currentUser)
+        ? <span data-testid="role-badge"
+                className="hidden md:inline-flex items-center px-2.5 py-1 rounded-md bg-ink-100 text-ink-700 text-xs font-medium">
+            {role}
+          </span>
+        : <Select value={role} onChange={onRoleChange} options={ROLES} className="!py-1 hidden md:block" />
+      }
 
       <button type="button" onClick={onOpenNotifs} aria-label={`Notifications (${unreadCount} unread)`}
         className="relative p-2 rounded-md hover:bg-ink-100 text-ink-700 ink-on-dark">
