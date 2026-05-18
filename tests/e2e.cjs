@@ -2025,6 +2025,38 @@ record('R30.5 all notifyEmail call sites wrapped in try { ... } catch (_) {} so 
        (_storeJsx305.match(/try \{ window\.notifyEmail/g) || []).length >= 1 &&
        (_storeR2_305.match(/try \{ window\.notifyEmail/g) || []).length >= 2);
 
+// ─────────────────────────────────────────────────────────────────────────
+// Section U — R30.6 wiring (Signature pad + PDF signature embed for Delivery Notes)
+// ─────────────────────────────────────────────────────────────────────────
+const _dnPage306 = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'page-delivery-notes.jsx'), 'utf8');
+
+record('R30.6 SignaturePad: component defined as a function in page-delivery-notes.jsx',
+       /function SignaturePad\(\{ value, onChange \}\)/.test(_dnPage306));
+record('R30.6 SignaturePad: uses pure-canvas approach (no external lib dependency)',
+       /canvasRef\.current\.getContext\('2d'\)/.test(_dnPage306) &&
+       /toDataURL\('image\/png'\)/.test(_dnPage306));
+record('R30.6 SignaturePad: handles touch AND mouse events (works on mobile + desktop)',
+       /onTouchStart=/.test(_dnPage306) && /onMouseDown=/.test(_dnPage306) &&
+       /e\.touches && e\.touches\[0\]/.test(_dnPage306));
+record('R30.6 SignaturePad: respects devicePixelRatio for crisp lines on retina/HiDPI',
+       /window\.devicePixelRatio/.test(_dnPage306));
+record('R30.6 SignaturePad: includes Clear button to reset signature',
+       /onClick=\{clear\}/.test(_dnPage306) && /Clear/.test(_dnPage306));
+record('R30.6 SignaturePad: data-testid="signature-pad" for E2E hooks',
+       /data-testid="signature-pad"/.test(_dnPage306));
+record('R30.6 DeliveryNoteForm: SignaturePad mounted with signatureDataUrl wiring',
+       /<SignaturePad value=\{form\.signatureDataUrl\} onChange=\{\(url\) => set\('signatureDataUrl', url\)\} \/>/.test(_dnPage306));
+record('R30.6 print template: embeds signatureDataUrl as <img> when present',
+       /note\.signatureDataUrl \? `<div class="row" style="margin-top:24px"><div class="cell"><div class="label">Receiver signature/.test(_dnPage306));
+record('R30.6 detail view: shows signature image with data-testid="dn-signature-img"',
+       /data-testid="dn-signature-img"/.test(_dnPage306));
+record('R30.6 detail view: signature card title is "Receiver signature"',
+       /<SectionTitle icon="pen-tool" title="Receiver signature" \/>/.test(_dnPage306));
+record('R30.6 SignaturePad: restores existing signature on mount (edit flow)',
+       /Restore existing signature if any/.test(_dnPage306) && /img\.src = value/.test(_dnPage306));
+record('R30.6 SignaturePad: end handler emits dataUrl via onChange (form state updated)',
+       /onChange && onChange\(url\)/.test(_dnPage306));
+
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;
 const fail = results.filter(r => !r.pass).length;

@@ -178,6 +178,7 @@ function DeliveryNoteDetail({ note, projects, schools, onBack, onEdit, onDelete 
       <table><thead><tr><th>Description</th><th style="width:90px;text-align:right">Quantity</th><th style="width:80px">Unit</th></tr></thead><tbody>${items||'<tr><td colspan="3" style="color:#64748B"><em>No items</em></td></tr>'}</tbody></table>
       <div class="row"><div class="cell"><div class="label">Received by</div><div class="val">${note.receivedBy||'—'}</div></div></div>
       ${note.notes ? `<div class="row"><div class="cell"><div class="label">Notes</div><div class="val">${note.notes}</div></div></div>` : ''}
+      ${note.signatureDataUrl ? `<div class="row" style="margin-top:24px"><div class="cell"><div class="label">Receiver signature</div><img src="${note.signatureDataUrl}" alt="signature" style="max-width:240px;max-height:80px;border:1px solid #e2e8f0;border-radius:6px;background:#fff" /></div></div>` : ''}
       <script>window.onload=()=>setTimeout(()=>window.print(),200)</script></body></html>`);
     win.document.close();
   };
@@ -238,6 +239,13 @@ function DeliveryNoteDetail({ note, projects, schools, onBack, onEdit, onDelete 
         <Card>
           <SectionTitle icon="file-text" title="Notes" />
           <div className="text-sm whitespace-pre-wrap text-ink-700">{note.notes}</div>
+        </Card>
+      )}
+
+      {note.signatureDataUrl && (
+        <Card>
+          <SectionTitle icon="pen-tool" title="Receiver signature" />
+          <img src={note.signatureDataUrl} alt="signature" data-testid="dn-signature-img" className="border border-ink-200 rounded-md bg-white" style={{ maxWidth: 240, maxHeight: 80 }} />
         </Card>
       )}
 
@@ -407,9 +415,105 @@ function DeliveryNoteForm({ initial, projects, schools, onCancel, onSave }) {
             onChange={(list) => set('photos', list)} />
         )}
       </Card>
+
+      <Card>
+        <SectionTitle icon="pen-tool" title="Receiver signature"
+          subtitle="The receiver signs here to acknowledge delivery. Signature is embedded in the printed PDF." />
+        <SignaturePad value={form.signatureDataUrl} onChange={(url) => set('signatureDataUrl', url)} />
+      </Card>
     </form>
   );
 }
+
+// R30.6 — Pure-canvas signature pad. No deps. Touch + mouse. Outputs a PNG data URL.
+function SignaturePad({ value, onChange }) {
+  const canvasRef = React.useRef(null);
+  const drawing = React.useRef(false);
+  const last = React.useRef(null);
+  const [restored, setRestored] = React.useState(false);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 2;
+    // Restore existing signature if any
+    if (value && !restored) {
+      const img = new Image();
+      img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+      img.src = value;
+      setRestored(true);
+    }
+  }, [value, restored]);
+
+  const point = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const t = e.touches && e.touches[0];
+    const x = (t ? t.clientX : e.clientX) - rect.left;
+    const y = (t ? t.clientY : e.clientY) - rect.top;
+    return { x, y };
+  };
+
+  const start = (e) => { e.preventDefault(); drawing.current = true; last.current = point(e); };
+  const move  = (e) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const p = point(e);
+    const ctx = canvasRef.current.getContext('2d');
+    ctx.beginPath();
+    ctx.moveTo(last.current.x, last.current.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    last.current = p;
+  };
+  const end = () => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    const url = canvasRef.current.toDataURL('image/png');
+    onChange && onChange(url);
+  };
+
+  const clear = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+    onChange && onChange(null);
+    setRestored(false);
+  };
+
+  return (
+    <div data-testid="signature-pad" className="space-y-2">
+      <canvas ref={canvasRef}
+        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
+        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
+        className="w-full border border-ink-200 rounded-md bg-white touch-none"
+        style={{ height: 160 }} />
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={clear}
+          className="px-3 py-1 text-xs rounded border border-ink-200 text-ink-600 hover:bg-ink-50">
+          Clear
+        </button>
+        <span className="text-xs text-ink-500">
+          {value ? 'Signature captured' : 'Sign above with mouse or finger'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 
 function FormField({ label, children }) {
   return (
