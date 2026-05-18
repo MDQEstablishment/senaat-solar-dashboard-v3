@@ -73,5 +73,108 @@ class MemoryImageStorage {
   }
 }
 
-const imageStorage = new MemoryImageStorage();
-Object.assign(window, { MemoryImageStorage, imageStorage });
+// R30 — Supabase Storage adapter.
+//
+// Path convention preserved verbatim from MemoryImageStorage:
+//   projects/{pid}/cover/{photo_id}.jpg
+//   projects/{pid}/gallery/{photo_id}.jpg
+//   projects/{pid}/schools/{sid}/stages/{stage_key}/{photo_id}.jpg
+//   delivery-notes/{note_id}/{photo_id}.jpg
+//
+// list / estimatedBytes / imageCount walk the bucket recursively. For 10k+
+// objects, swap this for a Postgres VIEW rollup on storage.objects (R31).
+class SupabaseImageStorage {
+  constructor(client, bucket = 'images') {
+    this.client = client;
+    this.bucket = bucket;
+    this._listCache = null;
+    this._listCacheAt = 0;
+  }
+
+  _bucketApi() { return this.client.storage.from(this.bucket); }
+
+  async upload(path, blob, dataUrl, meta) {
+    const contentType = (blob && blob.type) || 'image/jpeg';
+    const { error } = await this._bucketApi().upload(path, blob, { contentType, upsert: true });
+    if (error) throw error;
+    const { data: pub } = this._bucketApi().getPublicUrl(path);
+    const url = (pub && pub.publicUrl) || dataUrl || null;
+    this._invalidate();
+    return { path, url, uploadedAt: Date.now(), bytes: (blob && blob.size) || 0 };
+  }
+
+  async delete(path) {
+    const { error } = await this._bucketApi().remove([path]);
+    if (error) throw error;
+    this._invalidate();
+  }
+
+  async list(prefix) {
+    const pfx = (prefix || '').replace(/^\/+|\/+$/g, '');
+    const out = [];
+    await this._walk(pfx, out);
+    return out;
+  }
+
+  async _walk(prefix, out) {
+    const { data, error } = await this._bucketApi().list(prefix || '', { limit: 1000, sortBy: { column: 'name', order: 'asc' } });
+    if (error) throw error;
+    for (const it of (data || [])) {
+      const full = prefix ? `${prefix}/${it.name}` : it.name;
+      // Supabase list returns folders with metadata == null && id == null.
+      if (it.id == null && it.metadata == null) {
+        await this._walk(full, out);
+      } else {
+        const bytes = (it.metadata && it.metadata.size) || 0;
+        const uploadedAt = it.updated_at ? new Date(it.updated_at).getTime() : Date.now();
+        const { data: pub } = this._bucketApi().getPublicUrl(full);
+        out.push({ path: full, url: (pub && pub.publicUrl) || null, uploadedAt, bytes });
+      }
+    }
+  }
+
+  _invalidate() { this._listCache = null; }
+
+  async _allCached() {
+    const fresh = Date.now() - this._listCacheAt < 10_000;
+    if (fresh && this._listCache) return this._listCache;
+    this._listCache = await this.list('');
+    this._listCacheAt = Date.now();
+    return this._listCache;
+  }
+
+  // Sync surface kept for compat with the Storage panel; returns cached values
+  // and triggers a background refresh. Components listen for 'storage-refreshed'.
+  estimatedBytes() {
+    if (!this._listCache) { this._allCached().then(() => this._fireRefreshed()); return 0; }
+    return this._listCache.reduce((a, b) => a + (b.bytes || 0), 0);
+  }
+  imageCount() {
+    if (!this._listCache) { this._allCached().then(() => this._fireRefreshed()); return 0; }
+    return this._listCache.length;
+  }
+  topPrefixes(depth = 2, n = 5) {
+    if (!this._listCache) { this._allCached().then(() => this._fireRefreshed()); return []; }
+    const groups = new Map();
+    for (const it of this._listCache) {
+      const seg = it.path.split('/').slice(0, depth).join('/');
+      const g = groups.get(seg) || { prefix: seg, bytes: 0, count: 0 };
+      g.bytes += it.bytes || 0;
+      g.count += 1;
+      groups.set(seg, g);
+    }
+    return Array.from(groups.values()).sort((a, b) => b.bytes - a.bytes).slice(0, n);
+  }
+  _fireRefreshed() {
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage-refreshed'));
+  }
+}
+
+// Pick adapter at module load. USE_SUPABASE + supabase client must exist on window
+// (set by lib/supabase.js which is imported BEFORE this file in main.jsx).
+const __useSupabase = (typeof window !== 'undefined') && window.USE_SUPABASE && window.supabase;
+const imageStorage = __useSupabase
+  ? new SupabaseImageStorage(window.supabase, 'images')
+  : new MemoryImageStorage();
+
+Object.assign(window, { MemoryImageStorage, SupabaseImageStorage, imageStorage });

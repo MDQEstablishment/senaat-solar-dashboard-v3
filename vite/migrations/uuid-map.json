@@ -1,0 +1,125 @@
+{
+  "generatedAt": "2026-05-18T00:23:07.397Z",
+  "users": [
+    {
+      "legacyId": "u-vp",
+      "uuid": "4c8e3a5b-7d2f-4b91-8a3c-1f6e9d8c7b5a",
+      "name": "Olaf Heyns",
+      "email": "Olaf.Heyns@coolcare.com.sa",
+      "role": "VP",
+      "roleEnum": "vp"
+    },
+    {
+      "legacyId": "u-mgr1",
+      "uuid": "a1b2c3d4-e5f6-4789-9abc-def012345678",
+      "name": "Fasiulla Baig",
+      "email": "fasi@coolcare.com.sa",
+      "role": "Manager",
+      "roleEnum": "manager"
+    },
+    {
+      "legacyId": "u-mgr2",
+      "uuid": "b2c3d4e5-f6a7-4890-bcde-f01234567890",
+      "name": "Anas Alshahrani",
+      "email": "Anas.Alshahrani@coolcare.com.sa",
+      "role": "Manager",
+      "roleEnum": "manager"
+    },
+    {
+      "legacyId": "u-op1",
+      "uuid": "c3d4e5f6-a7b8-4901-cdef-012345678901",
+      "name": "Syed Farooq Ahmed",
+      "email": "Syed.Farooq@coolcare.com.sa",
+      "role": "Operations Manager",
+      "roleEnum": "operations_manager"
+    },
+    {
+      "legacyId": "u-op2",
+      "uuid": "d4e5f6a7-b8c9-4012-def0-123456789012",
+      "name": "Syed Azam",
+      "email": "Syed.Azam@coolcare.com.sa",
+      "role": "Operations Manager",
+      "roleEnum": "operations_manager"
+    },
+    {
+      "legacyId": "u-pgm",
+      "uuid": "e5f6a7b8-c9d0-4123-ef01-234567890123",
+      "name": "Naif Alsalmah",
+      "email": "Naif.AlSalmah@coolcare.com.sa",
+      "role": "Program Manager",
+      "roleEnum": "program_manager"
+    },
+    {
+      "legacyId": "u-mat",
+      "uuid": "f6a7b8c9-d0e1-4234-f012-345678901234",
+      "name": "Farhan Ansari",
+      "email": "Farhan.Ansari@coolcare.com.sa",
+      "role": "Material planning",
+      "roleEnum": "material_planning"
+    },
+    {
+      "legacyId": "u-coord",
+      "uuid": "07a8b9c0-d1e2-4345-8012-456789012345",
+      "name": "Nojood Aljughaiman",
+      "email": "Nojood.Aljughaiman@coolcare.com.sa",
+      "role": "Coordinator",
+      "roleEnum": "coordinator"
+    },
+    {
+      "legacyId": "u-pm1",
+      "uuid": "18b9c0d1-e2f3-4456-9123-567890123456",
+      "name": "Muhammad Rafique",
+      "email": "Muhammad.Rafique@coolcare.com.sa",
+      "role": "Project Manager",
+      "roleEnum": "project_manager"
+    },
+    {
+      "legacyId": "u-pm2",
+      "uuid": "29c0d1e2-f3a4-4567-a234-678901234567",
+      "name": "Waleed Dawood",
+      "email": "Waleed.Dawood@coolcare.com.sa",
+      "role": "Project Manager",
+      "roleEnum": "project_manager"
+    },
+    {
+      "legacyId": "u-pm3",
+      "uuid": "3ad1e2f3-a4b5-4678-b345-789012345678",
+      "name": "Nashir AlSagoor",
+      "email": "Nashir.AlSagoor@coolcare.com.sa",
+      "role": "Project Manager",
+      "roleEnum": "project_manager"
+    },
+    {
+      "legacyId": "u-pm4",
+      "uuid": "4be2f3a4-b5c6-4789-c456-890123456789",
+      "name": "Shah Haji",
+      "email": "Shah.Haji@coolcare.com.sa",
+      "role": "Project Manager",
+      "roleEnum": "project_manager"
+    },
+    {
+      "legacyId": "u-pm5",
+      "uuid": "5cf3a4b5-c6d7-489a-d567-90123456789a",
+      "name": "Ali Hasanain",
+      "email": "Ali.Hasnain@coolcare.com.sa",
+      "role": "Project Manager",
+      "roleEnum": "project_manager"
+    },
+    {
+      "legacyId": "u-pm6",
+      "uuid": "6da4b5c6-d7e8-49ab-e678-a12345678901",
+      "name": "Nasser Alhajri",
+      "email": "Nasser.AlHajri@coolcare.com.sa",
+      "role": "Project Manager",
+      "roleEnum": "project_manager"
+    },
+    {
+      "legacyId": "u-pm7",
+      "uuid": "7eb5c6d7-e8f9-4abc-f789-b23456789012",
+      "name": "Sanif Anwar",
+      "email": "Sanif.Anwar.x@coolcare.com.sa",
+      "role": "Project Manager",
+      "roleEnum": "project_manager"
+    }
+  ]
+}

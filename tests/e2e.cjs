@@ -1036,7 +1036,7 @@ record('R29: MemoryImageStorage adapter exposes upload / delete / list / estimat
        /estimatedBytes\(\)/.test(storageR29) &&
        /topPrefixes\(/.test(storageR29) &&
        /window\.imageStorage = imageStorage/.test(storageR29) === false /* assigned via Object.assign */ &&
-       /Object\.assign\(window, \{ MemoryImageStorage, imageStorage \}\)/.test(storageR29));
+       /Object\.assign\(window, \{ MemoryImageStorage, SupabaseImageStorage, imageStorage \}\)/.test(storageR29));
 record('R29: ImageUploader rejects files > 10 MB (reportError + maxInputBytes guard) and rejects non-image MIME',
        /maxInputBytes/.test(imageR29) &&
        /reportError\(err\.message \|\| String\(err\)\)/.test(uploaderR29));
