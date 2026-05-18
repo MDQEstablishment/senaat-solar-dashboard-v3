@@ -186,6 +186,16 @@ function StoreProvider({ children }) {
     setNotifs(ns => ns.map(n => ({ ...n, read: true })));
   };
 
+  // R30.4 BUG #2 — setter wrappers that also splice the window-level legacy
+  // array so non-store readers (e.g. countEnergized(ALL_SCHOOLS), search in
+  // shell.jsx, audit-log seed) see fresh data. Without this, window.TASKS
+  // stayed at 26 after a hard reload + R30.2 boot fetched 27 from DB.
+  const _syncArray = (globalArr, rows) => {
+    if (Array.isArray(globalArr) && Array.isArray(rows)) {
+      globalArr.length = 0;
+      globalArr.push(...rows);
+    }
+  };
   const baseValue = {
     schools, tasks, chats, notifs, people, projects,
     addTask, updateTask, sendTaskMessage, sendTaskReminder,
@@ -193,9 +203,13 @@ function StoreProvider({ children }) {
     updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     pushNotif, markNotifRead, markAllNotifsRead,
     addProject, updateProject, deleteProject,
-    // R30.2 — internal setters exposed for the boot orchestrator (read side).
-    _setSchools: setSchools, _setTasks: setTasks, _setProjects: setProjects,
-    _setPeople: setPeople, _setNotifs: setNotifs,
+    // R30.2/R30.4 — internal setters exposed for the boot orchestrator (read side).
+    // Each setter also syncs the corresponding window-level legacy array.
+    _setSchools: (rows) => { _syncArray(typeof window !== 'undefined' && window.ALL_SCHOOLS, rows); setSchools(rows); },
+    _setTasks:   (rows) => { _syncArray(typeof window !== 'undefined' && window.TASKS,       rows); setTasks(rows); },
+    _setProjects:(rows) => { _syncArray(typeof window !== 'undefined' && window.PROJECTS,    rows); setProjects(rows); },
+    _setPeople:  (rows) => { _syncArray(typeof window !== 'undefined' && window.PEOPLE,      rows); setPeople(rows); },
+    _setNotifs:  setNotifs,  // notifs has no window-level legacy array
   };
   const r2 = (typeof useStoreR2 === 'function') ? useStoreR2(baseValue) : {};
   const value = { ...baseValue, ...r2 };

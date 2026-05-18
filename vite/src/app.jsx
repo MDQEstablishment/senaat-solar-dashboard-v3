@@ -238,19 +238,35 @@ function AppInner() {
     return () => { try { sub?.subscription?.unsubscribe(); } catch {} };
   }, [bootFromSupabase]);
 
-  // H3: URL hash sync (cheap router — back/forward navigates between pages).
-  // We use hash routing because the app uses internal state, not real <Route>s.
+  // H3/R30.4 BUG #3 — URL hash sync (cheap router). The hash now carries the
+  // detail-page id segment so:
+  //   1. Reload on /#/project-detail/p-mad restores activeProjectId.
+  //   2. Browser back/forward navigates between detail entities.
+  //   3. The URL is shareable.
+  // Hash format: '#/<page>' or '#/<page>/<id>' for project-detail,
+  // school-detail, escalation-detail. Other pages stay '#/<page>'.
   React.useEffect(() => {
     if (!currentUser) return;
-    const desired = '#/' + page;
+    let detailId = null;
+    if (page === 'project-detail')       detailId = activeProjectId;
+    else if (page === 'school-detail')   detailId = activeSchoolId;
+    else if (page === 'escalation-detail') detailId = activeEscId;
+    const desired = detailId ? `#/${page}/${detailId}` : `#/${page}`;
     if (window.location.hash !== desired) {
       try { window.history.replaceState(null, '', desired); } catch {}
     }
-  }, [page, currentUser]);
+  }, [page, activeProjectId, activeSchoolId, activeEscId, currentUser]);
   React.useEffect(() => {
     const onPop = () => {
       const h = window.location.hash.replace(/^#\/?/, '');
-      if (h && h !== page) setPage(h);
+      if (!h) return;
+      const [nextPage, idSegment] = h.split('/');
+      if (idSegment) {
+        if (nextPage === 'project-detail' && idSegment !== activeProjectId) setActiveProjectId(idSegment);
+        else if (nextPage === 'school-detail' && idSegment !== activeSchoolId) setActiveSchoolId(idSegment);
+        else if (nextPage === 'escalation-detail' && idSegment !== activeEscId) setActiveEscId(idSegment);
+      }
+      if (nextPage && nextPage !== page) setPage(nextPage);
     };
     window.addEventListener('popstate', onPop);
     window.addEventListener('hashchange', onPop);
@@ -258,7 +274,23 @@ function AppInner() {
       window.removeEventListener('popstate', onPop);
       window.removeEventListener('hashchange', onPop);
     };
-  }, [page]);
+  }, [page, activeProjectId, activeSchoolId, activeEscId]);
+  // On first load: parse hash → restore page + active id once.
+  React.useEffect(() => {
+    if (!currentUser) return;
+    const h = window.location.hash.replace(/^#\/?/, '');
+    if (!h) return;
+    const [nextPage, idSegment] = h.split('/');
+    if (nextPage && nextPage !== page) setPage(nextPage);
+    if (idSegment) {
+      if (nextPage === 'project-detail' && !activeProjectId) setActiveProjectId(idSegment);
+      else if (nextPage === 'school-detail' && !activeSchoolId) setActiveSchoolId(idSegment);
+      else if (nextPage === 'escalation-detail' && !activeEscId) setActiveEscId(idSegment);
+    }
+    // Intentionally runs only when currentUser flips from null → person (sign-in
+    // or rehydration), so subsequent page changes don't re-parse the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
 
   const [taskModalOpen, setTaskModalOpen] = React.useState(false);
   const [taskDefaults,  setTaskDefaults]  = React.useState({});

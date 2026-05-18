@@ -1555,9 +1555,14 @@ record('R30.1: addContractor / updateContractor / deleteContractor bg the contra
        /bgInsert\('contractors'/.test(_storeR2Jsx) &&
        /bgUpdate\('contractors', id/.test(_storeR2Jsx) &&
        /bgDelete\('contractors', id/.test(_storeR2Jsx));
-record('R30.1: addUser / updateUser / archiveUser bg the profiles table',
-       /bgInsert\('profiles'/.test(_storeR2Jsx) &&
-       /bgUpdate\('profiles', window\.userUuid\(id\)/.test(_storeR2Jsx));
+// R30.1 originally checked that addUser called bgInsert('profiles', ...).
+// R30.4 replaced that path with the create-user Edge Function (profiles.id
+// is FK to auth.users so a client-side bgInsert silently fails). The
+// updateUser + archiveUser paths still use bgUpdate('profiles', ...);
+// addUser is verified separately in section S.
+record('R30.1/R30.4: updateUser + archiveUser bg the profiles table (addUser now via Edge Function — section S)',
+       /bgUpdate\('profiles', window\.userUuid\(id\), window\.toDbProfilePatch\(patch\)/.test(_storeR2Jsx) &&
+       /bgUpdate\('profiles', window\.userUuid\(id\), \{ archived: true \}/.test(_storeR2Jsx));
 record('R30.1: addEscalation / resolveEscalation / escalateFurther bg escalations + escalation_history',
        /bgInsert\('escalations'/.test(_storeR2Jsx) &&
        /bgUpdate\('escalations', id/.test(_storeR2Jsx) &&
@@ -1748,22 +1753,29 @@ record('R30.2: page-login submitSupabase no longer resolves PEOPLE — delegates
        /R30\.2 — auth listener in app\.jsx now handles SIGNED_IN/.test(_loginJsx_r302));
 
 // Store-setter exposure for the orchestrator.
-record('R30.2: store.jsx exposes _setSchools / _setTasks / _setProjects / _setPeople / _setNotifs',
-       /_setSchools:\s*setSchools/.test(_storeJsx_r302) &&
-       /_setTasks:\s*setTasks/.test(_storeJsx_r302) &&
-       /_setProjects:\s*setProjects/.test(_storeJsx_r302) &&
-       /_setPeople:\s*setPeople/.test(_storeJsx_r302) &&
-       /_setNotifs:\s*setNotifs/.test(_storeJsx_r302));
-record('R30.2: store-r2.jsx exposes 9 internal setters for boot orchestrator',
-       /_setEscalations:\s*setEscalations/.test(_storeR2_r302) &&
-       /_setContractorsLocal:\s*setContractorsLocal/.test(_storeR2_r302) &&
-       /_setDeliveryNotes:\s*setDeliveryNotes/.test(_storeR2_r302) &&
-       /_setUsers:\s*setUsers/.test(_storeR2_r302) &&
-       /_setAuditLog:\s*setAuditLog/.test(_storeR2_r302) &&
-       /_setThemeColors:\s*setThemeColors/.test(_storeR2_r302) &&
-       /_setThemeLogo:\s*setThemeLogo/.test(_storeR2_r302) &&
-       /_setNotificationTemplates:\s*setNotificationTemplates/.test(_storeR2_r302) &&
-       /_setRolePermissions:\s*setRolePermissions/.test(_storeR2_r302));
+// R30.2 originally exposed the bare React setters. R30.4 wraps them so each
+// setter also splices the corresponding window-level legacy array (Bug #2 fix).
+record('R30.2/R30.4: store.jsx exposes _setSchools / _setTasks / _setProjects / _setPeople / _setNotifs (wrapped in R30.4)',
+       /_setSchools: \(rows\) =>/.test(_storeJsx_r302) &&
+       /_setTasks:\s+\(rows\) =>/.test(_storeJsx_r302) &&
+       /_setProjects:\(rows\) =>/.test(_storeJsx_r302) &&
+       /_setPeople:\s+\(rows\) =>/.test(_storeJsx_r302) &&
+       /_setNotifs:\s+setNotifs/.test(_storeJsx_r302));
+// R30.2/R30.4: 9 internal setters. The 4 that have a window-level legacy array
+// (_setEscalations / _setContractorsLocal / _setDeliveryNotes / _setUsers) were
+// wrapped with array-splice helpers in R30.4 Bug #2; the 5 settings setters
+// (_setAuditLog / _setThemeColors / _setThemeLogo / _setNotificationTemplates /
+// _setRolePermissions) stay as bare React setters since they have no global mirror.
+record('R30.2/R30.4: store-r2.jsx exposes 9 internal setters (4 wrapped for window-sync, 5 bare React setters)',
+       /_setEscalations:\s+\(rows\) =>/.test(_storeR2_r302) &&
+       /_setContractorsLocal:\(rows\) =>/.test(_storeR2_r302) &&
+       /_setDeliveryNotes:\s+\(rows\) =>/.test(_storeR2_r302) &&
+       /_setUsers:\s+\(rows\) =>/.test(_storeR2_r302) &&
+       /_setAuditLog: setAuditLog/.test(_storeR2_r302) &&
+       /_setThemeColors: setThemeColors/.test(_storeR2_r302) &&
+       /_setThemeLogo: setThemeLogo/.test(_storeR2_r302) &&
+       /_setNotificationTemplates: setNotificationTemplates/.test(_storeR2_r302) &&
+       /_setRolePermissions: setRolePermissions/.test(_storeR2_r302));
 
 // Demo-mode escape hatch preserved.
 record('R30.2: bootFromSupabase silently no-ops when !window.USE_SUPABASE (dev mode preserved)',
@@ -1868,6 +1880,92 @@ record('R30.3b: DashStageInsights passes auditLog + renders "(demo data)" discla
        /no stage transitions recorded in last 7 days/.test(_pagesR2_r303b));
 record('R30.3b: PageDashboard inline stage section also uses computeWeeklyCrossingsFromAudit (sync with DashStageInsights)',
        /computeWeeklyCrossingsFromAudit\(auditLog\)/.test(_dashJsx_r303b));
+
+// ── S. R30.4 — production fixes (3 display bugs + server-side addUser) ─────
+const _dashJsx_r304   = fs.readFileSync(path.join(SRC, 'page-dashboard.jsx'), 'utf8');
+const _storeJsx_r304  = fs.readFileSync(path.join(SRC, 'store.jsx'), 'utf8');
+const _storeR2_r304   = fs.readFileSync(path.join(SRC, 'store-r2.jsx'), 'utf8');
+const _appJsx_r304    = fs.readFileSync(path.join(SRC, 'app.jsx'), 'utf8');
+const _createUserFn   = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'create-user', 'index.ts'), 'utf8');
+
+// Bug #1 — Total Schools card reads live count, not literal 2601.
+record('R30.4 Bug#1: PageDashboard totalSchools derives from live schools array (allSchools || ALL_SCHOOLS), not project rollup',
+       /const _liveSchools = \(allSchools \|\| ALL_SCHOOLS\);[\s\S]*?const totalSchools = Number\.isFinite\(_liveSchools\?\.length\)/.test(_dashJsx_r304));
+record('R30.4 Bug#1: computeDashStageData prefers live ALL_SCHOOLS.length over the projects.sites rollup',
+       /const _allSchools = \(typeof window !== 'undefined' && window\.ALL_SCHOOLS\) \|\| \[\];[\s\S]*?const totalS = _allSchools\.length[\s\S]*?\|\| 1;/.test(_dashJsx_r304));
+record('R30.4 Bug#1: hardcoded "2601" fallback removed from both totalS computations',
+       !/\|\| 2601/.test(_dashJsx_r304));
+
+// Bug #2 — _set* setters splice the window-level legacy array.
+record('R30.4 Bug#2: store.jsx _setSchools / _setTasks / _setProjects / _setPeople wrap setState + splice window globals',
+       /_setSchools: \(rows\) => \{ _syncArray\(typeof window !== 'undefined' && window\.ALL_SCHOOLS, rows\); setSchools\(rows\); \}/.test(_storeJsx_r304) &&
+       /_setTasks:   \(rows\) => \{ _syncArray\(typeof window !== 'undefined' && window\.TASKS,       rows\); setTasks\(rows\); \}/.test(_storeJsx_r304) &&
+       /_setProjects:\(rows\) => \{ _syncArray\(typeof window !== 'undefined' && window\.PROJECTS,    rows\); setProjects\(rows\); \}/.test(_storeJsx_r304) &&
+       /_setPeople:  \(rows\) => \{ _syncArray\(typeof window !== 'undefined' && window\.PEOPLE,      rows\); setPeople\(rows\); \}/.test(_storeJsx_r304));
+record('R30.4 Bug#2: store.jsx _syncArray helper mutates globalArr in place (length=0 + push spread)',
+       /const _syncArray = \(globalArr, rows\) => \{[\s\S]*?globalArr\.length = 0;[\s\S]*?globalArr\.push\(\.\.\.rows\);/.test(_storeJsx_r304));
+record('R30.4 Bug#2: store-r2.jsx _setEscalations / _setContractorsLocal / _setDeliveryNotes / _setUsers each splice their window globals',
+       /_setEscalations:\s*\(rows\) => \{[\s\S]*?window\.ESCALATIONS_DEFAULT\.length = 0;[\s\S]*?window\.ESCALATIONS_DEFAULT\.push\(\.\.\.rows\)/.test(_storeR2_r304) &&
+       /_setContractorsLocal:\(rows\) => \{[\s\S]*?window\.CONTRACTORS\.length = 0;[\s\S]*?window\.CONTRACTORS\.push\(\.\.\.rows\)/.test(_storeR2_r304) &&
+       /_setDeliveryNotes:\s*\(rows\) => \{[\s\S]*?window\.DELIVERY_NOTES_SEED\.length = 0;[\s\S]*?window\.DELIVERY_NOTES_SEED\.push\(\.\.\.rows\)/.test(_storeR2_r304) &&
+       /_setUsers:\s*\(rows\) => \{[\s\S]*?window\.PEOPLE\.length = 0;[\s\S]*?window\.PEOPLE\.push\(\.\.\.rows\)/.test(_storeR2_r304));
+record('R30.4 Bug#2: _setUsers also syncs window.PEOPLE (users state mirrors PEOPLE)',
+       /users state in store-r2 mirrors PEOPLE/.test(_storeR2_r304));
+
+// Bug #3 — URL hash carries detail :id segment.
+record('R30.4 Bug#3: app.jsx hash sync includes detailId for project-detail / school-detail / escalation-detail',
+       /const desired = detailId \? `#\/\$\{page\}\/\$\{detailId\}` : `#\/\$\{page\}`/.test(_appJsx_r304));
+record('R30.4 Bug#3: hash sync effect depends on activeProjectId / activeSchoolId / activeEscId so URL stays in sync',
+       /\}, \[page, activeProjectId, activeSchoolId, activeEscId, currentUser\]\)/.test(_appJsx_r304));
+record('R30.4 Bug#3: popstate/hashchange handler parses [nextPage, idSegment] from hash and restores active*Id state',
+       /const \[nextPage, idSegment\] = h\.split\('\/'\)/.test(_appJsx_r304) &&
+       /nextPage === 'project-detail' && idSegment !== activeProjectId\) setActiveProjectId\(idSegment\)/.test(_appJsx_r304) &&
+       /nextPage === 'school-detail' && idSegment !== activeSchoolId\) setActiveSchoolId\(idSegment\)/.test(_appJsx_r304));
+record('R30.4 Bug#3: first-load effect restores active*Id from hash so /#/project-detail/p-mad survives reload',
+       /\/\/ On first load: parse hash → restore page \+ active id once\./.test(_appJsx_r304) &&
+       /nextPage === 'project-detail' && !activeProjectId\) setActiveProjectId\(idSegment\)/.test(_appJsx_r304));
+
+// Server-side addUser via Edge Function.
+record('R30.4 addUser: store-r2.jsx production path invokes supabase.functions.invoke("create-user", { body: ... })',
+       /window\.supabase\.functions\.invoke\('create-user',\s*\{[\s\S]*?body:/.test(_storeR2_r304));
+record('R30.4 addUser: production path is gated on USE_SUPABASE + supabase availability (demo mode untouched)',
+       /const isProd = !!\(typeof window !== 'undefined' && window\.USE_SUPABASE && window\.supabase\)/.test(_storeR2_r304) &&
+       /\/\/ Demo-mode path \(\?dev=1 \/ standalone\) — memory-only, original R29 behavior\./.test(_storeR2_r304));
+record('R30.4 addUser: optimistic UI entry uses u-pending- prefix; rolled back on Edge Function error',
+       /const tempId = 'u-pending-' \+ Date\.now\(\)/.test(_storeR2_r304) &&
+       /setUsers\(us => us\.filter\(x => x\.id !== tempId\)\)/.test(_storeR2_r304));
+record('R30.4 addUser: on Edge Function success, refetches profiles via bgFetchProfiles + syncs window.PEOPLE',
+       /const fresh = await window\.bgFetchProfiles\(\);[\s\S]*?window\.PEOPLE\.length = 0; window\.PEOPLE\.push\(\.\.\.translated\)/.test(_storeR2_r304));
+record('R30.4 addUser: ROLE display string → enum conversion via ROLE_TO_ENUM before sending to Edge Function',
+       /role: window\.ROLE_TO_ENUM\[data\.role\] \|\| data\.role,/.test(_storeR2_r304));
+record('R30.4 addUser: on error, dispatches "supabase-error" CustomEvent so the toast layer can surface it',
+       /window\.dispatchEvent\(new CustomEvent\('supabase-error',[\s\S]*?label: 'create-user'/.test(_storeR2_r304));
+
+// Edge Function source — committed to repo at supabase/functions/create-user/index.ts.
+record('R30.4 Edge Function: file exists at supabase/functions/create-user/index.ts + uses Deno.serve',
+       /Deno\.serve\(async \(req: Request\) =>/.test(_createUserFn));
+record('R30.4 Edge Function: rejects callers whose profile.role is not in (vp | manager | operations_manager)',
+       /const ALLOWED_ROLES = new Set\(\['vp', 'manager', 'operations_manager'\]\)/.test(_createUserFn) &&
+       /if \(!ALLOWED_ROLES\.has\(callerProfile\.role\)\)/.test(_createUserFn));
+record('R30.4 Edge Function: verifies caller JWT via auth.getUser; returns 401 on missing/expired token',
+       /const \{ data: userData, error: userErr \} = await userClient\.auth\.getUser\(\)/.test(_createUserFn) &&
+       /return json\(401, \{ error: 'Invalid or expired token' \}\)/.test(_createUserFn));
+record('R30.4 Edge Function: reads service_role from Deno.env (NEVER hardcoded)',
+       /const SERVICE_ROLE = Deno\.env\.get\('SUPABASE_SERVICE_ROLE_KEY'\)/.test(_createUserFn) &&
+       !/service_role.*[=:]\s*['"`]eyJ/.test(_createUserFn));  // sanity — no leaked JWT-shaped value
+record('R30.4 Edge Function: creates auth.users via auth.admin.createUser (email_confirm: true) + matching profiles row',
+       /admin\.auth\.admin\.createUser\(\{[\s\S]*?email_confirm: true/.test(_createUserFn) &&
+       /admin\s*\.from\('profiles'\)\s*\.insert\(\{[\s\S]*?id: newUserId/.test(_createUserFn));
+record('R30.4 Edge Function: rolls back the auth user on profile insert failure (no half-bound state)',
+       /Roll back the auth user[\s\S]*?admin\.auth\.admin\.deleteUser\(newUserId\)/.test(_createUserFn));
+record('R30.4 Edge Function: returns { user_id, profile_id } on success; { error } on failure',
+       /return json\(200, \{ user_id: newUserId, profile_id: profileRow\.id \}\)/.test(_createUserFn));
+
+// Sanity — the buggy `|| 2601` fallback expressions are gone from totalS
+// calculations (the only references left to "2601" should be inside an
+// explanatory code comment, not an evaluated expression).
+record('R30.4 sanity: page-dashboard.jsx has no executable "|| 2601" fallback in totalS calcs',
+       !/\|\| 2601\b/.test(_dashJsx_r304));
 
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;

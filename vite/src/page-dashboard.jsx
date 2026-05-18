@@ -122,7 +122,12 @@ function computeDashStageData(projects, auditLog) {
   const stageCounts = SCHOOL_STAGES.map((_, i) =>
     projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
   );
-  const totalS = projects.filter(p => p.schoolDist).reduce((a, p) => a + p.sites, 0) || 2601;
+  // R30.4 BUG #1 — prefer the live schools array length over project rollup;
+  // fall back to projects.sites sum, then to 1 (never 0 — div-by-zero in pct).
+  const _allSchools = (typeof window !== 'undefined' && window.ALL_SCHOOLS) || [];
+  const totalS = _allSchools.length
+                  || projects.filter(p => p.schoolDist).reduce((a, p) => a + p.sites, 0)
+                  || 1;
   const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a, c) => a + c, 0));
   const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i - 1]) - c);
   const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
@@ -514,10 +519,16 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
   const totalValue = projects.reduce((a, p) => a + p.value, 0);
   const openCount = projects.filter(p => p.progress < 100).length;
   const closedCount = projects.length - openCount;
-  const totalSchools = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0);
+  // R30.4 BUG #1 — derive totalSchools from the live schools array (post-boot)
+  // rather than summing the denormalized projects.schools_count column, which
+  // was stale (held the seed-time count 2601 while the actual schools table
+  // has 2600 rows — one was silently dropped during seed apply). Defensive
+  // Number.isFinite handles the brief render window before boot completes.
+  const _liveSchools = (allSchools || ALL_SCHOOLS);
+  const totalSchools = Number.isFinite(_liveSchools?.length) ? _liveSchools.length : 0;
   // M2: use the shared countEnergized selector, scoped to the projects shown here.
   const projIds = new Set(projects.map(p => p.id));
-  const scopedSchools = (allSchools || ALL_SCHOOLS).filter(s => projIds.has(s.projectId));
+  const scopedSchools = _liveSchools.filter(s => projIds.has(s.projectId));
   const energizedSchools = countEnergized(scopedSchools);
   const overall = projects.length ? Math.round(projects.reduce((a,p)=>a+p.progress,0) / projects.length) : 0;
 
@@ -526,7 +537,10 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
   );
 
   // R19: cumulative counts + bottleneck data for redesigned stage section
-  const totalS = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0) || 2601;
+  // R30.4 BUG #1 — same fix as computeDashStageData: prefer live schools.length.
+  const totalS = _liveSchools.length
+                  || projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0)
+                  || 1;
   const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a,c)=>a+c,0));
   const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i-1]) - c);
   const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);

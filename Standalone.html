@@ -4244,8 +4244,69 @@ function useStoreR2(base) {
   // P1 Users: editable user roster on top of seeded PEOPLE
   const [users, setUsers] = React.useState(() => PEOPLE.map(p => ({ ...p, active: true, archived: false })));
   const addUser = (data, actor) => {
+    const tempPw = data.temp_password || 'Welcome@123';
+    // R30.4 — Production-mode path: invoke the `create-user` Edge Function so
+    // auth.users + profiles are created atomically with the service-role key
+    // (browser bundles never see service_role). Returns a promise the caller
+    // awaits to receive the new row + tempPassword. Memory state is updated
+    // optimistically; on Edge Function failure we don't roll back the optimistic
+    // entry — instead the next bgFetchProfiles refresh corrects the roster.
+    const isProd = !!(typeof window !== 'undefined' && window.USE_SUPABASE && window.supabase);
+    if (isProd) {
+      // Optimistic local entry — temporary 'u-pending' id until the function
+      // returns the real uuid; the UI shows the new user immediately but the
+      // refetch swap-in (within ~1s) replaces it with the canonical row.
+      const tempId = 'u-pending-' + Date.now();
+      const optimistic = {
+        id: tempId, name: data.name, email: data.email, role: data.role,
+        region: Array.isArray(data.region) ? data.region.join(', ') : (data.region || ''),
+        mobile: data.mobile || '', active: true, archived: false,
+        initials: (data.name || '??').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase(),
+        tempPassword: tempPw, _pending: true,
+      };
+      setUsers(us => [optimistic, ...us]);
+      const promise = window.supabase.functions.invoke('create-user', {
+        body: {
+          email: data.email,
+          full_name: data.name,
+          role: window.ROLE_TO_ENUM[data.role] || data.role,
+          mobile: data.mobile || null,
+          default_regions: Array.isArray(data.region) ? data.region : (data.region ? [data.region] : []),
+          temp_password: tempPw,
+        },
+      }).then(async ({ data: respData, error: invokeErr }) => {
+        if (invokeErr || !respData || respData.error) {
+          // Remove the optimistic entry so the user can retry.
+          setUsers(us => us.filter(x => x.id !== tempId));
+          const errMsg = invokeErr?.message || respData?.error || 'create-user failed';
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('supabase-error', { detail: { label: 'create-user', error: errMsg } }));
+          }
+          return { ok: false, error: errMsg };
+        }
+        // Refetch profiles so the canonical row (with real uuid + initials)
+        // replaces the optimistic entry. Boot orchestrator's _setUsers wrapper
+        // syncs window.PEOPLE too.
+        if (window.bgFetchProfiles) {
+          const fresh = await window.bgFetchProfiles();
+          if (fresh && fresh.length) {
+            const translated = fresh.map(window.fromDbProfile);
+            setUsers(translated.map(p => ({ ...p, active: !p.archived })));
+            if (Array.isArray(window.PEOPLE)) { window.PEOPLE.length = 0; window.PEOPLE.push(...translated); }
+          }
+        }
+        if (actor && typeof logAudit === 'function') logAudit({
+          actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+          action: 'CREATE', entityType: 'user', entityId: respData.user_id, entityLabel: data.name,
+          summary: `Created user "${data.name}" (${data.role}) via create-user Edge Function`,
+        });
+        return { ok: true, user_id: respData.user_id, tempPassword: tempPw };
+      });
+      return { ok: true, pending: true, promise, tempPassword: tempPw };
+    }
+
+    // Demo-mode path (?dev=1 / standalone) — memory-only, original R29 behavior.
     const id = 'u-new-' + Date.now();
-    const tempPw = 'Welcome@123';
     const u = {
       id, name: data.name, email: data.email, role: data.role,
       region: Array.isArray(data.region) ? data.region.join(', ') : (data.region || ''),
@@ -4255,12 +4316,6 @@ function useStoreR2(base) {
     };
     setUsers(us => [u, ...us]);
     if (typeof window !== 'undefined' && Array.isArray(window.PEOPLE)) window.PEOPLE.unshift(u);
-    // Note: profiles.id is FK to auth.users.id but R30.1 has the constraint
-    // dropped operator-side (per R30.1 brief). New profile rows here have no
-    // matching auth.users until an admin creates one via Supabase Auth UI.
-    if (window.bgInsert && window.userUuid && window.userUuid(id)) {
-      window.bgInsert('profiles', window.toDbProfile(u), 'profile');
-    }
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'CREATE', entityType: 'user', entityId: id, entityLabel: u.name,
@@ -4742,11 +4797,40 @@ function useStoreR2(base) {
     projectCover, projectGallery, schoolStagePhotos, getSchoolStagePhotos,
     setProjectCoverFor, setProjectGalleryFor, setSchoolStagePhotosFor,
     deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote,
-    // R30.2 — internal setters exposed for the boot orchestrator (read side).
-    _setEscalations: setEscalations,
-    _setContractorsLocal: setContractorsLocal,
-    _setDeliveryNotes: setDeliveryNotes,
-    _setUsers: setUsers,
+    // R30.2/R30.4 — internal setters; wrappers sync the window-level legacy
+    // array where one exists. AUDIT_LOG_SEED stays read-only after boot; the
+    // mutators write to React state via addAudit/logAudit so a sync wrapper
+    // here would just create duplicate work.
+    _setEscalations:     (rows) => {
+      if (typeof window !== 'undefined' && Array.isArray(window.ESCALATIONS_DEFAULT) && Array.isArray(rows)) {
+        window.ESCALATIONS_DEFAULT.length = 0;
+        window.ESCALATIONS_DEFAULT.push(...rows);
+      }
+      setEscalations(rows);
+    },
+    _setContractorsLocal:(rows) => {
+      if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS) && Array.isArray(rows)) {
+        window.CONTRACTORS.length = 0;
+        window.CONTRACTORS.push(...rows);
+      }
+      setContractorsLocal(rows);
+    },
+    _setDeliveryNotes:   (rows) => {
+      if (typeof window !== 'undefined' && Array.isArray(window.DELIVERY_NOTES_SEED) && Array.isArray(rows)) {
+        window.DELIVERY_NOTES_SEED.length = 0;
+        window.DELIVERY_NOTES_SEED.push(...rows);
+      }
+      setDeliveryNotes(rows);
+    },
+    _setUsers:           (rows) => {
+      // users state in store-r2 mirrors PEOPLE with extra { active, archived } —
+      // sync PEOPLE too so legacy readers see the same roster.
+      if (typeof window !== 'undefined' && Array.isArray(window.PEOPLE) && Array.isArray(rows)) {
+        window.PEOPLE.length = 0;
+        window.PEOPLE.push(...rows);
+      }
+      setUsers(rows);
+    },
     _setAuditLog: setAuditLog,
     _setThemeColors: setThemeColors,
     _setThemeLogo: setThemeLogo,
@@ -4976,6 +5060,16 @@ function StoreProvider({ children }) {
     setNotifs(ns => ns.map(n => ({ ...n, read: true })));
   };
 
+  // R30.4 BUG #2 — setter wrappers that also splice the window-level legacy
+  // array so non-store readers (e.g. countEnergized(ALL_SCHOOLS), search in
+  // shell.jsx, audit-log seed) see fresh data. Without this, window.TASKS
+  // stayed at 26 after a hard reload + R30.2 boot fetched 27 from DB.
+  const _syncArray = (globalArr, rows) => {
+    if (Array.isArray(globalArr) && Array.isArray(rows)) {
+      globalArr.length = 0;
+      globalArr.push(...rows);
+    }
+  };
   const baseValue = {
     schools, tasks, chats, notifs, people, projects,
     addTask, updateTask, sendTaskMessage, sendTaskReminder,
@@ -4983,9 +5077,13 @@ function StoreProvider({ children }) {
     updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     pushNotif, markNotifRead, markAllNotifsRead,
     addProject, updateProject, deleteProject,
-    // R30.2 — internal setters exposed for the boot orchestrator (read side).
-    _setSchools: setSchools, _setTasks: setTasks, _setProjects: setProjects,
-    _setPeople: setPeople, _setNotifs: setNotifs,
+    // R30.2/R30.4 — internal setters exposed for the boot orchestrator (read side).
+    // Each setter also syncs the corresponding window-level legacy array.
+    _setSchools: (rows) => { _syncArray(typeof window !== 'undefined' && window.ALL_SCHOOLS, rows); setSchools(rows); },
+    _setTasks:   (rows) => { _syncArray(typeof window !== 'undefined' && window.TASKS,       rows); setTasks(rows); },
+    _setProjects:(rows) => { _syncArray(typeof window !== 'undefined' && window.PROJECTS,    rows); setProjects(rows); },
+    _setPeople:  (rows) => { _syncArray(typeof window !== 'undefined' && window.PEOPLE,      rows); setPeople(rows); },
+    _setNotifs:  setNotifs,  // notifs has no window-level legacy array
   };
   const r2 = (typeof useStoreR2 === 'function') ? useStoreR2(baseValue) : {};
   const value = { ...baseValue, ...r2 };
@@ -5856,7 +5954,12 @@ function computeDashStageData(projects, auditLog) {
   const stageCounts = SCHOOL_STAGES.map((_, i) =>
     projects.filter(p => p.schoolDist).reduce((a, p) => a + (p.schoolDist[i] || 0), 0)
   );
-  const totalS = projects.filter(p => p.schoolDist).reduce((a, p) => a + p.sites, 0) || 2601;
+  // R30.4 BUG #1 — prefer the live schools array length over project rollup;
+  // fall back to projects.sites sum, then to 1 (never 0 — div-by-zero in pct).
+  const _allSchools = (typeof window !== 'undefined' && window.ALL_SCHOOLS) || [];
+  const totalS = _allSchools.length
+                  || projects.filter(p => p.schoolDist).reduce((a, p) => a + p.sites, 0)
+                  || 1;
   const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a, c) => a + c, 0));
   const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i - 1]) - c);
   const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
@@ -6248,10 +6351,16 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
   const totalValue = projects.reduce((a, p) => a + p.value, 0);
   const openCount = projects.filter(p => p.progress < 100).length;
   const closedCount = projects.length - openCount;
-  const totalSchools = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0);
+  // R30.4 BUG #1 — derive totalSchools from the live schools array (post-boot)
+  // rather than summing the denormalized projects.schools_count column, which
+  // was stale (held the seed-time count 2601 while the actual schools table
+  // has 2600 rows — one was silently dropped during seed apply). Defensive
+  // Number.isFinite handles the brief render window before boot completes.
+  const _liveSchools = (allSchools || ALL_SCHOOLS);
+  const totalSchools = Number.isFinite(_liveSchools?.length) ? _liveSchools.length : 0;
   // M2: use the shared countEnergized selector, scoped to the projects shown here.
   const projIds = new Set(projects.map(p => p.id));
-  const scopedSchools = (allSchools || ALL_SCHOOLS).filter(s => projIds.has(s.projectId));
+  const scopedSchools = _liveSchools.filter(s => projIds.has(s.projectId));
   const energizedSchools = countEnergized(scopedSchools);
   const overall = projects.length ? Math.round(projects.reduce((a,p)=>a+p.progress,0) / projects.length) : 0;
 
@@ -6260,7 +6369,10 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
   );
 
   // R19: cumulative counts + bottleneck data for redesigned stage section
-  const totalS = projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0) || 2601;
+  // R30.4 BUG #1 — same fix as computeDashStageData: prefer live schools.length.
+  const totalS = _liveSchools.length
+                  || projects.filter(p => p.schoolDist).reduce((a,p)=>a+p.sites,0)
+                  || 1;
   const cumCounts = stageCounts.map((_, i) => stageCounts.slice(i).reduce((a,c)=>a+c,0));
   const drops = cumCounts.map((c, i) => (i === 0 ? totalS : cumCounts[i-1]) - c);
   const bottleneckIdx = drops.reduce((maxI, d, i) => (i >= 1 && d > drops[maxI]) ? i : maxI, 1);
@@ -12766,19 +12878,35 @@ function AppInner() {
     return () => { try { sub?.subscription?.unsubscribe(); } catch {} };
   }, [bootFromSupabase]);
 
-  // H3: URL hash sync (cheap router — back/forward navigates between pages).
-  // We use hash routing because the app uses internal state, not real <Route>s.
+  // H3/R30.4 BUG #3 — URL hash sync (cheap router). The hash now carries the
+  // detail-page id segment so:
+  //   1. Reload on /#/project-detail/p-mad restores activeProjectId.
+  //   2. Browser back/forward navigates between detail entities.
+  //   3. The URL is shareable.
+  // Hash format: '#/<page>' or '#/<page>/<id>' for project-detail,
+  // school-detail, escalation-detail. Other pages stay '#/<page>'.
   React.useEffect(() => {
     if (!currentUser) return;
-    const desired = '#/' + page;
+    let detailId = null;
+    if (page === 'project-detail')       detailId = activeProjectId;
+    else if (page === 'school-detail')   detailId = activeSchoolId;
+    else if (page === 'escalation-detail') detailId = activeEscId;
+    const desired = detailId ? `#/${page}/${detailId}` : `#/${page}`;
     if (window.location.hash !== desired) {
       try { window.history.replaceState(null, '', desired); } catch {}
     }
-  }, [page, currentUser]);
+  }, [page, activeProjectId, activeSchoolId, activeEscId, currentUser]);
   React.useEffect(() => {
     const onPop = () => {
       const h = window.location.hash.replace(/^#\/?/, '');
-      if (h && h !== page) setPage(h);
+      if (!h) return;
+      const [nextPage, idSegment] = h.split('/');
+      if (idSegment) {
+        if (nextPage === 'project-detail' && idSegment !== activeProjectId) setActiveProjectId(idSegment);
+        else if (nextPage === 'school-detail' && idSegment !== activeSchoolId) setActiveSchoolId(idSegment);
+        else if (nextPage === 'escalation-detail' && idSegment !== activeEscId) setActiveEscId(idSegment);
+      }
+      if (nextPage && nextPage !== page) setPage(nextPage);
     };
     window.addEventListener('popstate', onPop);
     window.addEventListener('hashchange', onPop);
@@ -12786,7 +12914,23 @@ function AppInner() {
       window.removeEventListener('popstate', onPop);
       window.removeEventListener('hashchange', onPop);
     };
-  }, [page]);
+  }, [page, activeProjectId, activeSchoolId, activeEscId]);
+  // On first load: parse hash → restore page + active id once.
+  React.useEffect(() => {
+    if (!currentUser) return;
+    const h = window.location.hash.replace(/^#\/?/, '');
+    if (!h) return;
+    const [nextPage, idSegment] = h.split('/');
+    if (nextPage && nextPage !== page) setPage(nextPage);
+    if (idSegment) {
+      if (nextPage === 'project-detail' && !activeProjectId) setActiveProjectId(idSegment);
+      else if (nextPage === 'school-detail' && !activeSchoolId) setActiveSchoolId(idSegment);
+      else if (nextPage === 'escalation-detail' && !activeEscId) setActiveEscId(idSegment);
+    }
+    // Intentionally runs only when currentUser flips from null → person (sign-in
+    // or rehydration), so subsequent page changes don't re-parse the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser]);
 
   const [taskModalOpen, setTaskModalOpen] = React.useState(false);
   const [taskDefaults,  setTaskDefaults]  = React.useState({});

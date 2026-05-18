@@ -316,8 +316,69 @@ function useStoreR2(base) {
   // P1 Users: editable user roster on top of seeded PEOPLE
   const [users, setUsers] = React.useState(() => PEOPLE.map(p => ({ ...p, active: true, archived: false })));
   const addUser = (data, actor) => {
+    const tempPw = data.temp_password || 'Welcome@123';
+    // R30.4 — Production-mode path: invoke the `create-user` Edge Function so
+    // auth.users + profiles are created atomically with the service-role key
+    // (browser bundles never see service_role). Returns a promise the caller
+    // awaits to receive the new row + tempPassword. Memory state is updated
+    // optimistically; on Edge Function failure we don't roll back the optimistic
+    // entry — instead the next bgFetchProfiles refresh corrects the roster.
+    const isProd = !!(typeof window !== 'undefined' && window.USE_SUPABASE && window.supabase);
+    if (isProd) {
+      // Optimistic local entry — temporary 'u-pending' id until the function
+      // returns the real uuid; the UI shows the new user immediately but the
+      // refetch swap-in (within ~1s) replaces it with the canonical row.
+      const tempId = 'u-pending-' + Date.now();
+      const optimistic = {
+        id: tempId, name: data.name, email: data.email, role: data.role,
+        region: Array.isArray(data.region) ? data.region.join(', ') : (data.region || ''),
+        mobile: data.mobile || '', active: true, archived: false,
+        initials: (data.name || '??').split(/\s+/).map(s => s[0]).slice(0, 2).join('').toUpperCase(),
+        tempPassword: tempPw, _pending: true,
+      };
+      setUsers(us => [optimistic, ...us]);
+      const promise = window.supabase.functions.invoke('create-user', {
+        body: {
+          email: data.email,
+          full_name: data.name,
+          role: window.ROLE_TO_ENUM[data.role] || data.role,
+          mobile: data.mobile || null,
+          default_regions: Array.isArray(data.region) ? data.region : (data.region ? [data.region] : []),
+          temp_password: tempPw,
+        },
+      }).then(async ({ data: respData, error: invokeErr }) => {
+        if (invokeErr || !respData || respData.error) {
+          // Remove the optimistic entry so the user can retry.
+          setUsers(us => us.filter(x => x.id !== tempId));
+          const errMsg = invokeErr?.message || respData?.error || 'create-user failed';
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('supabase-error', { detail: { label: 'create-user', error: errMsg } }));
+          }
+          return { ok: false, error: errMsg };
+        }
+        // Refetch profiles so the canonical row (with real uuid + initials)
+        // replaces the optimistic entry. Boot orchestrator's _setUsers wrapper
+        // syncs window.PEOPLE too.
+        if (window.bgFetchProfiles) {
+          const fresh = await window.bgFetchProfiles();
+          if (fresh && fresh.length) {
+            const translated = fresh.map(window.fromDbProfile);
+            setUsers(translated.map(p => ({ ...p, active: !p.archived })));
+            if (Array.isArray(window.PEOPLE)) { window.PEOPLE.length = 0; window.PEOPLE.push(...translated); }
+          }
+        }
+        if (actor && typeof logAudit === 'function') logAudit({
+          actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+          action: 'CREATE', entityType: 'user', entityId: respData.user_id, entityLabel: data.name,
+          summary: `Created user "${data.name}" (${data.role}) via create-user Edge Function`,
+        });
+        return { ok: true, user_id: respData.user_id, tempPassword: tempPw };
+      });
+      return { ok: true, pending: true, promise, tempPassword: tempPw };
+    }
+
+    // Demo-mode path (?dev=1 / standalone) — memory-only, original R29 behavior.
     const id = 'u-new-' + Date.now();
-    const tempPw = 'Welcome@123';
     const u = {
       id, name: data.name, email: data.email, role: data.role,
       region: Array.isArray(data.region) ? data.region.join(', ') : (data.region || ''),
@@ -327,12 +388,6 @@ function useStoreR2(base) {
     };
     setUsers(us => [u, ...us]);
     if (typeof window !== 'undefined' && Array.isArray(window.PEOPLE)) window.PEOPLE.unshift(u);
-    // Note: profiles.id is FK to auth.users.id but R30.1 has the constraint
-    // dropped operator-side (per R30.1 brief). New profile rows here have no
-    // matching auth.users until an admin creates one via Supabase Auth UI.
-    if (window.bgInsert && window.userUuid && window.userUuid(id)) {
-      window.bgInsert('profiles', window.toDbProfile(u), 'profile');
-    }
     if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'CREATE', entityType: 'user', entityId: id, entityLabel: u.name,
@@ -814,11 +869,40 @@ function useStoreR2(base) {
     projectCover, projectGallery, schoolStagePhotos, getSchoolStagePhotos,
     setProjectCoverFor, setProjectGalleryFor, setSchoolStagePhotosFor,
     deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote,
-    // R30.2 — internal setters exposed for the boot orchestrator (read side).
-    _setEscalations: setEscalations,
-    _setContractorsLocal: setContractorsLocal,
-    _setDeliveryNotes: setDeliveryNotes,
-    _setUsers: setUsers,
+    // R30.2/R30.4 — internal setters; wrappers sync the window-level legacy
+    // array where one exists. AUDIT_LOG_SEED stays read-only after boot; the
+    // mutators write to React state via addAudit/logAudit so a sync wrapper
+    // here would just create duplicate work.
+    _setEscalations:     (rows) => {
+      if (typeof window !== 'undefined' && Array.isArray(window.ESCALATIONS_DEFAULT) && Array.isArray(rows)) {
+        window.ESCALATIONS_DEFAULT.length = 0;
+        window.ESCALATIONS_DEFAULT.push(...rows);
+      }
+      setEscalations(rows);
+    },
+    _setContractorsLocal:(rows) => {
+      if (typeof window !== 'undefined' && Array.isArray(window.CONTRACTORS) && Array.isArray(rows)) {
+        window.CONTRACTORS.length = 0;
+        window.CONTRACTORS.push(...rows);
+      }
+      setContractorsLocal(rows);
+    },
+    _setDeliveryNotes:   (rows) => {
+      if (typeof window !== 'undefined' && Array.isArray(window.DELIVERY_NOTES_SEED) && Array.isArray(rows)) {
+        window.DELIVERY_NOTES_SEED.length = 0;
+        window.DELIVERY_NOTES_SEED.push(...rows);
+      }
+      setDeliveryNotes(rows);
+    },
+    _setUsers:           (rows) => {
+      // users state in store-r2 mirrors PEOPLE with extra { active, archived } —
+      // sync PEOPLE too so legacy readers see the same roster.
+      if (typeof window !== 'undefined' && Array.isArray(window.PEOPLE) && Array.isArray(rows)) {
+        window.PEOPLE.length = 0;
+        window.PEOPLE.push(...rows);
+      }
+      setUsers(rows);
+    },
     _setAuditLog: setAuditLog,
     _setThemeColors: setThemeColors,
     _setThemeLogo: setThemeLogo,
