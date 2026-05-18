@@ -12834,6 +12834,7 @@ function AppInner() {
   // top-of-page "Loading data..." banner during the orchestrator's fetch.
   const [bootStatus, setBootStatus] = React.useState(null);
   const __bootRanRef = React.useRef(false);
+  const __realtimeCleanupRef = React.useRef(null);  // R30.7
 
   // R30.2 — Boot orchestrator. Fetches all 8 tables in parallel, computes
   // PM→projectIds from the raw rows (joining UUIDs to legacy project ids),
@@ -12971,7 +12972,15 @@ function AppInner() {
       setCurrentUser(profile);
       setHydrating(false);
       // Kick off the bulk data load (idempotent — guarded by __bootRanRef).
-      bootFromSupabase();
+      bootFromSupabase().then(() => {
+        // R30.7 — Install realtime subscriptions for tasks / escalations / delivery_notes
+        // AFTER boot completes so we don't race with the initial bulk load.
+        try {
+          if (typeof window !== 'undefined' && window.installRealtime) {
+            __realtimeCleanupRef.current = window.installRealtime(store);
+          }
+        } catch (_) {}
+      });
     };
 
     // 1) Hydrate existing session on mount.
@@ -12983,6 +12992,13 @@ function AppInner() {
     const { data: sub } = window.supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         __bootRanRef.current = false;
+        // R30.7 — Detach realtime channel so the next sign-in installs a fresh one.
+        try {
+          if (__realtimeCleanupRef.current) {
+            __realtimeCleanupRef.current();
+            __realtimeCleanupRef.current = null;
+          }
+        } catch (_) {}
         setBootStatus(null);
         setCurrentUser(null);
         setHydrating(false);

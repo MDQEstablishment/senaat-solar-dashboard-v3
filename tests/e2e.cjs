@@ -1736,7 +1736,7 @@ record('R30.2: boot status banner — loading + error variants rendered above ma
 record('R30.2: app.jsx onAuthStateChange kicks off bootFromSupabase on SIGNED_IN / INITIAL_SESSION',
        /event === 'SIGNED_IN' \|\| event === 'TOKEN_REFRESHED' \|\| event === 'INITIAL_SESSION'/.test(_appJsx_r302) &&
        /resolveSession\(session\)/.test(_appJsx_r302) &&
-       /bootFromSupabase\(\);/.test(_appJsx_r302));
+       /bootFromSupabase\(\)/.test(_appJsx_r302));
 record('R30.2: SIGNED_OUT resets __bootRanRef so a fresh sign-in re-triggers the orchestrator',
        /event === 'SIGNED_OUT'/.test(_appJsx_r302) &&
        /__bootRanRef\.current = false/.test(_appJsx_r302));
@@ -2056,6 +2056,43 @@ record('R30.6 SignaturePad: restores existing signature on mount (edit flow)',
        /Restore existing signature if any/.test(_dnPage306) && /img\.src = value/.test(_dnPage306));
 record('R30.6 SignaturePad: end handler emits dataUrl via onChange (form state updated)',
        /onChange && onChange\(url\)/.test(_dnPage306));
+
+// ─────────────────────────────────────────────────────────────────────────
+// Section V — R30.7 wiring (Realtime subscriptions for tasks / escalations / delivery_notes)
+// ─────────────────────────────────────────────────────────────────────────
+const _realtimeLib = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'lib', 'realtime.js'), 'utf8');
+const _appJsx307   = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'app.jsx'), 'utf8');
+const _mainJsx307  = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'main.jsx'), 'utf8');
+
+record('R30.7 realtime lib: file exists and exports installRealtime',
+       /export function installRealtime\(store\)/.test(_realtimeLib));
+record('R30.7 realtime lib: subscribes to postgres_changes on tasks, escalations, delivery_notes',
+       /table: 'tasks'/.test(_realtimeLib) &&
+       /table: 'escalations'/.test(_realtimeLib) &&
+       /table: 'delivery_notes'/.test(_realtimeLib));
+record('R30.7 realtime lib: subscribes with event:* (covers INSERT/UPDATE/DELETE)',
+       (_realtimeLib.match(/event: '\*'/g) || []).length >= 3);
+record('R30.7 realtime lib: debounces same-table change bursts (250ms) to avoid re-fetch storms',
+       /setTimeout\(fn, 250\)/.test(_realtimeLib));
+record('R30.7 realtime lib: refresh paths call bgFetch* + translate via fromDb* + _setX (same path as boot)',
+       /window\.bgFetchTasks/.test(_realtimeLib) &&
+       /window\.fromDbTask/.test(_realtimeLib) &&
+       /store\._setTasks/.test(_realtimeLib));
+record('R30.7 realtime lib: idempotent — tears down prior channel before installing new one',
+       /supabase\.removeChannel\(_channel\)/.test(_realtimeLib));
+record('R30.7 realtime lib: short-circuits in demo mode (USE_SUPABASE=false)',
+       /!supabase \|\| typeof window === 'undefined' \|\| !window\.USE_SUPABASE/.test(_realtimeLib));
+record('R30.7 realtime lib: installs window.installRealtime for cross-module access',
+       /window\.installRealtime = installRealtime/.test(_realtimeLib));
+record('R30.7 main.jsx: imports lib/realtime.js so window.installRealtime is set before AppInner mounts',
+       /import '\.\/lib\/realtime\.js'/.test(_mainJsx307));
+record('R30.7 app.jsx: installs realtime AFTER bootFromSupabase resolves (no race with bulk load)',
+       /bootFromSupabase\(\)\.then\(\(\) =>/.test(_appJsx307) &&
+       /window\.installRealtime\(store\)/.test(_appJsx307));
+record('R30.7 app.jsx: stores cleanup function in __realtimeCleanupRef',
+       /__realtimeCleanupRef\.current = window\.installRealtime/.test(_appJsx307));
+record('R30.7 app.jsx: tears down realtime on SIGNED_OUT (no leak across user switches)',
+       /__realtimeCleanupRef\.current\(\);[\s\S]*?__realtimeCleanupRef\.current = null/.test(_appJsx307));
 
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;

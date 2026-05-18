@@ -112,6 +112,7 @@ import './lib/db.js';
 import './lib/image.js';
 import './lib/storage.js';
 import './lib/notify.js'; // R30.5
+import './lib/realtime.js'; // R30.7
 import './components/StageCard.jsx';
 import './components/StageChecklistTable.jsx';
 import './components/MapPreview.jsx';
