@@ -502,6 +502,395 @@ if (typeof window !== 'undefined') {
   });
 }
 
+// ─── R30.2 — Read side ─────────────────────────────────────────────────────
+// fromDb* translators mirror the toDb* helpers above. They map snake_case
+// Supabase rows back to the camelCase / nested shape the JSX consumes
+// (legacy R29 store shape). Each helper accepts a single row and returns
+// the in-memory object; pass arrays through `rows.map(fromDb*)`.
+//
+// Enum-display reverse maps (toDb maps display → enum; fromDb maps enum → display).
+
+const PROJECT_STATUS_DISPLAY = {
+  on_track: 'On Track', at_risk: 'At Risk', delayed: 'Delayed',
+  completed: 'Complete', on_hold: 'On Hold',
+};
+const TASK_STATUS_DISPLAY = {
+  todo: 'Open', in_progress: 'In Progress', blocked: 'Blocked', done: 'Done',
+};
+const ESC_STATUS_DISPLAY = {
+  open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', closed: 'Closed',
+};
+const URGENCY_DISPLAY = {
+  low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical',
+};
+const SCHOOL_REMARK_DISPLAY = {
+  active: 'Active', access_issue: 'Access Issue', delayed: 'Delayed',
+  blocked: 'Blocked', excluded: 'Excluded',
+};
+
+function computeInitials(fullName) {
+  return (fullName || '').trim().split(/\s+/).map(s => s[0] || '').slice(0, 2).join('').toUpperCase();
+}
+function fromDbProfile(row) {
+  // DB row: { id uuid, full_name, email, role enum, mobile, default_regions text[],
+  //           archived, avatar_url, created_at, updated_at }
+  // UI shape: { id, name, email, role(display), region(first), mobile, avatarUrl,
+  //             archived, active, initials, [projectIds — populated by boot] }
+  if (!row) return null;
+  const fullName = row.full_name || '';
+  return {
+    id: legacyUserId(row.id),
+    name: fullName,
+    email: row.email || '',
+    role: ENUM_TO_ROLE[row.role] || row.role || '',
+    region: (Array.isArray(row.default_regions) && row.default_regions[0]) || '',
+    mobile: row.mobile || '',
+    avatarUrl: row.avatar_url || null,
+    archived: !!row.archived,
+    active: !row.archived,
+    initials: computeInitials(fullName),
+  };
+}
+function fromDbProject(row) {
+  // DB row: { id text, name, name_ar, region, city, contract_value numeric,
+  //           currency, start_date, target_date, schools_count, assigned_pm_id uuid,
+  //           project_type enum, status enum, overall_progress, cover_path, description }
+  // UI shape: { id, name, nameAr, region, city, value, start, target, sites,
+  //             pmId, type(display), status(display), progress }
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name || '',
+    nameAr: row.name_ar || '',
+    region: row.region || '',
+    city: row.city || '',
+    value: Number(row.contract_value) || 0,
+    start: row.start_date || null,
+    target: row.target_date || null,
+    sites: row.schools_count || 0,
+    pmId: legacyUserId(row.assigned_pm_id),
+    type: row.project_type === 'standalone' ? 'Standalone' : 'School Program',
+    status: PROJECT_STATUS_DISPLAY[row.status] || row.status || 'On Track',
+    progress: row.overall_progress || 0,
+  };
+}
+function fromDbSchool(row) {
+  // DB row: { id text, project_id, name_en, name_ar, city, region, level_gender,
+  //           sec_meter, account_no, contractor_name, coords, current_stage_key,
+  //           remark enum, stages jsonb }
+  // UI shape: { id, code, projectId, name (computed), nameEn, nameAr, level, gender,
+  //             city, region, coords, meter, account, contractor, remark(display),
+  //             status(recomputed from stages), stages[], rawStages{}, ... + R29 fields }
+  if (!row) return null;
+  const lgParts = (row.level_gender || '').split(' / ').map(s => s.trim());
+  const level = lgParts[0] || '';
+  const gender = lgParts[1] || '';
+  const stages = Array.isArray(row.stages) ? row.stages : [];
+  const rawStages = {};
+  for (const st of stages) {
+    if (st && st.key) rawStages[st.key] = st.statusId || (st.done ? 'done' : 'not-started');
+  }
+  const doneCount = stages.filter(st => st && st.done).length;
+  const status = (stages.length > 0 && doneCount === stages.length) ? 'Completed'
+               : doneCount > 0 ? 'In Progress'
+               : 'Not Started';
+  return {
+    id: row.id,
+    code: row.id,
+    projectId: row.project_id || null,
+    name: row.name_en || row.name_ar || row.id,
+    nameEn: row.name_en || '',
+    nameAr: row.name_ar || '',
+    level: level || 'Primary',
+    gender: gender || 'Boys',
+    region: row.region || '',
+    city: row.city || '',
+    coords: row.coords || '',
+    meter: row.sec_meter || '',
+    account: row.account_no || '',
+    contractor: row.contractor_name || '',
+    remark: SCHOOL_REMARK_DISPLAY[row.remark] || 'Active',
+    status,
+    stages,
+    rawStages,
+    address: (row.city || '') + (row.region ? ', ' + row.region : ''),
+    type: level || 'Primary',
+    kw: 100,
+    survey: null,
+    installStart: null,
+    issues: [],
+    photos: {},
+    photosList: [],
+    deliveryNotes: [],
+    materialUsage: [],
+    lastUpdate: { by: null, when: null },
+  };
+}
+function fromDbContractor(row) {
+  // DB row: { id, company_name, category, cr_number, license_number, contact_person,
+  //           phone, email, default_regions text[], kpi_score numeric, archived }
+  // UI shape: { id, name, region(first), category, cr, license, contact, phone, email,
+  //             archived, activeSites, schedule, quality, hse, docs, projects, trend }
+  // Note: schedule/quality/hse/docs/projects/trend not in DB — synthesize from kpi_score
+  // so the contractors page doesn't blow up. R30.3 may introduce a richer contractor schema.
+  if (!row) return null;
+  const score = Math.round(row.kpi_score || 0);
+  return {
+    id: row.id,
+    name: row.company_name || '',
+    region: (Array.isArray(row.default_regions) && row.default_regions[0]) || '',
+    category: row.category || 'EPC',
+    cr: row.cr_number || '',
+    license: row.license_number || '',
+    contact: row.contact_person || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    archived: !!row.archived,
+    activeSites: 0,
+    schedule: score,
+    quality: score,
+    hse: score,
+    docs: score,
+    projects: [],
+    trend: [score, score, score, score],
+  };
+}
+function fromDbTaskMessage(row) {
+  // DB row: { id bigserial, task_id, author_id uuid, body, created_at }
+  // UI shape: { id, userId, text, when }
+  if (!row) return null;
+  return {
+    id: 'tm' + row.id,
+    userId: legacyUserId(row.author_id),
+    text: row.body || '',
+    when: row.created_at || '',
+  };
+}
+function fromDbTask(row) {
+  // DB row: { id text, title, description, project_id, school_id, assigned_to_id uuid,
+  //           created_by_id uuid, status enum, due_date, created_at, completed_at,
+  //           task_messages: [...]  (embed via PostgREST select) }
+  // UI shape: { id, title, description, assigneeId, createdById, createdAt, due,
+  //             priority, status(display), projectId, schoolId, stageIndex, messages[] }
+  if (!row) return null;
+  const messages = Array.isArray(row.task_messages) ? row.task_messages.map(fromDbTaskMessage) : [];
+  messages.sort((a, b) => new Date(a.when) - new Date(b.when));
+  return {
+    id: row.id,
+    title: row.title || '',
+    description: row.description || '',
+    assigneeId: legacyUserId(row.assigned_to_id),
+    createdById: legacyUserId(row.created_by_id),
+    createdAt: row.created_at ? String(row.created_at).slice(0, 10) : '',
+    due: row.due_date || '',
+    priority: 'Medium',
+    status: TASK_STATUS_DISPLAY[row.status] || 'Open',
+    projectId: row.project_id || null,
+    schoolId: row.school_id || null,
+    stageIndex: null,
+    messages,
+  };
+}
+function fromDbEscalationHistory(row) {
+  // DB row: { id bigserial, escalation_id, from_user_id, to_user_id, action, note, created_at }
+  // UI shape: { who, when, action, note }
+  if (!row) return null;
+  return {
+    who: legacyUserId(row.from_user_id),
+    when: row.created_at ? String(row.created_at).slice(0, 10) : '',
+    action: row.action || '',
+    note: row.note || '',
+  };
+}
+function fromDbEscalation(row) {
+  // DB row: { id text, title, description, project_id, school_id, status enum,
+  //           urgency enum, raised_by_id, raised_to_role enum, currently_with_id,
+  //           assigned_to_id, days_open, created_at, resolved_at,
+  //           escalation_history: [...] }
+  // UI shape: { id, title, reason, urgency(display), status(display), projectId,
+  //             schoolId, taskId(null), fromUserId, currentlyWith, toUserId, toRole,
+  //             opened, daysOpen, resolvedDate, chain[], history[] }
+  if (!row) return null;
+  const history = Array.isArray(row.escalation_history) ? row.escalation_history.map(fromDbEscalationHistory) : [];
+  history.sort((a, b) => new Date(a.when) - new Date(b.when));
+  return {
+    id: row.id,
+    title: row.title || '',
+    reason: row.description || '',
+    urgency: URGENCY_DISPLAY[row.urgency] || 'Medium',
+    status: ESC_STATUS_DISPLAY[row.status] || 'Open',
+    projectId: row.project_id || null,
+    schoolId: row.school_id || null,
+    taskId: null,
+    fromUserId: legacyUserId(row.raised_by_id),
+    currentlyWith: legacyUserId(row.currently_with_id),
+    toUserId: legacyUserId(row.assigned_to_id),
+    toRole: ENUM_TO_ROLE[row.raised_to_role] || row.raised_to_role || '',
+    opened: row.created_at ? String(row.created_at).slice(0, 10) : '',
+    daysOpen: row.days_open || 0,
+    resolvedDate: row.resolved_at ? String(row.resolved_at).slice(0, 10) : null,
+    chain: [],
+    history,
+  };
+}
+function fromDbDeliveryNoteItem(row) {
+  // DB row: { id bigserial, delivery_note_id, description, quantity numeric, unit, position }
+  // UI shape: { description, quantity (string), unit }
+  if (!row) return null;
+  return {
+    description: row.description || '',
+    quantity: row.quantity == null ? '' : String(row.quantity),
+    unit: row.unit || '',
+  };
+}
+function fromDbDeliveryNote(row) {
+  // DB row: { id text, project_id, school_id, stage_key, delivery_date, supplier,
+  //           contractor, received_by, signature_path, notes, status enum,
+  //           created_by_id, created_at, delivery_note_items: [...] }
+  // UI shape: { id, projectId, schoolId, stageKey, deliveryDate, supplier, contractor,
+  //             receivedBy, signatureDataUrl, items[], photos[], notes, status, createdAt, createdBy }
+  if (!row) return null;
+  const items = Array.isArray(row.delivery_note_items)
+    ? row.delivery_note_items.slice().sort((a, b) => (a.position || 0) - (b.position || 0)).map(fromDbDeliveryNoteItem)
+    : [];
+  return {
+    id: row.id,
+    projectId: row.project_id || null,
+    schoolId: row.school_id || null,
+    stageKey: row.stage_key || '',
+    deliveryDate: row.delivery_date || '',
+    supplier: row.supplier || '',
+    contractor: row.contractor || '',
+    receivedBy: row.received_by || '',
+    signatureDataUrl: row.signature_path || null,
+    items: items.length ? items : [{ description: '', quantity: '', unit: '' }],
+    photos: [],
+    notes: row.notes || '',
+    status: row.status || 'received',
+    createdAt: row.created_at || '',
+    createdBy: legacyUserId(row.created_by_id),
+  };
+}
+function fromDbAuditLog(row) {
+  // DB row: { id bigserial, entity_type, entity_id, action, user_id, user_name,
+  //           user_role, payload jsonb {before,after,entityLabel}, summary, created_at }
+  // UI shape: { id, timestamp, actorId, actorName, actorRole, action, entityType,
+  //             entityId, entityLabel, before, after, summary }
+  if (!row) return null;
+  const payload = (row.payload && typeof row.payload === 'object') ? row.payload : {};
+  return {
+    id: 'au-' + row.id,
+    timestamp: row.created_at || '',
+    actorId: legacyUserId(row.user_id),
+    actorName: row.user_name || '',
+    actorRole: ENUM_TO_ROLE[row.user_role] || row.user_role || '',
+    action: row.action || '',
+    entityType: row.entity_type || '',
+    entityId: row.entity_id || '',
+    entityLabel: payload.entityLabel || '',
+    before: payload.before ?? null,
+    after: payload.after ?? null,
+    summary: row.summary || '',
+  };
+}
+
+// ─── Loaders (Item 2) ──────────────────────────────────────────────────────
+// All return [] (or null for single-row) on error and log to console.warn.
+// They are async but called from a non-React context (boot orchestrator);
+// React just receives the resolved data via store setters.
+
+async function _safeFetch(label, fn) {
+  if (!USE_SUPABASE || !supabase) return null;
+  try {
+    const res = await fn();
+    if (res && res.error) { console.warn(`[R30.2 fetch ${label}]`, res.error); return null; }
+    return res;
+  } catch (e) {
+    console.warn(`[R30.2 fetch ${label}]`, e);
+    return null;
+  }
+}
+async function bgFetchProfiles() {
+  const res = await _safeFetch('profiles', () => window.supabase.from('profiles').select('*'));
+  return (res && res.data) || [];
+}
+async function bgFetchProjects() {
+  const res = await _safeFetch('projects', () => window.supabase.from('projects').select('*'));
+  return (res && res.data) || [];
+}
+
+// Schools: 2,600 rows ≈ 5 MB. Three paginated range() calls in parallel,
+// each within Supabase's default 1 MB response limit (Q4 / option B).
+async function bgFetchSchools() {
+  if (!USE_SUPABASE || !supabase) return [];
+  try {
+    const ranges = [[0, 999], [1000, 1999], [2000, 2999]];
+    const results = await Promise.all(ranges.map(([from, to]) =>
+      window.supabase.from('schools').select('*').range(from, to)
+    ));
+    const rows = [];
+    for (const r of results) {
+      if (r.error) console.warn('[R30.2 fetch schools page]', r.error);
+      else if (r.data) rows.push(...r.data);
+    }
+    return rows;
+  } catch (e) { console.warn('[R30.2 fetch schools]', e); return []; }
+}
+async function bgFetchContractors() {
+  const res = await _safeFetch('contractors', () => window.supabase.from('contractors').select('*'));
+  return (res && res.data) || [];
+}
+
+// Tasks + nested task_messages via PostgREST embed.
+async function bgFetchTasks() {
+  const res = await _safeFetch('tasks', () => window.supabase.from('tasks').select('*, task_messages(*)'));
+  return (res && res.data) || [];
+}
+
+// Escalations + nested escalation_history via PostgREST embed.
+async function bgFetchEscalations() {
+  const res = await _safeFetch('escalations', () => window.supabase.from('escalations').select('*, escalation_history(*)'));
+  return (res && res.data) || [];
+}
+
+// Delivery notes + nested delivery_note_items via PostgREST embed.
+async function bgFetchDeliveryNotes() {
+  const res = await _safeFetch('delivery_notes', () => window.supabase.from('delivery_notes').select('*, delivery_note_items(*)'));
+  return (res && res.data) || [];
+}
+async function bgFetchAppSettings() {
+  const res = await _safeFetch('app_settings', () => window.supabase.from('app_settings').select('*'));
+  return (res && res.data) || [];
+}
+async function bgFetchAuditLog(limit = 500) {
+  const res = await _safeFetch('audit_log', () =>
+    window.supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(limit)
+  );
+  return (res && res.data) || [];
+}
+
+// Single row by auth UUID — used by app.jsx to resolve currentUser on SIGNED_IN.
+async function bgFetchCurrentProfile(uuid) {
+  if (!USE_SUPABASE || !supabase || !uuid) return null;
+  const res = await _safeFetch('current profile', () =>
+    window.supabase.from('profiles').select('*').eq('id', uuid).single()
+  );
+  return (res && res.data) || null;
+}
+
+if (typeof window !== 'undefined') {
+  Object.assign(window, {
+    fromDbProfile, fromDbProject, fromDbSchool, fromDbContractor,
+    fromDbTask, fromDbTaskMessage,
+    fromDbEscalation, fromDbEscalationHistory,
+    fromDbDeliveryNote, fromDbDeliveryNoteItem,
+    fromDbAuditLog,
+    bgFetchProfiles, bgFetchProjects, bgFetchSchools, bgFetchContractors,
+    bgFetchTasks, bgFetchEscalations, bgFetchDeliveryNotes, bgFetchAppSettings,
+    bgFetchAuditLog, bgFetchCurrentProfile,
+  });
+}
+
 </script>
 
 <script type="text/babel">
@@ -4353,6 +4742,16 @@ function useStoreR2(base) {
     projectCover, projectGallery, schoolStagePhotos, getSchoolStagePhotos,
     setProjectCoverFor, setProjectGalleryFor, setSchoolStagePhotosFor,
     deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote,
+    // R30.2 — internal setters exposed for the boot orchestrator (read side).
+    _setEscalations: setEscalations,
+    _setContractorsLocal: setContractorsLocal,
+    _setDeliveryNotes: setDeliveryNotes,
+    _setUsers: setUsers,
+    _setAuditLog: setAuditLog,
+    _setThemeColors: setThemeColors,
+    _setThemeLogo: setThemeLogo,
+    _setNotificationTemplates: setNotificationTemplates,
+    _setRolePermissions: setRolePermissions,
   };
 }
 
@@ -4400,7 +4799,9 @@ function StoreProvider({ children }) {
   const [tasks, setTasks]         = React.useState(() => TASKS);
   const [chats, setChats]         = React.useState(() => PRE_CHATS);
   const [notifs, setNotifs]       = React.useState(() => SAMPLE_NOTIFS);
-  const [people]                  = React.useState(() => PEOPLE);
+  // R30.2 — people is now mutable so the boot orchestrator can replace it
+  // with Supabase-fetched profiles (was read-only in R29).
+  const [people, setPeople]       = React.useState(() => PEOPLE);
   const [projects, setProjects]   = React.useState(() => PROJECTS);
 
   // Project CRUD
@@ -4582,7 +4983,9 @@ function StoreProvider({ children }) {
     updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     pushNotif, markNotifRead, markAllNotifsRead,
     addProject, updateProject, deleteProject,
-    _setSchools: setSchools,
+    // R30.2 — internal setters exposed for the boot orchestrator (read side).
+    _setSchools: setSchools, _setTasks: setTasks, _setProjects: setProjects,
+    _setPeople: setPeople, _setNotifs: setNotifs,
   };
   const r2 = (typeof useStoreR2 === 'function') ? useStoreR2(baseValue) : {};
   const value = { ...baseValue, ...r2 };
@@ -10886,15 +11289,18 @@ Object.assign(window, {
 </script>
 <script type="text/babel">
 // src/page-login.jsx
-// Login page — Zamil Services Solar Programs (Round 5 + R30.1 Supabase auth).
+// Login page — Zamil Services Solar Programs (R30.2 split-auth).
 //
 // USE_SUPABASE === true:
-//   Real email/password sign-in via supabase.auth.signInWithPassword.
-//   On success: resolve session.user.email → PEOPLE entry → onSignIn(person).
+//   Real email/password sign-in via supabase.auth.signInWithPassword. On
+//   success, the SIGNED_IN event fires and app.jsx's auth listener handles
+//   the rest: fetches the matching profile row, sets currentUser, kicks off
+//   the boot orchestrator. PageLogin only triggers auth and surfaces errors.
 //   Demo dropdown hidden.
 //
 // USE_SUPABASE === false (?dev=1 escape hatch):
-//   Demo dropdown picks PEOPLE entry directly. Used by E2E + offline runs.
+//   Demo dropdown picks PEOPLE entry directly + calls onSignIn(user). No
+//   Supabase involvement. Used by offline runs + the standalone HTML build.
 
 function PageLogin({ onSignIn }) {
   const useSupabase = !!(typeof window !== 'undefined' && window.USE_SUPABASE && window.supabase);
@@ -10920,17 +11326,11 @@ function PageLogin({ onSignIn }) {
     if (!email || !password) { setError('Email and password are required.'); return; }
     setBusy(true);
     try {
-      const { data, error: authError } = await window.supabase.auth.signInWithPassword({ email, password });
+      const { error: authError } = await window.supabase.auth.signInWithPassword({ email, password });
       if (authError) { setError(authError.message || 'Sign-in failed.'); return; }
-      const sessionEmail = data?.user?.email || email;
-      const person = resolveByEmail(sessionEmail);
-      if (!person) {
-        setError(`Authenticated, but no profile found for ${sessionEmail}. Contact admin.`);
-        // Sign back out — don't leave a session for an unmapped user.
-        try { await window.supabase.auth.signOut(); } catch {}
-        return;
-      }
-      onSignIn(person);
+      // R30.2 — auth listener in app.jsx now handles SIGNED_IN: fetches the
+      // matching profile row, calls onSignIn under the hood, and kicks off the
+      // boot orchestrator. We just trigger the auth event and let it flow.
     } catch (e) {
       setError(e.message || String(e));
     } finally {
@@ -12126,32 +12526,141 @@ function AppInner() {
     if (typeof window !== 'undefined') window.__currentUser = currentUser;
   }, [currentUser]);
 
-  // R30.1 — Supabase auth gate. When USE_SUPABASE is on we drive the React
-  // currentUser from supabase.auth state. Demo mode (?dev=1) bypasses this.
+  // R30.2 — Boot status: null | 'loading' | 'loaded' | 'error'. Drives the
+  // top-of-page "Loading data..." banner during the orchestrator's fetch.
+  const [bootStatus, setBootStatus] = React.useState(null);
+  const __bootRanRef = React.useRef(false);
+
+  // R30.2 — Boot orchestrator. Fetches all 8 tables in parallel, computes
+  // PM→projectIds from the raw rows (joining UUIDs to legacy project ids),
+  // translates via fromDb*, then mutates window-level arrays in place AND
+  // calls store setters so React re-renders. On any single slice failure
+  // (empty result) the in-memory R29 fallback for that slice remains.
+  const bootFromSupabase = React.useCallback(async () => {
+    if (__bootRanRef.current) return;
+    __bootRanRef.current = true;
+    if (!window.USE_SUPABASE || !window.supabase) { setBootStatus(null); return; }
+    setBootStatus('loading');
+    try {
+      const [rawProfiles, rawProjects, rawSchools, rawContractors,
+             rawTasks, rawEscalations, rawDeliveryNotes, rawAppSettings] = await Promise.all([
+        window.bgFetchProfiles(),
+        window.bgFetchProjects(),
+        window.bgFetchSchools(),
+        window.bgFetchContractors(),
+        window.bgFetchTasks(),
+        window.bgFetchEscalations(),
+        window.bgFetchDeliveryNotes(),
+        window.bgFetchAppSettings(),
+      ]);
+
+      // Build PM-uuid → legacy-project-id[] map from raw projects rows.
+      const pmAssignments = new Map();
+      for (const pr of rawProjects) {
+        if (pr.assigned_pm_id) {
+          const arr = pmAssignments.get(pr.assigned_pm_id) || [];
+          arr.push(pr.id);
+          pmAssignments.set(pr.assigned_pm_id, arr);
+        }
+      }
+      // Translate profiles + attach projectIds for PMs.
+      const profiles = rawProfiles.map(r => {
+        const p = window.fromDbProfile(r);
+        const assigned = pmAssignments.get(r.id);
+        if (assigned && assigned.length) p.projectIds = assigned;
+        return p;
+      });
+      const projectsTranslated   = rawProjects.map(window.fromDbProject);
+      const schoolsTranslated    = rawSchools.map(window.fromDbSchool);
+      const contractorsTranslated= rawContractors.map(window.fromDbContractor);
+      const tasksTranslated      = rawTasks.map(window.fromDbTask);
+      const escalationsTranslated= rawEscalations.map(window.fromDbEscalation);
+      const dnTranslated         = rawDeliveryNotes.map(window.fromDbDeliveryNote);
+
+      // Mutate window-level arrays in place so code that reads e.g. window.PEOPLE
+      // directly (shell.jsx top-bar search, page-login resolver, store-r2 mutators
+      // that sync window.PEOPLE) sees the fresh data.
+      const replaceInPlace = (arr, items) => {
+        if (Array.isArray(arr)) arr.splice(0, arr.length, ...items);
+      };
+      if (profiles.length)             replaceInPlace(window.PEOPLE, profiles);
+      if (projectsTranslated.length)   replaceInPlace(window.PROJECTS, projectsTranslated);
+      if (schoolsTranslated.length)    replaceInPlace(window.ALL_SCHOOLS, schoolsTranslated);
+      if (contractorsTranslated.length)replaceInPlace(window.CONTRACTORS, contractorsTranslated);
+
+      // React state setters — trigger re-render of every consumer.
+      if (profiles.length && store._setPeople)             store._setPeople(profiles);
+      if (profiles.length && store._setUsers)              store._setUsers(profiles.map(p => ({ ...p, active: !p.archived })));
+      if (projectsTranslated.length && store._setProjects) store._setProjects(projectsTranslated);
+      if (schoolsTranslated.length && store._setSchools)   store._setSchools(schoolsTranslated);
+      if (contractorsTranslated.length && store._setContractorsLocal) store._setContractorsLocal(contractorsTranslated);
+      if (tasksTranslated.length && store._setTasks)       store._setTasks(tasksTranslated);
+      if (escalationsTranslated.length && store._setEscalations) store._setEscalations(escalationsTranslated);
+      if (dnTranslated.length && store._setDeliveryNotes)  store._setDeliveryNotes(dnTranslated);
+
+      // app_settings: split by key, apply to the matching slice.
+      for (const s of rawAppSettings) {
+        const v = s.value;
+        if (s.key === 'theme.colors' && v && typeof v === 'object' && store._setThemeColors) store._setThemeColors(v);
+        else if (s.key === 'theme.logo' && v && typeof v === 'object' && store._setThemeLogo) store._setThemeLogo(v);
+        else if (s.key === 'notification.templates' && v && typeof v === 'object' && store._setNotificationTemplates) store._setNotificationTemplates(v);
+        else if (s.key === 'role.permissions' && v && typeof v === 'object' && store._setRolePermissions) store._setRolePermissions(v);
+      }
+
+      // Audit log (separate fetch so the bulk Promise.all isn't slowed by 110 rows).
+      const rawAudit = await window.bgFetchAuditLog(500);
+      if (rawAudit && rawAudit.length && store._setAuditLog) {
+        store._setAuditLog(rawAudit.map(window.fromDbAuditLog));
+      }
+
+      console.log(`[R30.2 boot] Loaded ${profiles.length} profiles · ${projectsTranslated.length} projects · ${schoolsTranslated.length} schools · ${contractorsTranslated.length} contractors · ${tasksTranslated.length} tasks · ${escalationsTranslated.length} escalations · ${dnTranslated.length} delivery notes · ${rawAppSettings.length} app_settings · ${(rawAudit||[]).length} audit entries`);
+      setBootStatus('loaded');
+    } catch (e) {
+      console.error('[R30.2 boot] failed', e);
+      setBootStatus('error');
+    }
+  }, [store]);
+
+  // R30.2 — Supabase auth gate. When USE_SUPABASE is on we drive the React
+  // currentUser from the live profiles table (not the in-memory PEOPLE seed)
+  // and kick off the boot orchestrator on SIGNED_IN / INITIAL_SESSION.
+  // Demo mode (?dev=1) bypasses this entire effect.
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.USE_SUPABASE || !window.supabase) return;
-    const resolvePerson = (sessionUser) => {
-      if (!sessionUser || !window.PEOPLE) return null;
-      const lc = (sessionUser.email || '').toLowerCase();
-      return window.PEOPLE.find(p => (p.email || '').toLowerCase() === lc) || null;
+
+    const resolveSession = async (session) => {
+      if (!session?.user) return;
+      const profileRow = await window.bgFetchCurrentProfile(session.user.id);
+      if (!profileRow) {
+        // Authenticated but no profile row — sign back out (mirrors page-login.jsx
+        // defensive behavior). Without this, the app would hang on a half-bound session.
+        try { await window.supabase.auth.signOut(); } catch {}
+        return;
+      }
+      const profile = window.fromDbProfile(profileRow);
+      setCurrentUser(profile);
+      // Kick off the bulk data load (idempotent — guarded by __bootRanRef).
+      bootFromSupabase();
     };
+
     // 1) Hydrate existing session on mount.
     window.supabase.auth.getSession().then(({ data }) => {
-      const u = data?.session?.user;
-      if (!u) return;
-      const person = resolvePerson(u);
-      if (person) setCurrentUser(person);
+      if (data?.session) resolveSession(data.session);
     });
     // 2) Subscribe to future auth changes.
     const { data: sub } = window.supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') { setCurrentUser(null); return; }
+      if (event === 'SIGNED_OUT') {
+        __bootRanRef.current = false;
+        setBootStatus(null);
+        setCurrentUser(null);
+        return;
+      }
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-        const person = resolvePerson(session?.user);
-        if (person) setCurrentUser(person);
+        resolveSession(session);
       }
     });
     return () => { try { sub?.subscription?.unsubscribe(); } catch {} };
-  }, []);
+  }, [bootFromSupabase]);
 
   // H3: URL hash sync (cheap router — back/forward navigates between pages).
   // We use hash routing because the app uses internal state, not real <Route>s.
@@ -12391,6 +12900,17 @@ function AppInner() {
           onOpenNotifs={() => setNotifsOpen(true)} unreadCount={unread} />
 
         <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 overflow-auto relative">
+          {bootStatus === 'loading' && (
+            <div className="bg-amber-50 border-b border-amber-300 text-amber-900 text-xs px-4 py-1.5 flex items-center gap-2" data-testid="r30-boot-banner">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              Loading live data from Supabase…
+            </div>
+          )}
+          {bootStatus === 'error' && (
+            <div className="bg-red-50 border-b border-red-300 text-red-800 text-xs px-4 py-1.5" data-testid="r30-boot-banner">
+              ⚠ Couldn't load live data — showing cached demo. Check console.
+            </div>
+          )}
           {globalToast && (
             <div className={cls('fixed top-16 right-6 z-50 rounded-md px-4 py-2.5 shadow-pop border text-sm',
               globalToast.kind === 'error' ? 'bg-red-50 border-red-300 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}>

@@ -52,32 +52,141 @@ function AppInner() {
     if (typeof window !== 'undefined') window.__currentUser = currentUser;
   }, [currentUser]);
 
-  // R30.1 — Supabase auth gate. When USE_SUPABASE is on we drive the React
-  // currentUser from supabase.auth state. Demo mode (?dev=1) bypasses this.
+  // R30.2 — Boot status: null | 'loading' | 'loaded' | 'error'. Drives the
+  // top-of-page "Loading data..." banner during the orchestrator's fetch.
+  const [bootStatus, setBootStatus] = React.useState(null);
+  const __bootRanRef = React.useRef(false);
+
+  // R30.2 — Boot orchestrator. Fetches all 8 tables in parallel, computes
+  // PM→projectIds from the raw rows (joining UUIDs to legacy project ids),
+  // translates via fromDb*, then mutates window-level arrays in place AND
+  // calls store setters so React re-renders. On any single slice failure
+  // (empty result) the in-memory R29 fallback for that slice remains.
+  const bootFromSupabase = React.useCallback(async () => {
+    if (__bootRanRef.current) return;
+    __bootRanRef.current = true;
+    if (!window.USE_SUPABASE || !window.supabase) { setBootStatus(null); return; }
+    setBootStatus('loading');
+    try {
+      const [rawProfiles, rawProjects, rawSchools, rawContractors,
+             rawTasks, rawEscalations, rawDeliveryNotes, rawAppSettings] = await Promise.all([
+        window.bgFetchProfiles(),
+        window.bgFetchProjects(),
+        window.bgFetchSchools(),
+        window.bgFetchContractors(),
+        window.bgFetchTasks(),
+        window.bgFetchEscalations(),
+        window.bgFetchDeliveryNotes(),
+        window.bgFetchAppSettings(),
+      ]);
+
+      // Build PM-uuid → legacy-project-id[] map from raw projects rows.
+      const pmAssignments = new Map();
+      for (const pr of rawProjects) {
+        if (pr.assigned_pm_id) {
+          const arr = pmAssignments.get(pr.assigned_pm_id) || [];
+          arr.push(pr.id);
+          pmAssignments.set(pr.assigned_pm_id, arr);
+        }
+      }
+      // Translate profiles + attach projectIds for PMs.
+      const profiles = rawProfiles.map(r => {
+        const p = window.fromDbProfile(r);
+        const assigned = pmAssignments.get(r.id);
+        if (assigned && assigned.length) p.projectIds = assigned;
+        return p;
+      });
+      const projectsTranslated   = rawProjects.map(window.fromDbProject);
+      const schoolsTranslated    = rawSchools.map(window.fromDbSchool);
+      const contractorsTranslated= rawContractors.map(window.fromDbContractor);
+      const tasksTranslated      = rawTasks.map(window.fromDbTask);
+      const escalationsTranslated= rawEscalations.map(window.fromDbEscalation);
+      const dnTranslated         = rawDeliveryNotes.map(window.fromDbDeliveryNote);
+
+      // Mutate window-level arrays in place so code that reads e.g. window.PEOPLE
+      // directly (shell.jsx top-bar search, page-login resolver, store-r2 mutators
+      // that sync window.PEOPLE) sees the fresh data.
+      const replaceInPlace = (arr, items) => {
+        if (Array.isArray(arr)) arr.splice(0, arr.length, ...items);
+      };
+      if (profiles.length)             replaceInPlace(window.PEOPLE, profiles);
+      if (projectsTranslated.length)   replaceInPlace(window.PROJECTS, projectsTranslated);
+      if (schoolsTranslated.length)    replaceInPlace(window.ALL_SCHOOLS, schoolsTranslated);
+      if (contractorsTranslated.length)replaceInPlace(window.CONTRACTORS, contractorsTranslated);
+
+      // React state setters — trigger re-render of every consumer.
+      if (profiles.length && store._setPeople)             store._setPeople(profiles);
+      if (profiles.length && store._setUsers)              store._setUsers(profiles.map(p => ({ ...p, active: !p.archived })));
+      if (projectsTranslated.length && store._setProjects) store._setProjects(projectsTranslated);
+      if (schoolsTranslated.length && store._setSchools)   store._setSchools(schoolsTranslated);
+      if (contractorsTranslated.length && store._setContractorsLocal) store._setContractorsLocal(contractorsTranslated);
+      if (tasksTranslated.length && store._setTasks)       store._setTasks(tasksTranslated);
+      if (escalationsTranslated.length && store._setEscalations) store._setEscalations(escalationsTranslated);
+      if (dnTranslated.length && store._setDeliveryNotes)  store._setDeliveryNotes(dnTranslated);
+
+      // app_settings: split by key, apply to the matching slice.
+      for (const s of rawAppSettings) {
+        const v = s.value;
+        if (s.key === 'theme.colors' && v && typeof v === 'object' && store._setThemeColors) store._setThemeColors(v);
+        else if (s.key === 'theme.logo' && v && typeof v === 'object' && store._setThemeLogo) store._setThemeLogo(v);
+        else if (s.key === 'notification.templates' && v && typeof v === 'object' && store._setNotificationTemplates) store._setNotificationTemplates(v);
+        else if (s.key === 'role.permissions' && v && typeof v === 'object' && store._setRolePermissions) store._setRolePermissions(v);
+      }
+
+      // Audit log (separate fetch so the bulk Promise.all isn't slowed by 110 rows).
+      const rawAudit = await window.bgFetchAuditLog(500);
+      if (rawAudit && rawAudit.length && store._setAuditLog) {
+        store._setAuditLog(rawAudit.map(window.fromDbAuditLog));
+      }
+
+      console.log(`[R30.2 boot] Loaded ${profiles.length} profiles · ${projectsTranslated.length} projects · ${schoolsTranslated.length} schools · ${contractorsTranslated.length} contractors · ${tasksTranslated.length} tasks · ${escalationsTranslated.length} escalations · ${dnTranslated.length} delivery notes · ${rawAppSettings.length} app_settings · ${(rawAudit||[]).length} audit entries`);
+      setBootStatus('loaded');
+    } catch (e) {
+      console.error('[R30.2 boot] failed', e);
+      setBootStatus('error');
+    }
+  }, [store]);
+
+  // R30.2 — Supabase auth gate. When USE_SUPABASE is on we drive the React
+  // currentUser from the live profiles table (not the in-memory PEOPLE seed)
+  // and kick off the boot orchestrator on SIGNED_IN / INITIAL_SESSION.
+  // Demo mode (?dev=1) bypasses this entire effect.
   React.useEffect(() => {
     if (typeof window === 'undefined' || !window.USE_SUPABASE || !window.supabase) return;
-    const resolvePerson = (sessionUser) => {
-      if (!sessionUser || !window.PEOPLE) return null;
-      const lc = (sessionUser.email || '').toLowerCase();
-      return window.PEOPLE.find(p => (p.email || '').toLowerCase() === lc) || null;
+
+    const resolveSession = async (session) => {
+      if (!session?.user) return;
+      const profileRow = await window.bgFetchCurrentProfile(session.user.id);
+      if (!profileRow) {
+        // Authenticated but no profile row — sign back out (mirrors page-login.jsx
+        // defensive behavior). Without this, the app would hang on a half-bound session.
+        try { await window.supabase.auth.signOut(); } catch {}
+        return;
+      }
+      const profile = window.fromDbProfile(profileRow);
+      setCurrentUser(profile);
+      // Kick off the bulk data load (idempotent — guarded by __bootRanRef).
+      bootFromSupabase();
     };
+
     // 1) Hydrate existing session on mount.
     window.supabase.auth.getSession().then(({ data }) => {
-      const u = data?.session?.user;
-      if (!u) return;
-      const person = resolvePerson(u);
-      if (person) setCurrentUser(person);
+      if (data?.session) resolveSession(data.session);
     });
     // 2) Subscribe to future auth changes.
     const { data: sub } = window.supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') { setCurrentUser(null); return; }
+      if (event === 'SIGNED_OUT') {
+        __bootRanRef.current = false;
+        setBootStatus(null);
+        setCurrentUser(null);
+        return;
+      }
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
-        const person = resolvePerson(session?.user);
-        if (person) setCurrentUser(person);
+        resolveSession(session);
       }
     });
     return () => { try { sub?.subscription?.unsubscribe(); } catch {} };
-  }, []);
+  }, [bootFromSupabase]);
 
   // H3: URL hash sync (cheap router — back/forward navigates between pages).
   // We use hash routing because the app uses internal state, not real <Route>s.
@@ -317,6 +426,17 @@ function AppInner() {
           onOpenNotifs={() => setNotifsOpen(true)} unreadCount={unread} />
 
         <main id="main-content" tabIndex={-1} className="flex-1 min-w-0 overflow-auto relative">
+          {bootStatus === 'loading' && (
+            <div className="bg-amber-50 border-b border-amber-300 text-amber-900 text-xs px-4 py-1.5 flex items-center gap-2" data-testid="r30-boot-banner">
+              <span className="inline-block w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              Loading live data from Supabase…
+            </div>
+          )}
+          {bootStatus === 'error' && (
+            <div className="bg-red-50 border-b border-red-300 text-red-800 text-xs px-4 py-1.5" data-testid="r30-boot-banner">
+              ⚠ Couldn't load live data — showing cached demo. Check console.
+            </div>
+          )}
           {globalToast && (
             <div className={cls('fixed top-16 right-6 z-50 rounded-md px-4 py-2.5 shadow-pop border text-sm',
               globalToast.kind === 'error' ? 'bg-red-50 border-red-300 text-red-800' : 'bg-emerald-50 border-emerald-200 text-emerald-800')}>

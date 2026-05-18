@@ -1481,8 +1481,12 @@ record('R30.1: page-login calls supabase.auth.signInWithPassword (real auth path
        /supabase\.auth\.signInWithPassword\(\{ email, password \}\)/.test(_loginJsx));
 record('R30.1: page-login resolves session.user.email → PEOPLE entry',
        /window\.PEOPLE\.find\(p => \(p\.email \|\| ''\)\.toLowerCase\(\) === lc\)/.test(_loginJsx));
-record('R30.1: page-login signs out when authenticated email has no PEOPLE match',
-       /supabase\.auth\.signOut\(\)/.test(_loginJsx) && /no profile found for/.test(_loginJsx));
+// R30.1: page-login originally handled the defensive sign-out when an
+// authenticated email had no PEOPLE match. R30.2 moved that to app.jsx's
+// resolveSession (which checks bgFetchCurrentProfile vs auth.uid) so the
+// behavior is now centralized at the auth listener.
+record('R30.1/R30.2: app.jsx signs out when authenticated session has no matching profile row',
+       /if \(!profileRow\) \{[\s\S]*?await window\.supabase\.auth\.signOut\(\)/.test(_appJsx));
 record('R30.1: page-login keeps demo dropdown ONLY when !USE_SUPABASE (?dev=1 escape hatch)',
        /\{!useSupabase && \(/.test(_loginJsx));
 record('R30.1: app.jsx subscribes to supabase.auth.onAuthStateChange (driven by USE_SUPABASE)',
@@ -1606,6 +1610,166 @@ record('R30.1: build-standalone.py injects a Supabase init block before the firs
 record('R30.1: build-standalone.py inlines lib/db.js (window-based supabase) into standalone',
        /db_js = \(SRC \/ "lib" \/ "db\.js"\)\.read_text/.test(_buildStd) &&
        /db_js\.replace\("supabase\.from\(", "window\.supabase\.from\("\)/.test(_buildStd));
+
+// ── P. R30.2 — Read-side wiring (boot orchestrator) ────────────────────────
+// R30.1 mutators wrote through to Supabase. R30.2 turns on the read side:
+// after sign-in the boot orchestrator fetches all 8 tables, translates DB
+// rows via fromDb*, computes PM→projectIds, and replaces in-memory state
+// (both window-level arrays and React state via store setters).
+const _libDb_r302   = fs.readFileSync(path.join(SRC, 'lib', 'db.js'), 'utf8');
+const _storeJsx_r302= fs.readFileSync(path.join(SRC, 'store.jsx'), 'utf8');
+const _storeR2_r302 = fs.readFileSync(path.join(SRC, 'store-r2.jsx'), 'utf8');
+const _appJsx_r302  = fs.readFileSync(path.join(SRC, 'app.jsx'), 'utf8');
+const _loginJsx_r302= fs.readFileSync(path.join(SRC, 'page-login.jsx'), 'utf8');
+
+// Item 1 — 8 fromDb translators (+ 2 nested helpers + 1 audit) all exported.
+record('R30.2: lib/db.js exports 8 primary fromDb translators',
+       /export function fromDbProfile\(/.test(_libDb_r302) &&
+       /export function fromDbProject\(/.test(_libDb_r302) &&
+       /export function fromDbSchool\(/.test(_libDb_r302) &&
+       /export function fromDbContractor\(/.test(_libDb_r302) &&
+       /export function fromDbTask\(/.test(_libDb_r302) &&
+       /export function fromDbEscalation\(/.test(_libDb_r302) &&
+       /export function fromDbDeliveryNote\(/.test(_libDb_r302) &&
+       /export function fromDbAuditLog\(/.test(_libDb_r302));
+record('R30.2: lib/db.js exports nested-row helpers for embeds (task_messages, escalation_history, delivery_note_items)',
+       /export function fromDbTaskMessage\(/.test(_libDb_r302) &&
+       /export function fromDbEscalationHistory\(/.test(_libDb_r302) &&
+       /export function fromDbDeliveryNoteItem\(/.test(_libDb_r302));
+record('R30.2: fromDbProfile maps default_regions[0] → region, archived → !active, full_name → name + initials',
+       /region:\s*\(Array\.isArray\(row\.default_regions\) && row\.default_regions\[0\]\)/.test(_libDb_r302) &&
+       /active:\s*!row\.archived/.test(_libDb_r302) &&
+       /initials:\s*computeInitials\(fullName\)/.test(_libDb_r302));
+record('R30.2: fromDbProject maps status enum → display via PROJECT_STATUS_DISPLAY (completed→Complete, on_hold→On Hold)',
+       /const PROJECT_STATUS_DISPLAY = \{/.test(_libDb_r302) &&
+       /completed:\s*'Complete'/.test(_libDb_r302) &&
+       /on_hold:\s*'On Hold'/.test(_libDb_r302));
+record('R30.2: fromDbSchool splits level_gender + recomputes status from stages.done count',
+       /const lgParts = \(row\.level_gender \|\| ''\)\.split\(' \/ '\)/.test(_libDb_r302) &&
+       /\(stages\.length > 0 && doneCount === stages\.length\) \? 'Completed'/.test(_libDb_r302));
+record('R30.2: fromDbSchool rebuilds rawStages object from the stages array',
+       /const rawStages = \{\};/.test(_libDb_r302) &&
+       /rawStages\[st\.key\] = st\.statusId/.test(_libDb_r302));
+record('R30.2: fromDbContractor synthesizes schedule/quality/hse/docs from kpi_score (no live columns)',
+       /const score = Math\.round\(row\.kpi_score \|\| 0\)/.test(_libDb_r302) &&
+       /schedule:\s*score,\s*\n\s*quality:\s*score/.test(_libDb_r302));
+record('R30.2: fromDbTask + fromDbEscalation + fromDbDeliveryNote unpack PostgREST nested embeds + sort by created_at',
+       /Array\.isArray\(row\.task_messages\) \? row\.task_messages\.map\(fromDbTaskMessage\)/.test(_libDb_r302) &&
+       /Array\.isArray\(row\.escalation_history\) \? row\.escalation_history\.map\(fromDbEscalationHistory\)/.test(_libDb_r302) &&
+       /Array\.isArray\(row\.delivery_note_items\)[\s\S]*?\.map\(fromDbDeliveryNoteItem\)/.test(_libDb_r302));
+record('R30.2: fromDbAuditLog flattens payload.{before,after,entityLabel} + maps user_* → actor*',
+       /actorId:\s*legacyUserId\(row\.user_id\)/.test(_libDb_r302) &&
+       /entityLabel:\s*payload\.entityLabel \|\| ''/.test(_libDb_r302) &&
+       /before:\s*payload\.before \?\? null/.test(_libDb_r302));
+record('R30.2: legacyUserId reverses the 15-entry USER_UUID map; passes through unmapped uuids',
+       /const __REVERSE = Object\.fromEntries\(Object\.entries\(USER_UUID\)\.map\(\(\[k, v\]\) => \[v, k\]\)\)/.test(_libDb_r302) &&
+       /export function legacyUserId\(uuid\) \{ return __REVERSE\[uuid\] \|\| uuid; \}/.test(_libDb_r302));
+
+// Item 2 — 8 bgFetch loaders.
+record('R30.2: lib/db.js exports 8 bgFetch loaders (one per table) + bgFetchCurrentProfile + bgFetchAuditLog',
+       /export async function bgFetchProfiles\(/.test(_libDb_r302) &&
+       /export async function bgFetchProjects\(/.test(_libDb_r302) &&
+       /export async function bgFetchSchools\(/.test(_libDb_r302) &&
+       /export async function bgFetchContractors\(/.test(_libDb_r302) &&
+       /export async function bgFetchTasks\(/.test(_libDb_r302) &&
+       /export async function bgFetchEscalations\(/.test(_libDb_r302) &&
+       /export async function bgFetchDeliveryNotes\(/.test(_libDb_r302) &&
+       /export async function bgFetchAppSettings\(/.test(_libDb_r302) &&
+       /export async function bgFetchCurrentProfile\(uuid\)/.test(_libDb_r302) &&
+       /export async function bgFetchAuditLog\(/.test(_libDb_r302));
+record('R30.2: bgFetchSchools paginates via 3 range() calls in parallel (Q4 option B)',
+       /const ranges = \[\[0, 999\], \[1000, 1999\], \[2000, 2999\]\]/.test(_libDb_r302) &&
+       /supabase\.from\('schools'\)\.select\('\*'\)\.range\(from, to\)/.test(_libDb_r302));
+record('R30.2: bgFetchTasks / bgFetchEscalations / bgFetchDeliveryNotes use PostgREST embed select',
+       /supabase\.from\('tasks'\)\.select\('\*, task_messages\(\*\)'\)/.test(_libDb_r302) &&
+       /supabase\.from\('escalations'\)\.select\('\*, escalation_history\(\*\)'\)/.test(_libDb_r302) &&
+       /supabase\.from\('delivery_notes'\)\.select\('\*, delivery_note_items\(\*\)'\)/.test(_libDb_r302));
+record('R30.2: bgFetch* helpers all silent-no-op when !USE_SUPABASE; warn-but-do-not-throw on error',
+       /async function _safeFetch\(label, fn\) \{/.test(_libDb_r302) &&
+       /if \(!USE_SUPABASE \|\| !supabase\) return null;/.test(_libDb_r302) &&
+       /console\.warn\(`\[R30\.2 fetch \$\{label\}\]`/.test(_libDb_r302));
+
+// Item 3 — Boot orchestrator (app.jsx).
+record('R30.2: app.jsx defines bootFromSupabase orchestrator guarded by __bootRanRef (idempotent)',
+       /const __bootRanRef = React\.useRef\(false\)/.test(_appJsx_r302) &&
+       /const bootFromSupabase = React\.useCallback\(async \(\) => \{/.test(_appJsx_r302) &&
+       /if \(__bootRanRef\.current\) return;\s*\n\s*__bootRanRef\.current = true/.test(_appJsx_r302));
+record('R30.2: bootFromSupabase fires all 8 bgFetch* helpers in parallel via Promise.all',
+       /Promise\.all\(\[\s*\n\s*window\.bgFetchProfiles\(\),\s*\n\s*window\.bgFetchProjects\(\),\s*\n\s*window\.bgFetchSchools\(\),\s*\n\s*window\.bgFetchContractors\(\),\s*\n\s*window\.bgFetchTasks\(\),\s*\n\s*window\.bgFetchEscalations\(\),\s*\n\s*window\.bgFetchDeliveryNotes\(\),\s*\n\s*window\.bgFetchAppSettings\(\),\s*\n\s*\]\)/.test(_appJsx_r302));
+record('R30.2: boot orchestrator builds PM-uuid → legacy-project-ids map from raw projects rows (Q1 option A)',
+       /const pmAssignments = new Map\(\);/.test(_appJsx_r302) &&
+       /if \(pr\.assigned_pm_id\)/.test(_appJsx_r302) &&
+       /pmAssignments\.set\(pr\.assigned_pm_id, arr\)/.test(_appJsx_r302));
+record('R30.2: boot orchestrator attaches computed projectIds to PM profiles via fromDbProfile post-hoc',
+       /const assigned = pmAssignments\.get\(r\.id\);\s*\n\s*if \(assigned && assigned\.length\) p\.projectIds = assigned;/.test(_appJsx_r302));
+record('R30.2: boot orchestrator mutates window.PEOPLE / PROJECTS / ALL_SCHOOLS / CONTRACTORS in place',
+       /replaceInPlace\(window\.PEOPLE, profiles\)/.test(_appJsx_r302) &&
+       /replaceInPlace\(window\.PROJECTS, projectsTranslated\)/.test(_appJsx_r302) &&
+       /replaceInPlace\(window\.ALL_SCHOOLS, schoolsTranslated\)/.test(_appJsx_r302) &&
+       /replaceInPlace\(window\.CONTRACTORS, contractorsTranslated\)/.test(_appJsx_r302));
+record('R30.2: boot orchestrator also calls store setters (_setPeople, _setProjects, _setSchools, etc.)',
+       /store\._setPeople\(profiles\)/.test(_appJsx_r302) &&
+       /store\._setUsers\(profiles\.map\(p => \(\{ \.\.\.p, active: !p\.archived \}\)\)\)/.test(_appJsx_r302) &&
+       /store\._setProjects\(projectsTranslated\)/.test(_appJsx_r302) &&
+       /store\._setSchools\(schoolsTranslated\)/.test(_appJsx_r302) &&
+       /store\._setContractorsLocal\(contractorsTranslated\)/.test(_appJsx_r302) &&
+       /store\._setTasks\(tasksTranslated\)/.test(_appJsx_r302) &&
+       /store\._setEscalations\(escalationsTranslated\)/.test(_appJsx_r302) &&
+       /store\._setDeliveryNotes\(dnTranslated\)/.test(_appJsx_r302));
+record('R30.2: boot orchestrator routes app_settings rows to theme.colors / theme.logo / notification.templates / role.permissions setters',
+       /s\.key === 'theme\.colors'.*store\._setThemeColors\(v\)/.test(_appJsx_r302) &&
+       /s\.key === 'theme\.logo'.*store\._setThemeLogo\(v\)/.test(_appJsx_r302) &&
+       /s\.key === 'notification\.templates'.*store\._setNotificationTemplates\(v\)/.test(_appJsx_r302) &&
+       /s\.key === 'role\.permissions'.*store\._setRolePermissions\(v\)/.test(_appJsx_r302));
+record('R30.2: boot orchestrator console.log surfaces row counts for DevTools verification',
+       /\[R30\.2 boot\] Loaded \$\{profiles\.length\} profiles · \$\{projectsTranslated\.length\} projects · \$\{schoolsTranslated\.length\} schools/.test(_appJsx_r302));
+record('R30.2: boot status banner — loading + error variants rendered above main page content',
+       /bootStatus === 'loading'.*data-testid="r30-boot-banner"/s.test(_appJsx_r302) &&
+       /bootStatus === 'error'.*data-testid="r30-boot-banner"/s.test(_appJsx_r302));
+
+// Item 4 — Auth-session boot.
+record('R30.2: app.jsx onAuthStateChange kicks off bootFromSupabase on SIGNED_IN / INITIAL_SESSION',
+       /event === 'SIGNED_IN' \|\| event === 'TOKEN_REFRESHED' \|\| event === 'INITIAL_SESSION'/.test(_appJsx_r302) &&
+       /resolveSession\(session\)/.test(_appJsx_r302) &&
+       /bootFromSupabase\(\);/.test(_appJsx_r302));
+record('R30.2: SIGNED_OUT resets __bootRanRef so a fresh sign-in re-triggers the orchestrator',
+       /event === 'SIGNED_OUT'/.test(_appJsx_r302) &&
+       /__bootRanRef\.current = false/.test(_appJsx_r302));
+record('R30.2: getSession() hydrates existing session on mount and calls resolveSession',
+       /window\.supabase\.auth\.getSession\(\)\.then\(\(\{ data \}\) => \{[\s\S]*?resolveSession\(data\.session\)/.test(_appJsx_r302));
+
+// Item 5 — currentUser sourced from live profile row (not in-memory PEOPLE).
+record('R30.2: resolveSession fetches profile row via bgFetchCurrentProfile(session.user.id)',
+       /const profileRow = await window\.bgFetchCurrentProfile\(session\.user\.id\)/.test(_appJsx_r302));
+record('R30.2: resolveSession defensive sign-out when authenticated but no profile row exists',
+       /if \(!profileRow\) \{[\s\S]*?await window\.supabase\.auth\.signOut\(\)/.test(_appJsx_r302));
+record('R30.2: page-login submitSupabase no longer resolves PEOPLE — delegates to app.jsx auth listener',
+       !/onSignIn\(person\)/.test(_loginJsx_r302) &&
+       /R30\.2 — auth listener in app\.jsx now handles SIGNED_IN/.test(_loginJsx_r302));
+
+// Store-setter exposure for the orchestrator.
+record('R30.2: store.jsx exposes _setSchools / _setTasks / _setProjects / _setPeople / _setNotifs',
+       /_setSchools:\s*setSchools/.test(_storeJsx_r302) &&
+       /_setTasks:\s*setTasks/.test(_storeJsx_r302) &&
+       /_setProjects:\s*setProjects/.test(_storeJsx_r302) &&
+       /_setPeople:\s*setPeople/.test(_storeJsx_r302) &&
+       /_setNotifs:\s*setNotifs/.test(_storeJsx_r302));
+record('R30.2: store-r2.jsx exposes 9 internal setters for boot orchestrator',
+       /_setEscalations:\s*setEscalations/.test(_storeR2_r302) &&
+       /_setContractorsLocal:\s*setContractorsLocal/.test(_storeR2_r302) &&
+       /_setDeliveryNotes:\s*setDeliveryNotes/.test(_storeR2_r302) &&
+       /_setUsers:\s*setUsers/.test(_storeR2_r302) &&
+       /_setAuditLog:\s*setAuditLog/.test(_storeR2_r302) &&
+       /_setThemeColors:\s*setThemeColors/.test(_storeR2_r302) &&
+       /_setThemeLogo:\s*setThemeLogo/.test(_storeR2_r302) &&
+       /_setNotificationTemplates:\s*setNotificationTemplates/.test(_storeR2_r302) &&
+       /_setRolePermissions:\s*setRolePermissions/.test(_storeR2_r302));
+
+// Demo-mode escape hatch preserved.
+record('R30.2: bootFromSupabase silently no-ops when !window.USE_SUPABASE (dev mode preserved)',
+       /if \(!window\.USE_SUPABASE \|\| !window\.supabase\) \{ setBootStatus\(null\); return; \}/.test(_appJsx_r302));
+record('R30.2: auth effect entire body gated on USE_SUPABASE — dev mode never subscribes',
+       /if \(typeof window === 'undefined' \|\| !window\.USE_SUPABASE \|\| !window\.supabase\) return;/.test(_appJsx_r302));
 
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;

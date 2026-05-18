@@ -395,3 +395,405 @@ if (typeof window !== 'undefined') {
     toDbAudit,
   });
 }
+
+// ─── R30.2 — Read side ─────────────────────────────────────────────────────
+// fromDb* translators mirror the toDb* helpers above. They map snake_case
+// Supabase rows back to the camelCase / nested shape the JSX consumes
+// (legacy R29 store shape). Each helper accepts a single row and returns
+// the in-memory object; pass arrays through `rows.map(fromDb*)`.
+//
+// Enum-display reverse maps (toDb maps display → enum; fromDb maps enum → display).
+
+const PROJECT_STATUS_DISPLAY = {
+  on_track: 'On Track', at_risk: 'At Risk', delayed: 'Delayed',
+  completed: 'Complete', on_hold: 'On Hold',
+};
+const TASK_STATUS_DISPLAY = {
+  todo: 'Open', in_progress: 'In Progress', blocked: 'Blocked', done: 'Done',
+};
+const ESC_STATUS_DISPLAY = {
+  open: 'Open', in_progress: 'In Progress', resolved: 'Resolved', closed: 'Closed',
+};
+const URGENCY_DISPLAY = {
+  low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical',
+};
+const SCHOOL_REMARK_DISPLAY = {
+  active: 'Active', access_issue: 'Access Issue', delayed: 'Delayed',
+  blocked: 'Blocked', excluded: 'Excluded',
+};
+
+function computeInitials(fullName) {
+  return (fullName || '').trim().split(/\s+/).map(s => s[0] || '').slice(0, 2).join('').toUpperCase();
+}
+
+export function fromDbProfile(row) {
+  // DB row: { id uuid, full_name, email, role enum, mobile, default_regions text[],
+  //           archived, avatar_url, created_at, updated_at }
+  // UI shape: { id, name, email, role(display), region(first), mobile, avatarUrl,
+  //             archived, active, initials, [projectIds — populated by boot] }
+  if (!row) return null;
+  const fullName = row.full_name || '';
+  return {
+    id: legacyUserId(row.id),
+    name: fullName,
+    email: row.email || '',
+    role: ENUM_TO_ROLE[row.role] || row.role || '',
+    region: (Array.isArray(row.default_regions) && row.default_regions[0]) || '',
+    mobile: row.mobile || '',
+    avatarUrl: row.avatar_url || null,
+    archived: !!row.archived,
+    active: !row.archived,
+    initials: computeInitials(fullName),
+  };
+}
+
+export function fromDbProject(row) {
+  // DB row: { id text, name, name_ar, region, city, contract_value numeric,
+  //           currency, start_date, target_date, schools_count, assigned_pm_id uuid,
+  //           project_type enum, status enum, overall_progress, cover_path, description }
+  // UI shape: { id, name, nameAr, region, city, value, start, target, sites,
+  //             pmId, type(display), status(display), progress }
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name || '',
+    nameAr: row.name_ar || '',
+    region: row.region || '',
+    city: row.city || '',
+    value: Number(row.contract_value) || 0,
+    start: row.start_date || null,
+    target: row.target_date || null,
+    sites: row.schools_count || 0,
+    pmId: legacyUserId(row.assigned_pm_id),
+    type: row.project_type === 'standalone' ? 'Standalone' : 'School Program',
+    status: PROJECT_STATUS_DISPLAY[row.status] || row.status || 'On Track',
+    progress: row.overall_progress || 0,
+  };
+}
+
+export function fromDbSchool(row) {
+  // DB row: { id text, project_id, name_en, name_ar, city, region, level_gender,
+  //           sec_meter, account_no, contractor_name, coords, current_stage_key,
+  //           remark enum, stages jsonb }
+  // UI shape: { id, code, projectId, name (computed), nameEn, nameAr, level, gender,
+  //             city, region, coords, meter, account, contractor, remark(display),
+  //             status(recomputed from stages), stages[], rawStages{}, ... + R29 fields }
+  if (!row) return null;
+  const lgParts = (row.level_gender || '').split(' / ').map(s => s.trim());
+  const level = lgParts[0] || '';
+  const gender = lgParts[1] || '';
+  const stages = Array.isArray(row.stages) ? row.stages : [];
+  const rawStages = {};
+  for (const st of stages) {
+    if (st && st.key) rawStages[st.key] = st.statusId || (st.done ? 'done' : 'not-started');
+  }
+  const doneCount = stages.filter(st => st && st.done).length;
+  const status = (stages.length > 0 && doneCount === stages.length) ? 'Completed'
+               : doneCount > 0 ? 'In Progress'
+               : 'Not Started';
+  return {
+    id: row.id,
+    code: row.id,
+    projectId: row.project_id || null,
+    name: row.name_en || row.name_ar || row.id,
+    nameEn: row.name_en || '',
+    nameAr: row.name_ar || '',
+    level: level || 'Primary',
+    gender: gender || 'Boys',
+    region: row.region || '',
+    city: row.city || '',
+    coords: row.coords || '',
+    meter: row.sec_meter || '',
+    account: row.account_no || '',
+    contractor: row.contractor_name || '',
+    remark: SCHOOL_REMARK_DISPLAY[row.remark] || 'Active',
+    status,
+    stages,
+    rawStages,
+    address: (row.city || '') + (row.region ? ', ' + row.region : ''),
+    type: level || 'Primary',
+    kw: 100,
+    survey: null,
+    installStart: null,
+    issues: [],
+    photos: {},
+    photosList: [],
+    deliveryNotes: [],
+    materialUsage: [],
+    lastUpdate: { by: null, when: null },
+  };
+}
+
+export function fromDbContractor(row) {
+  // DB row: { id, company_name, category, cr_number, license_number, contact_person,
+  //           phone, email, default_regions text[], kpi_score numeric, archived }
+  // UI shape: { id, name, region(first), category, cr, license, contact, phone, email,
+  //             archived, activeSites, schedule, quality, hse, docs, projects, trend }
+  // Note: schedule/quality/hse/docs/projects/trend not in DB — synthesize from kpi_score
+  // so the contractors page doesn't blow up. R30.3 may introduce a richer contractor schema.
+  if (!row) return null;
+  const score = Math.round(row.kpi_score || 0);
+  return {
+    id: row.id,
+    name: row.company_name || '',
+    region: (Array.isArray(row.default_regions) && row.default_regions[0]) || '',
+    category: row.category || 'EPC',
+    cr: row.cr_number || '',
+    license: row.license_number || '',
+    contact: row.contact_person || '',
+    phone: row.phone || '',
+    email: row.email || '',
+    archived: !!row.archived,
+    activeSites: 0,
+    schedule: score,
+    quality: score,
+    hse: score,
+    docs: score,
+    projects: [],
+    trend: [score, score, score, score],
+  };
+}
+
+export function fromDbTaskMessage(row) {
+  // DB row: { id bigserial, task_id, author_id uuid, body, created_at }
+  // UI shape: { id, userId, text, when }
+  if (!row) return null;
+  return {
+    id: 'tm' + row.id,
+    userId: legacyUserId(row.author_id),
+    text: row.body || '',
+    when: row.created_at || '',
+  };
+}
+export function fromDbTask(row) {
+  // DB row: { id text, title, description, project_id, school_id, assigned_to_id uuid,
+  //           created_by_id uuid, status enum, due_date, created_at, completed_at,
+  //           task_messages: [...]  (embed via PostgREST select) }
+  // UI shape: { id, title, description, assigneeId, createdById, createdAt, due,
+  //             priority, status(display), projectId, schoolId, stageIndex, messages[] }
+  if (!row) return null;
+  const messages = Array.isArray(row.task_messages) ? row.task_messages.map(fromDbTaskMessage) : [];
+  messages.sort((a, b) => new Date(a.when) - new Date(b.when));
+  return {
+    id: row.id,
+    title: row.title || '',
+    description: row.description || '',
+    assigneeId: legacyUserId(row.assigned_to_id),
+    createdById: legacyUserId(row.created_by_id),
+    createdAt: row.created_at ? String(row.created_at).slice(0, 10) : '',
+    due: row.due_date || '',
+    priority: 'Medium',
+    status: TASK_STATUS_DISPLAY[row.status] || 'Open',
+    projectId: row.project_id || null,
+    schoolId: row.school_id || null,
+    stageIndex: null,
+    messages,
+  };
+}
+
+export function fromDbEscalationHistory(row) {
+  // DB row: { id bigserial, escalation_id, from_user_id, to_user_id, action, note, created_at }
+  // UI shape: { who, when, action, note }
+  if (!row) return null;
+  return {
+    who: legacyUserId(row.from_user_id),
+    when: row.created_at ? String(row.created_at).slice(0, 10) : '',
+    action: row.action || '',
+    note: row.note || '',
+  };
+}
+export function fromDbEscalation(row) {
+  // DB row: { id text, title, description, project_id, school_id, status enum,
+  //           urgency enum, raised_by_id, raised_to_role enum, currently_with_id,
+  //           assigned_to_id, days_open, created_at, resolved_at,
+  //           escalation_history: [...] }
+  // UI shape: { id, title, reason, urgency(display), status(display), projectId,
+  //             schoolId, taskId(null), fromUserId, currentlyWith, toUserId, toRole,
+  //             opened, daysOpen, resolvedDate, chain[], history[] }
+  if (!row) return null;
+  const history = Array.isArray(row.escalation_history) ? row.escalation_history.map(fromDbEscalationHistory) : [];
+  history.sort((a, b) => new Date(a.when) - new Date(b.when));
+  return {
+    id: row.id,
+    title: row.title || '',
+    reason: row.description || '',
+    urgency: URGENCY_DISPLAY[row.urgency] || 'Medium',
+    status: ESC_STATUS_DISPLAY[row.status] || 'Open',
+    projectId: row.project_id || null,
+    schoolId: row.school_id || null,
+    taskId: null,
+    fromUserId: legacyUserId(row.raised_by_id),
+    currentlyWith: legacyUserId(row.currently_with_id),
+    toUserId: legacyUserId(row.assigned_to_id),
+    toRole: ENUM_TO_ROLE[row.raised_to_role] || row.raised_to_role || '',
+    opened: row.created_at ? String(row.created_at).slice(0, 10) : '',
+    daysOpen: row.days_open || 0,
+    resolvedDate: row.resolved_at ? String(row.resolved_at).slice(0, 10) : null,
+    chain: [],
+    history,
+  };
+}
+
+export function fromDbDeliveryNoteItem(row) {
+  // DB row: { id bigserial, delivery_note_id, description, quantity numeric, unit, position }
+  // UI shape: { description, quantity (string), unit }
+  if (!row) return null;
+  return {
+    description: row.description || '',
+    quantity: row.quantity == null ? '' : String(row.quantity),
+    unit: row.unit || '',
+  };
+}
+export function fromDbDeliveryNote(row) {
+  // DB row: { id text, project_id, school_id, stage_key, delivery_date, supplier,
+  //           contractor, received_by, signature_path, notes, status enum,
+  //           created_by_id, created_at, delivery_note_items: [...] }
+  // UI shape: { id, projectId, schoolId, stageKey, deliveryDate, supplier, contractor,
+  //             receivedBy, signatureDataUrl, items[], photos[], notes, status, createdAt, createdBy }
+  if (!row) return null;
+  const items = Array.isArray(row.delivery_note_items)
+    ? row.delivery_note_items.slice().sort((a, b) => (a.position || 0) - (b.position || 0)).map(fromDbDeliveryNoteItem)
+    : [];
+  return {
+    id: row.id,
+    projectId: row.project_id || null,
+    schoolId: row.school_id || null,
+    stageKey: row.stage_key || '',
+    deliveryDate: row.delivery_date || '',
+    supplier: row.supplier || '',
+    contractor: row.contractor || '',
+    receivedBy: row.received_by || '',
+    signatureDataUrl: row.signature_path || null,
+    items: items.length ? items : [{ description: '', quantity: '', unit: '' }],
+    photos: [],
+    notes: row.notes || '',
+    status: row.status || 'received',
+    createdAt: row.created_at || '',
+    createdBy: legacyUserId(row.created_by_id),
+  };
+}
+
+export function fromDbAuditLog(row) {
+  // DB row: { id bigserial, entity_type, entity_id, action, user_id, user_name,
+  //           user_role, payload jsonb {before,after,entityLabel}, summary, created_at }
+  // UI shape: { id, timestamp, actorId, actorName, actorRole, action, entityType,
+  //             entityId, entityLabel, before, after, summary }
+  if (!row) return null;
+  const payload = (row.payload && typeof row.payload === 'object') ? row.payload : {};
+  return {
+    id: 'au-' + row.id,
+    timestamp: row.created_at || '',
+    actorId: legacyUserId(row.user_id),
+    actorName: row.user_name || '',
+    actorRole: ENUM_TO_ROLE[row.user_role] || row.user_role || '',
+    action: row.action || '',
+    entityType: row.entity_type || '',
+    entityId: row.entity_id || '',
+    entityLabel: payload.entityLabel || '',
+    before: payload.before ?? null,
+    after: payload.after ?? null,
+    summary: row.summary || '',
+  };
+}
+
+// ─── Loaders (Item 2) ──────────────────────────────────────────────────────
+// All return [] (or null for single-row) on error and log to console.warn.
+// They are async but called from a non-React context (boot orchestrator);
+// React just receives the resolved data via store setters.
+
+async function _safeFetch(label, fn) {
+  if (!USE_SUPABASE || !supabase) return null;
+  try {
+    const res = await fn();
+    if (res && res.error) { console.warn(`[R30.2 fetch ${label}]`, res.error); return null; }
+    return res;
+  } catch (e) {
+    console.warn(`[R30.2 fetch ${label}]`, e);
+    return null;
+  }
+}
+
+export async function bgFetchProfiles() {
+  const res = await _safeFetch('profiles', () => supabase.from('profiles').select('*'));
+  return (res && res.data) || [];
+}
+
+export async function bgFetchProjects() {
+  const res = await _safeFetch('projects', () => supabase.from('projects').select('*'));
+  return (res && res.data) || [];
+}
+
+// Schools: 2,600 rows ≈ 5 MB. Three paginated range() calls in parallel,
+// each within Supabase's default 1 MB response limit (Q4 / option B).
+export async function bgFetchSchools() {
+  if (!USE_SUPABASE || !supabase) return [];
+  try {
+    const ranges = [[0, 999], [1000, 1999], [2000, 2999]];
+    const results = await Promise.all(ranges.map(([from, to]) =>
+      supabase.from('schools').select('*').range(from, to)
+    ));
+    const rows = [];
+    for (const r of results) {
+      if (r.error) console.warn('[R30.2 fetch schools page]', r.error);
+      else if (r.data) rows.push(...r.data);
+    }
+    return rows;
+  } catch (e) { console.warn('[R30.2 fetch schools]', e); return []; }
+}
+
+export async function bgFetchContractors() {
+  const res = await _safeFetch('contractors', () => supabase.from('contractors').select('*'));
+  return (res && res.data) || [];
+}
+
+// Tasks + nested task_messages via PostgREST embed.
+export async function bgFetchTasks() {
+  const res = await _safeFetch('tasks', () => supabase.from('tasks').select('*, task_messages(*)'));
+  return (res && res.data) || [];
+}
+
+// Escalations + nested escalation_history via PostgREST embed.
+export async function bgFetchEscalations() {
+  const res = await _safeFetch('escalations', () => supabase.from('escalations').select('*, escalation_history(*)'));
+  return (res && res.data) || [];
+}
+
+// Delivery notes + nested delivery_note_items via PostgREST embed.
+export async function bgFetchDeliveryNotes() {
+  const res = await _safeFetch('delivery_notes', () => supabase.from('delivery_notes').select('*, delivery_note_items(*)'));
+  return (res && res.data) || [];
+}
+
+export async function bgFetchAppSettings() {
+  const res = await _safeFetch('app_settings', () => supabase.from('app_settings').select('*'));
+  return (res && res.data) || [];
+}
+
+export async function bgFetchAuditLog(limit = 500) {
+  const res = await _safeFetch('audit_log', () =>
+    supabase.from('audit_log').select('*').order('created_at', { ascending: false }).limit(limit)
+  );
+  return (res && res.data) || [];
+}
+
+// Single row by auth UUID — used by app.jsx to resolve currentUser on SIGNED_IN.
+export async function bgFetchCurrentProfile(uuid) {
+  if (!USE_SUPABASE || !supabase || !uuid) return null;
+  const res = await _safeFetch('current profile', () =>
+    supabase.from('profiles').select('*').eq('id', uuid).single()
+  );
+  return (res && res.data) || null;
+}
+
+if (typeof window !== 'undefined') {
+  Object.assign(window, {
+    fromDbProfile, fromDbProject, fromDbSchool, fromDbContractor,
+    fromDbTask, fromDbTaskMessage,
+    fromDbEscalation, fromDbEscalationHistory,
+    fromDbDeliveryNote, fromDbDeliveryNoteItem,
+    fromDbAuditLog,
+    bgFetchProfiles, bgFetchProjects, bgFetchSchools, bgFetchContractors,
+    bgFetchTasks, bgFetchEscalations, bgFetchDeliveryNotes, bgFetchAppSettings,
+    bgFetchAuditLog, bgFetchCurrentProfile,
+  });
+}

@@ -814,6 +814,16 @@ function useStoreR2(base) {
     projectCover, projectGallery, schoolStagePhotos, getSchoolStagePhotos,
     setProjectCoverFor, setProjectGalleryFor, setSchoolStagePhotosFor,
     deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote,
+    // R30.2 — internal setters exposed for the boot orchestrator (read side).
+    _setEscalations: setEscalations,
+    _setContractorsLocal: setContractorsLocal,
+    _setDeliveryNotes: setDeliveryNotes,
+    _setUsers: setUsers,
+    _setAuditLog: setAuditLog,
+    _setThemeColors: setThemeColors,
+    _setThemeLogo: setThemeLogo,
+    _setNotificationTemplates: setNotificationTemplates,
+    _setRolePermissions: setRolePermissions,
   };
 }
 

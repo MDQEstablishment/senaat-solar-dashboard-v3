@@ -9,7 +9,9 @@ function StoreProvider({ children }) {
   const [tasks, setTasks]         = React.useState(() => TASKS);
   const [chats, setChats]         = React.useState(() => PRE_CHATS);
   const [notifs, setNotifs]       = React.useState(() => SAMPLE_NOTIFS);
-  const [people]                  = React.useState(() => PEOPLE);
+  // R30.2 — people is now mutable so the boot orchestrator can replace it
+  // with Supabase-fetched profiles (was read-only in R29).
+  const [people, setPeople]       = React.useState(() => PEOPLE);
   const [projects, setProjects]   = React.useState(() => PROJECTS);
 
   // Project CRUD
@@ -191,7 +193,9 @@ function StoreProvider({ children }) {
     updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     pushNotif, markNotifRead, markAllNotifsRead,
     addProject, updateProject, deleteProject,
-    _setSchools: setSchools,
+    // R30.2 — internal setters exposed for the boot orchestrator (read side).
+    _setSchools: setSchools, _setTasks: setTasks, _setProjects: setProjects,
+    _setPeople: setPeople, _setNotifs: setNotifs,
   };
   const r2 = (typeof useStoreR2 === 'function') ? useStoreR2(baseValue) : {};
   const value = { ...baseValue, ...r2 };

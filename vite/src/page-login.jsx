@@ -1,13 +1,16 @@
 import React from 'react';
-// Login page — Zamil Services Solar Programs (Round 5 + R30.1 Supabase auth).
+// Login page — Zamil Services Solar Programs (R30.2 split-auth).
 //
 // USE_SUPABASE === true:
-//   Real email/password sign-in via supabase.auth.signInWithPassword.
-//   On success: resolve session.user.email → PEOPLE entry → onSignIn(person).
+//   Real email/password sign-in via supabase.auth.signInWithPassword. On
+//   success, the SIGNED_IN event fires and app.jsx's auth listener handles
+//   the rest: fetches the matching profile row, sets currentUser, kicks off
+//   the boot orchestrator. PageLogin only triggers auth and surfaces errors.
 //   Demo dropdown hidden.
 //
 // USE_SUPABASE === false (?dev=1 escape hatch):
-//   Demo dropdown picks PEOPLE entry directly. Used by E2E + offline runs.
+//   Demo dropdown picks PEOPLE entry directly + calls onSignIn(user). No
+//   Supabase involvement. Used by offline runs + the standalone HTML build.
 
 function PageLogin({ onSignIn }) {
   const useSupabase = !!(typeof window !== 'undefined' && window.USE_SUPABASE && window.supabase);
@@ -33,17 +36,11 @@ function PageLogin({ onSignIn }) {
     if (!email || !password) { setError('Email and password are required.'); return; }
     setBusy(true);
     try {
-      const { data, error: authError } = await window.supabase.auth.signInWithPassword({ email, password });
+      const { error: authError } = await window.supabase.auth.signInWithPassword({ email, password });
       if (authError) { setError(authError.message || 'Sign-in failed.'); return; }
-      const sessionEmail = data?.user?.email || email;
-      const person = resolveByEmail(sessionEmail);
-      if (!person) {
-        setError(`Authenticated, but no profile found for ${sessionEmail}. Contact admin.`);
-        // Sign back out — don't leave a session for an unmapped user.
-        try { await window.supabase.auth.signOut(); } catch {}
-        return;
-      }
-      onSignIn(person);
+      // R30.2 — auth listener in app.jsx now handles SIGNED_IN: fetches the
+      // matching profile row, calls onSignIn under the hood, and kicks off the
+      // boot orchestrator. We just trigger the auth event and let it flow.
     } catch (e) {
       setError(e.message || String(e));
     } finally {
