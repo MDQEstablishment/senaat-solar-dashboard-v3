@@ -109,6 +109,8 @@ const PROJECT_STATUS_ENUM = {
   'On Track':'on_track','At Risk':'at_risk','Delayed':'delayed',
   'Complete':'completed','Completed':'completed','On Hold':'on_hold',
 };
+const TASK_PRIORITY_ENUM = { 'Low': 'low', 'Medium': 'medium', 'High': 'high', 'Urgent': 'urgent' };
+const TASK_PRIORITY_DISPLAY = { 'low': 'Low', 'medium': 'Medium', 'high': 'High', 'urgent': 'Urgent' };
 const TASK_STATUS_ENUM = {
   'Open':'todo','To Do':'todo','Todo':'todo',
   'In Progress':'in_progress','Blocked':'blocked','Done':'done',
@@ -224,6 +226,7 @@ export function toDbTask(t) {
     created_by_id: userUuid(t.createdById),
     status: mapEnum(t.status, TASK_STATUS_ENUM, 'todo'),
     due_date: t.due || null,
+    priority: mapEnum(t.priority, TASK_PRIORITY_ENUM, 'medium'),
     created_at: t.createdAt ? new Date(t.createdAt).toISOString() : new Date().toISOString(),
   };
 }
@@ -236,6 +239,7 @@ export function toDbTaskPatch(patch) {
   if ('assigneeId' in patch)  out.assigned_to_id = userUuid(patch.assigneeId);
   if ('status' in patch)      out.status = mapEnum(patch.status, TASK_STATUS_ENUM, 'todo');
   if ('due' in patch)         out.due_date = patch.due || null;
+  if ('priority' in patch)    out.priority = mapEnum(patch.priority, TASK_PRIORITY_ENUM, 'medium');
   if (patch.status === 'Done' && !('completed_at' in out)) out.completed_at = new Date().toISOString();
   return out;
 }
@@ -582,7 +586,7 @@ export function fromDbTask(row) {
     createdById: legacyUserId(row.created_by_id),
     createdAt: row.created_at ? String(row.created_at).slice(0, 10) : '',
     due: row.due_date || '',
-    priority: 'Medium',
+    priority: TASK_PRIORITY_DISPLAY[row.priority] || 'Medium',
     status: TASK_STATUS_DISPLAY[row.status] || 'Open',
     projectId: row.project_id || null,
     schoolId: row.school_id || null,
