@@ -592,6 +592,10 @@ function useStoreR2(base) {
       }, 'escalation history');
     }
     base.pushNotif({ kind: 'overdue', text: 'New escalation: ' + data.title, target: { kind: 'escalation', id } });
+    // R30.5 — send email notification (fire-and-forget)
+    if (typeof window !== 'undefined' && window.notifyEmail && target.toUserId && target.toUserId !== data.fromUserId) {
+      try { window.notifyEmail('escalation_created', e, target.toUserId, data.fromUserId); } catch (_) {}
+    }
     return e;
   };
   const addEscalationComment = (id, who, note) => {
@@ -650,6 +654,11 @@ function useStoreR2(base) {
       note: 'Forwarded to ' + target.toRole + (note ? ': ' + note : ''),
       created_at: new Date().toISOString(),
     }, 'escalation forward history');
+    // R30.5 — send email notification (fire-and-forget) when forwarded to a new user
+    if (typeof window !== 'undefined' && window.notifyEmail && target.toUserId && target.toUserId !== fromUserId) {
+      const esc = (window.ESCALATIONS_DEFAULT || []).find(x => x.id === id) || { id, title: 'Forwarded escalation', urgency: 'Medium', reason: note || '' };
+      try { window.notifyEmail('escalation_created', esc, target.toUserId, fromUserId); } catch (_) {}
+    }
   };
 
   // ---- Stage flexible status ----

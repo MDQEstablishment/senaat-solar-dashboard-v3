@@ -1967,6 +1967,64 @@ record('R30.4 Edge Function: returns { user_id, profile_id } on success; { error
 record('R30.4 sanity: page-dashboard.jsx has no executable "|| 2601" fallback in totalS calcs',
        !/\|\| 2601\b/.test(_dashJsx_r304));
 
+// ─────────────────────────────────────────────────────────────────────────
+// Section T — R30.5 wiring (Email notifications via send-notification Edge Function)
+// ─────────────────────────────────────────────────────────────────────────
+const _sendNotifFn  = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'functions', 'send-notification', 'index.ts'), 'utf8');
+const _notifyLib    = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'lib', 'notify.js'), 'utf8');
+const _storeJsx305  = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'store.jsx'), 'utf8');
+const _storeR2_305  = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'store-r2.jsx'), 'utf8');
+const _mainJsx305   = fs.readFileSync(path.join(__dirname, '..', 'vite', 'src', 'main.jsx'), 'utf8');
+
+record('R30.5 Edge Function: file exists at supabase/functions/send-notification/index.ts + uses Deno.serve',
+       /Deno\.serve\(async \(req: Request\) =>/.test(_sendNotifFn));
+record('R30.5 Edge Function: requires Authorization: Bearer JWT (defense in depth)',
+       /Missing Authorization: Bearer/.test(_sendNotifFn));
+record('R30.5 Edge Function: supports both event kinds (escalation_created + task_assigned)',
+       /escalation_created/.test(_sendNotifFn) && /task_assigned/.test(_sendNotifFn));
+record('R30.5 Edge Function: GRACEFUL NO-OP when RESEND_API_KEY is missing — must NEVER 500 the caller',
+       /const RESEND_API_KEY = Deno\.env\.get\('RESEND_API_KEY'\)/.test(_sendNotifFn) &&
+       /skipped: true, reason: 'RESEND_API_KEY not configured'/.test(_sendNotifFn));
+record('R30.5 Edge Function: calls Resend REST API directly (no SDK dep) at https://api.resend.com/emails',
+       /fetch\('https:\/\/api\.resend\.com\/emails'/.test(_sendNotifFn) &&
+       /Authorization': `Bearer \$\{RESEND_API_KEY\}/.test(_sendNotifFn));
+record('R30.5 Edge Function: HTML templates include actor_name, title, recipient_name, and an Open-* CTA link',
+       /\$\{p\.actor_name\}/.test(_sendNotifFn) &&
+       /\$\{p\.title\}/.test(_sendNotifFn) &&
+       /\$\{p\.recipient_name\}/.test(_sendNotifFn) &&
+       /Open (escalation|task)/.test(_sendNotifFn));
+record('R30.5 Edge Function: validates recipient_email format before invoking Resend',
+       /!recipient_email\.includes\('@'\)/.test(_sendNotifFn));
+record('R30.5 Edge Function: rejects unknown kinds with 400',
+       /Invalid 'kind' — must be 'escalation_created' or 'task_assigned'/.test(_sendNotifFn));
+
+record('R30.5 frontend helper: lib/notify.js exists and exports notifyEmail',
+       /export function notifyEmail\(kind, record, recipientUserId, actorUserId\)/.test(_notifyLib));
+record('R30.5 frontend helper: installs notifyEmail on window for legacy stores',
+       /window\.notifyEmail = notifyEmail/.test(_notifyLib));
+record('R30.5 frontend helper: short-circuits in demo mode (USE_SUPABASE=false)',
+       /!window\.USE_SUPABASE \|\| !supabase/.test(_notifyLib));
+record('R30.5 frontend helper: looks up email + name from window.PEOPLE (boot-synced)',
+       /window\.PEOPLE/.test(_notifyLib) && /recipient\.email/.test(_notifyLib));
+record('R30.5 frontend helper: fire-and-forget invoke (no await; .catch() installed)',
+       /supabase\.functions\.invoke\('send-notification'/.test(_notifyLib) &&
+       /\.catch\(/.test(_notifyLib));
+record('R30.5 frontend helper: imported by main.jsx so window.notifyEmail is set before stores mount',
+       /import '\.\/lib\/notify\.js'/.test(_mainJsx305));
+
+record('R30.5 store.jsx addTask: invokes window.notifyEmail on task_assigned (only when assignee != creator)',
+       /window\.notifyEmail\('task_assigned'/.test(_storeJsx305) &&
+       /task\.assigneeId !== task\.createdById/.test(_storeJsx305));
+record('R30.5 store-r2.jsx addEscalation: invokes window.notifyEmail on escalation_created (target != fromUser)',
+       /window\.notifyEmail\('escalation_created'/.test(_storeR2_305) &&
+       /target\.toUserId !== data\.fromUserId/.test(_storeR2_305));
+record('R30.5 store-r2.jsx escalateFurther: invokes window.notifyEmail when escalation is forwarded to a new user',
+       /escalation_created/.test(_storeR2_305) &&
+       /target\.toUserId !== fromUserId/.test(_storeR2_305));
+record('R30.5 all notifyEmail call sites wrapped in try { ... } catch (_) {} so a failed invoke never breaks mutators',
+       (_storeJsx305.match(/try \{ window\.notifyEmail/g) || []).length >= 1 &&
+       (_storeR2_305.match(/try \{ window\.notifyEmail/g) || []).length >= 2);
+
 // ── Print results ─────────────────────────────────────────────────────────
 const pass = results.filter(r => r.pass).length;
 const fail = results.filter(r => !r.pass).length;

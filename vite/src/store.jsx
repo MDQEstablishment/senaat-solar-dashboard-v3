@@ -76,6 +76,10 @@ function StoreProvider({ children }) {
         target: { kind: 'task', id },
       });
     }
+    // R30.5 — send email notification (fire-and-forget, no await)
+    if (typeof window !== 'undefined' && window.notifyEmail && task.assigneeId && task.assigneeId !== task.createdById) {
+      try { window.notifyEmail('task_assigned', task, task.assigneeId, task.createdById); } catch (_) {}
+    }
     return task;
   };
 
