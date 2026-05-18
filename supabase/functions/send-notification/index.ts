@@ -13,8 +13,8 @@
 
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
-const FROM_ADDRESS = 'SENAAT Dashboard <noreply@mdqestablishment.com>';
-const APP_BASE_URL = 'https://mdqestablishment.github.io/senaat-solar-dashboard-v3';
+const FROM_ADDRESS = 'SENAAT Dashboard <notifications@zamildashboard.com>';
+const APP_BASE_URL = 'https://senaat.zamildashboard.com';
 
 interface NotifyBody {
   kind?: 'escalation_created' | 'task_assigned';
