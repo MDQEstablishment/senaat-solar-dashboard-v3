@@ -231,14 +231,20 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
             <div className="p-5">
               <SectionTitle icon="git-branch" title="Stage timeline" subtitle="Set status per stage. Free transitions in any direction." />
               <div className="space-y-2">
-                {SCHOOL_STAGES.map((stageName, i) => (
-                  <StageRow key={i} index={i} stageName={stageName} school={school}
-                    onToggle={() => toggleSchoolStage && toggleSchoolStage(school.id, i, currentUser)}
-                    photoCount={typeof getSchoolStagePhotos === 'function' && (window.STAGE_KEYS || [])[i]
-                      ? getSchoolStagePhotos(school.id, (window.STAGE_KEYS || [])[i]).length : 0}
-                    onUploadPhoto={() => uploadPhoto(i)}
-                    onAddTask={() => onAddTask({ projectId: school.projectId, schoolId: school.id, stageIndex: i })} />
-                ))}
+                {SCHOOL_STAGES.map((stageName, i) => {
+                  const stageKey = (window.STAGE_KEYS || [])[i] || stageName;
+                  const stagePhotos = (typeof getSchoolStagePhotos === 'function')
+                    ? getSchoolStagePhotos(school.id, stageKey) : [];
+                  return (
+                    <StageRow key={i} index={i} stageName={stageName} school={school}
+                      stageKey={stageKey}
+                      stagePhotos={stagePhotos}
+                      setStagePhotos={(next) => setSchoolStagePhotosFor && setSchoolStagePhotosFor(school.id, stageKey, next)}
+                      uploadPath={`projects/${school.projectId}/schools/${school.id}/stages/${stageKey}`}
+                      onToggle={() => toggleSchoolStage && toggleSchoolStage(school.id, i, currentUser)}
+                      onAddTask={() => onAddTask({ projectId: school.projectId, schoolId: school.id, stageIndex: i })} />
+                  );
+                })}
               </div>
             </div>
           )}
@@ -403,53 +409,55 @@ function FieldRow({ label, value, editMode, onChange, type, options, dir, placeh
 
 // Stage row with flexible status picker (Round 4 preserved)
 // Round 10: Single-click toggle (Done ⇄ Not Started). No menu, no multi-state.
-function StageRow({ index, stageName, school, onToggle, onUploadPhoto, onAddTask, photoCount = 0 }) {
+function StageRow({ index, stageName, school, onToggle, onAddTask, stageKey, stagePhotos, setStagePhotos, uploadPath }) {
   const st = school.stages[index] || {};
-  const photos = school.photos[index] || [];
   const isDone = !!st.done;
   const responsiblePerson = st.by ? getPerson(st.by) : null;
   return (
-    <div className={cls('rounded-md border flex items-start gap-3 p-3 transition',
+    <div className={cls('rounded-md border p-3 transition',
       isDone ? 'border-navy-900 bg-navy-50' : 'border-soft surface-2')}>
-      <button onClick={onToggle}
-        title={isDone ? 'Click to mark Not Started' : 'Click to mark Done'}
-        className={cls('w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition hover:scale-110 shrink-0',
-          isDone ? 'bg-navy-900 border-navy-900 text-white' : 'bg-white border-navy-900 text-navy-900')}>
-        {isDone ? <Icon name="check" size={16} strokeWidth={3} /> : (index + 1)}
-      </button>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-sm">{stageName}</span>
-          <span className={cls('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium',
-            isDone ? 'bg-navy-900 text-white' : 'bg-ink-100 text-ink-700')}>
-            {isDone ? 'Done' : 'Not Started'}
-          </span>
-          {isDone && st.date && <span className="text-[11px] text-ink-500">{fmtDate(st.date)}</span>}
-          {responsiblePerson && (
-            <span className="text-[11px] text-ink-500 flex items-center gap-1">
-              · <Avatar initials={responsiblePerson.initials} size={16} /> {responsiblePerson.name}
+      <div className="flex items-start gap-3">
+        <button onClick={onToggle}
+          title={isDone ? 'Click to mark Not Started' : 'Click to mark Done'}
+          className={cls('w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition hover:scale-110 shrink-0',
+            isDone ? 'bg-navy-900 border-navy-900 text-white' : 'bg-white border-navy-900 text-navy-900')}>
+          {isDone ? <Icon name="check" size={16} strokeWidth={3} /> : (index + 1)}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-medium text-sm">{stageName}</span>
+            <span className={cls('inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium',
+              isDone ? 'bg-navy-900 text-white' : 'bg-ink-100 text-ink-700')}>
+              {isDone ? 'Done' : 'Not Started'}
             </span>
+            {isDone && st.date && <span className="text-[11px] text-ink-500">{fmtDate(st.date)}</span>}
+            {responsiblePerson && (
+              <span className="text-[11px] text-ink-500 flex items-center gap-1">
+                · <Avatar initials={responsiblePerson.initials} size={16} /> {responsiblePerson.name}
+              </span>
+            )}
+            <span className="text-[10px] text-ink-500 ml-auto">{(stagePhotos || []).length}/5 photos</span>
+          </div>
+
+          {/* R30.26 — INLINE ImageUploader. Uploads directly to Supabase storage
+              + persists to photos table for THIS stage. No more redirect. */}
+          {window.ImageUploader && setStagePhotos && (
+            <div className="mt-2">
+              <window.ImageUploader
+                path={uploadPath}
+                maxCount={5}
+                compact={true}
+                value={stagePhotos || []}
+                onChange={(next) => setStagePhotos(next)} />
+            </div>
           )}
         </div>
-        {photos.length > 0 && (
-          <div className="mt-2 flex gap-1 flex-wrap">
-            {photos.map(ph => (
-              <div key={ph.id} className="w-14 h-14 rounded bg-ink-100 placeholder-grid border border-soft flex items-center justify-center text-[9px] text-ink-500">
-                <Icon name="sun" size={14} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="flex flex-col gap-1 shrink-0">
-        <Button size="sm" variant={isDone ? 'outline' : 'accent'} icon={isDone ? 'x' : 'check'} onClick={onToggle}>
-          {isDone ? 'Undo' : 'Mark Done'}
-        </Button>
-        <Button size="sm" variant="outline" icon="upload" onClick={onUploadPhoto}
-          title={photoCount > 0 ? `${photoCount} photo(s) — click to add more in the Photos tab` : 'Add stage photo (opens Photos tab)'}>
-          {photoCount > 0 ? `Photos (${photoCount})` : 'Add photo'}
-        </Button>
-        <Button size="sm" variant="ghost" icon="plus" onClick={onAddTask}>Task</Button>
+        <div className="flex flex-col gap-1 shrink-0">
+          <Button size="sm" variant={isDone ? 'outline' : 'accent'} icon={isDone ? 'x' : 'check'} onClick={onToggle}>
+            {isDone ? 'Undo' : 'Mark Done'}
+          </Button>
+          <Button size="sm" variant="ghost" icon="plus" onClick={onAddTask}>Task</Button>
+        </div>
       </div>
     </div>
   );
