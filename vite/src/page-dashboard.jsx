@@ -517,8 +517,11 @@ function PageDashboard({ projects, onOpenProject, currentUser, onNewEscalation }
   const [newProjectOpen, setNewProjectOpen] = React.useState(false);
 
   const totalValue = projects.reduce((a, p) => a + p.value, 0);
-  const openCount = projects.filter(p => p.progress < 100).length;
-  const closedCount = projects.length - openCount;
+  // R30.32 — count as Closed if progress=100 OR status='Complete'/'completed'/'Handed Over'.
+  // Status flip from a Manager (without all stages green) was being ignored before.
+  const isClosedProject = (p) => p.progress >= 100 || /^(complete|completed|handed over|handover)$/i.test(p.status || '');
+  const closedCount = projects.filter(isClosedProject).length;
+  const openCount = projects.length - closedCount;
   // R30.4 BUG #1 — derive totalSchools from the live schools array (post-boot)
   // rather than summing the denormalized projects.schools_count column, which
   // was stale (held the seed-time count 2601 while the actual schools table
