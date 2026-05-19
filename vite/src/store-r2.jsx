@@ -756,14 +756,34 @@ function useStoreR2(base) {
       [key]: [...(h[key] || []), { who, when: new Date().toISOString(), to: statusId, reason: reason || '' }],
     }));
   };
-  const addStageStatus = (s) => setStageStatuses(ss => [...ss, { id: 'cs' + Date.now(), builtin: false, terminal: false, color: '#64748B', ...s }]);
-  const updateStageStatus = (id, patch) => setStageStatuses(ss => ss.map(s => s.id === id ? { ...s, ...patch } : s));
-  const deleteStageStatus = (id) => setStageStatuses(ss => ss.filter(s => s.id !== id || s.builtin));
+  // R30.31 — stage statuses persist to app_settings['stage.statuses']
+  const addStageStatus = (s, actor) => setStageStatuses(ss => {
+    const next = [...ss, { id: 'cs' + Date.now(), builtin: false, terminal: false, color: '#64748B', ...s }];
+    __bgSetting('stage.statuses', next, actor); return next;
+  });
+  const updateStageStatus = (id, patch, actor) => setStageStatuses(ss => {
+    const next = ss.map(s => s.id === id ? { ...s, ...patch } : s);
+    __bgSetting('stage.statuses', next, actor); return next;
+  });
+  const deleteStageStatus = (id, actor) => setStageStatuses(ss => {
+    const next = ss.filter(s => s.id !== id || s.builtin);
+    __bgSetting('stage.statuses', next, actor); return next;
+  });
 
   // ---- Lifecycle CRUD ----
-  const addLifecycleStage = (s) => setLifecycleStages(ls => [...ls, { id: 'ls' + Date.now(), order: ls.length, archived: false, color: '#13315C', criteria: '', ...s }]);
-  const updateLifecycleStage = (id, patch) => setLifecycleStages(ls => ls.map(s => s.id === id ? { ...s, ...patch } : s));
-  const deleteLifecycleStage = (id) => setLifecycleStages(ls => ls.filter(s => s.id !== id));
+  // R30.31 — lifecycle stages persist to app_settings['lifecycle.stages']
+  const addLifecycleStage = (s, actor) => setLifecycleStages(ls => {
+    const next = [...ls, { id: 'ls' + Date.now(), order: ls.length, archived: false, color: '#13315C', criteria: '', ...s }];
+    __bgSetting('lifecycle.stages', next, actor); return next;
+  });
+  const updateLifecycleStage = (id, patch, actor) => setLifecycleStages(ls => {
+    const next = ls.map(s => s.id === id ? { ...s, ...patch } : s);
+    __bgSetting('lifecycle.stages', next, actor); return next;
+  });
+  const deleteLifecycleStage = (id, actor) => setLifecycleStages(ls => {
+    const next = ls.filter(s => s.id !== id);
+    __bgSetting('lifecycle.stages', next, actor); return next;
+  });
   const reorderLifecycleStage = (id, dir) => setLifecycleStages(ls => {
     const sorted = [...ls].sort((a, b) => a.order - b.order);
     const i = sorted.findIndex(s => s.id === id);
@@ -774,9 +794,19 @@ function useStoreR2(base) {
   });
 
   // ---- School Stages CRUD ----
-  const addSchoolStage_ = (s) => setSchoolStagesList(ls => [...ls, { id: 'ss' + Date.now(), order: ls.length, archived: false, color: '#13315C', ...s }]);
-  const updateSchoolStage_ = (id, patch) => setSchoolStagesList(ls => ls.map(s => s.id === id ? { ...s, ...patch } : s));
-  const deleteSchoolStage_ = (id) => setSchoolStagesList(ls => ls.filter(s => s.id !== id));
+  // R30.31 — school stages persist to app_settings['school.stages']
+  const addSchoolStage_ = (s, actor) => setSchoolStagesList(ls => {
+    const next = [...ls, { id: 'ss' + Date.now(), order: ls.length, archived: false, color: '#13315C', ...s }];
+    __bgSetting('school.stages', next, actor); return next;
+  });
+  const updateSchoolStage_ = (id, patch, actor) => setSchoolStagesList(ls => {
+    const next = ls.map(s => s.id === id ? { ...s, ...patch } : s);
+    __bgSetting('school.stages', next, actor); return next;
+  });
+  const deleteSchoolStage_ = (id, actor) => setSchoolStagesList(ls => {
+    const next = ls.filter(s => s.id !== id);
+    __bgSetting('school.stages', next, actor); return next;
+  });
   const reorderSchoolStage_ = (id, dir) => setSchoolStagesList(ls => {
     const sorted = [...ls].sort((a, b) => a.order - b.order);
     const i = sorted.findIndex(s => s.id === id);
@@ -787,23 +817,48 @@ function useStoreR2(base) {
   });
 
   // ---- Custom fields ----
-  const addCustomField = (entity, field) =>
-    setCustomFields(cf => ({ ...cf, [entity]: [...(cf[entity] || []), { id: 'cf-' + Date.now(), ...field }] }));
-  const updateCustomField = (entity, id, patch) =>
-    setCustomFields(cf => ({ ...cf, [entity]: cf[entity].map(f => f.id === id ? { ...f, ...patch } : f) }));
-  const deleteCustomField = (entity, id) =>
-    setCustomFields(cf => ({ ...cf, [entity]: cf[entity].filter(f => f.id !== id) }));
+  // R30.31 — custom fields persist to app_settings['custom.fields']
+  const addCustomField = (entity, field, actor) =>
+    setCustomFields(cf => {
+      const next = { ...cf, [entity]: [...(cf[entity] || []), { id: 'cf-' + Date.now(), ...field }] };
+      __bgSetting('custom.fields', next, actor); return next;
+    });
+  const updateCustomField = (entity, id, patch, actor) =>
+    setCustomFields(cf => {
+      const next = { ...cf, [entity]: cf[entity].map(f => f.id === id ? { ...f, ...patch } : f) };
+      __bgSetting('custom.fields', next, actor); return next;
+    });
+  const deleteCustomField = (entity, id, actor) =>
+    setCustomFields(cf => {
+      const next = { ...cf, [entity]: cf[entity].filter(f => f.id !== id) };
+      __bgSetting('custom.fields', next, actor); return next;
+    });
 
   // ---- Milestone templates ----
-  const addMilestoneTemplate = (mt) => setMTemplates(t => [...t, { id: 'mt' + Date.now(), weight: 25, fields: [], ...mt }]);
-  const updateMilestoneTemplate = (id, patch) => setMTemplates(t => t.map(m => m.id === id ? { ...m, ...patch } : m));
-  const deleteMilestoneTemplate = (id) => setMTemplates(t => t.filter(m => m.id !== id));
-  const setMilestoneEntry = (contractorId, templateId, values) => {
-    setMEntries(es => {
-      const idx = es.findIndex(e => e.contractorId === contractorId && e.templateId === templateId);
-      const entry = { id: idx >= 0 ? es[idx].id : 'me-' + contractorId + '-' + templateId, contractorId, templateId, values, when: new Date().toISOString().slice(0, 10) };
-      return idx >= 0 ? es.map((e, i) => i === idx ? entry : e) : [...es, entry];
-    });
+  // R30.31 — milestone templates persist to app_settings['milestone.templates']
+  const addMilestoneTemplate = (mt, actor) => setMTemplates(t => {
+    const next = [...t, { id: 'mt' + Date.now(), weight: 25, fields: [], ...mt }];
+    __bgSetting('milestone.templates', next, actor); return next;
+  });
+  const updateMilestoneTemplate = (id, patch, actor) => setMTemplates(t => {
+    const next = t.map(m => m.id === id ? { ...m, ...patch } : m);
+    __bgSetting('milestone.templates', next, actor); return next;
+  });
+  const deleteMilestoneTemplate = (id, actor) => setMTemplates(t => {
+    const next = t.filter(m => m.id !== id);
+    __bgSetting('milestone.templates', next, actor); return next;
+  });
+  const setMilestoneEntry = (contractorId, templateId, values, actor) => {
+    setMilestoneEntries(me => ({ ...me, [contractorId + '|' + templateId]: { contractorId, templateId, values, when: Date.now() } }));
+    // R30.31 — persist to milestone_entries table (upsert by contractor+template)
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      const enteredByUuid = window.userUuid && actor ? window.userUuid(actor.id) : null;
+      window.supabase.from('milestone_entries').upsert({
+        contractor_id: contractorId, template_id: templateId, values, entered_by_id: enteredByUuid,
+      }, { onConflict: 'contractor_id,template_id' }).then(({ error }) => {
+        if (error) console.error('[supabase upsert milestone_entry]', error);
+      });
+    }
   };
   const contractorScore = (contractorId) => {
     let total = 0, weightSum = 0;
@@ -818,9 +873,56 @@ function useStoreR2(base) {
   };
 
   // ---- Financial entries with auto-rollup ----
-  const addFinancialEntry = (e) => setFinancialEntries(fe => [{ id: 'fe' + Date.now(), archived: false, document: null, ...e }, ...fe]);
-  const updateFinancialEntry = (id, patch) => setFinancialEntries(fe => fe.map(e => e.id === id ? { ...e, ...patch } : e));
-  const deleteFinancialEntry = (id) => setFinancialEntries(fe => fe.filter(e => e.id !== id));
+  // R30.31 — financial entries persist to financial_entries table (new in R30.31 migration)
+  const addFinancialEntry = (entry, actor) => {
+    const id = 'fe' + Date.now();
+    setFinancialEntries(fe => [{ id, archived: false, document: null, ...entry }, ...fe]);
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      const createdByUuid = window.userUuid && actor ? window.userUuid(actor.id) : null;
+      window.supabase.from('financial_entries').insert({
+        id, project_id: entry.projectId || null, date: entry.date || null,
+        kind: entry.kind || 'other', category: entry.category || null,
+        amount: Number(entry.amount) || 0, currency: entry.currency || 'SAR',
+        description: entry.description || null, vendor: entry.vendor || null,
+        document_path: entry.document?.path || entry.documentPath || null,
+        created_by_id: createdByUuid, archived: false,
+      }).then(({ error }) => {
+        if (error) {
+          console.error('[supabase insert financial_entry]', error);
+          window.dispatchEvent(new CustomEvent('supabase-error', { detail: { label: 'financial entry', error } }));
+        }
+      });
+    }
+    return id;
+  };
+  const updateFinancialEntry = (id, patch, actor) => {
+    setFinancialEntries(fe => fe.map(e => e.id === id ? { ...e, ...patch } : e));
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      const dbPatch = {};
+      if ('projectId'   in patch) dbPatch.project_id  = patch.projectId;
+      if ('date'        in patch) dbPatch.date        = patch.date;
+      if ('kind'        in patch) dbPatch.kind        = patch.kind;
+      if ('category'    in patch) dbPatch.category    = patch.category;
+      if ('amount'      in patch) dbPatch.amount      = Number(patch.amount) || 0;
+      if ('currency'    in patch) dbPatch.currency    = patch.currency;
+      if ('description' in patch) dbPatch.description = patch.description;
+      if ('vendor'      in patch) dbPatch.vendor      = patch.vendor;
+      if ('archived'    in patch) dbPatch.archived    = !!patch.archived;
+      if (Object.keys(dbPatch).length) {
+        window.supabase.from('financial_entries').update(dbPatch).eq('id', id).then(({ error }) => {
+          if (error) console.error('[supabase update financial_entry]', error);
+        });
+      }
+    }
+  };
+  const deleteFinancialEntry = (id, actor) => {
+    setFinancialEntries(fe => fe.filter(e => e.id !== id));
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      window.supabase.from('financial_entries').delete().eq('id', id).then(({ error }) => {
+        if (error) console.error('[supabase delete financial_entry]', error);
+      });
+    }
+  };
   const finRollup = (filterFn = () => true) => {
     const live = financialEntries.filter(e => !e.archived).filter(filterFn);
     const sum = (t) => live.filter(e => e.type === t).reduce((a, e) => a + e.amount, 0);
@@ -927,8 +1029,15 @@ function useStoreR2(base) {
 
   const deleteMaterialUsage = (id) => {
     setMaterialUsage(mu => mu.filter(x => x.id !== id));
-    // We don't persist deletes of locally-logged usage (id format 'mu...') because
-    // they may not have a matching DB row yet. Real deletes would need a separate path.
+    // R30.31 — DB-sourced ids look like 'mu-db-<bigserial>'. Persist delete for those.
+    if (typeof id === 'string' && id.startsWith('mu-db-') && window.supabase && window.USE_SUPABASE) {
+      const dbId = Number(id.slice(6));
+      if (!Number.isNaN(dbId)) {
+        window.supabase.from('material_usage').delete().eq('id', dbId).then(({ error }) => {
+          if (error) console.error('[supabase delete material_usage]', error);
+        });
+      }
+    }
   };
 
   return {
