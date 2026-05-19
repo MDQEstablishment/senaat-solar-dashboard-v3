@@ -260,6 +260,7 @@ export function toDbSchool(s) {
     coords: normalizeCoords(s.coords),
     remark: mapEnum(s.remark || s.status, { ...SCHOOL_REMARK_ENUM_DIRECT, ...SCHOOL_REMARK_ENUM }, 'active'),
     stages: s.stages || {},
+    issues: Array.isArray(s.issues) ? s.issues : [],   // R33 — snag list
   };
 }
 export function toDbSchoolPatch(patch) {
@@ -276,6 +277,7 @@ export function toDbSchoolPatch(patch) {
   if ('coords' in patch)      out.coords = normalizeCoords(patch.coords);
   if ('remark' in patch)      out.remark = mapEnum(patch.remark, { ...SCHOOL_REMARK_ENUM_DIRECT, ...SCHOOL_REMARK_ENUM }, 'active');
   if ('stages' in patch)      out.stages = patch.stages || {};
+  if ('issues' in patch)      out.issues = Array.isArray(patch.issues) ? patch.issues : [];   // R33 — snag list
   return out;
 }
 
@@ -520,7 +522,7 @@ export function fromDbSchool(row) {
     kw: 100,
     survey: null,
     installStart: null,
-    issues: [],
+    issues: Array.isArray(row.issues) ? row.issues : [],   // R33 — snag list
     photos: {},
     photosList: [],
     deliveryNotes: [],
