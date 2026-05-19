@@ -37,6 +37,14 @@ function PageDeliveryNotes({ currentUser }) {
 
   const active = (deliveryNotes || []).find(n => n.id === activeId) || null;
 
+  // R30.22 — auto-open New form if URL hash has ?new=1 or zamil_new_dn_hint is set
+  React.useEffect(() => {
+    const hash = window.location.hash || '';
+    if (hash.includes('new=1')) {
+      setActiveId(null);
+      setView('edit');
+    }
+  }, []);
   const openDetail = (id) => { setActiveId(id); setView('detail'); };
   const openEdit   = (id) => { setActiveId(id); setView('edit'); };
   const openNew    = ()   => { setActiveId(null); setView('edit'); };

@@ -109,8 +109,19 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
     }
   };
   const uploadPhoto = (i) => {
-    const label = `Photo ${(school.photos[i]?.length || 0) + 1} for ${SCHOOL_STAGES[i]}`;
-    addSchoolPhoto(school.id, i, label);
+    // R30.22 — the Stages-row "Photo" button now switches to the Photos tab and
+    // scrolls to that stage's real ImageUploader (which IS wired to Supabase storage).
+    // The old in-memory addSchoolPhoto placeholder did nothing visible.
+    setTab('Photos');
+    setTimeout(() => {
+      const el = document.querySelector(`[data-testid="stage-photos-S${String(i + 1).padStart(2, '0')}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Open the file picker inside that stage's ImageUploader directly
+        const fi = el.querySelector('input[type=file]');
+        if (fi) fi.click();
+      }
+    }, 200);
   };
 
   const fld = (key, val) => editMode ? val : (form[key] || '—');
@@ -267,23 +278,48 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
 
           {tab === 'Delivery Notes' && (
             <div className="p-5">
-              <SectionTitle icon="file-text" title="Delivery Notes (PDFs)" subtitle="Multi-file upload (demo placeholders)" />
-              <div className="border-2 border-dashed border-soft rounded-md p-8 text-center text-xs text-ink-500">
-                <Icon name="upload" size={20} />
-                <div className="mt-2 font-medium">Drop PDF files here or click to browse</div>
-              </div>
-              <div className="mt-4 space-y-2">
-                {(school.deliveryNotes || []).map(d => (
-                  <div key={d.id} className="flex items-center gap-2 border border-soft rounded-md p-2 text-xs">
-                    <Icon name="file-text" size={14} />
-                    <span className="flex-1">{d.name}</span>
-                    <span className="text-ink-500">{fmtDate(d.date)}</span>
+              {(() => {
+                // R30.22 — Real delivery notes filtered to this school, with a working
+                // "New delivery note" button. Replaces the prior placeholder dropzone.
+                const store = (typeof window.useStore === 'function') ? window.useStore() : null;
+                const allDNs = (store && store.deliveryNotes) || [];
+                const schoolDNs = allDNs.filter(d => d.schoolId === school.id);
+                const openNew = () => {
+                  // Stash a hint so page-delivery-notes can pre-fill project + school
+                  try {
+                    sessionStorage.setItem('zamil_new_dn_hint', JSON.stringify({
+                      projectId: school.projectId, schoolId: school.id,
+                    }));
+                  } catch (_) {}
+                  window.location.hash = '#/delivery-notes?new=1';
+                };
+                return <>
+                  <div className="flex items-center justify-between mb-3">
+                    <SectionTitle icon="file-text" title="Delivery Notes"
+                      subtitle={`${schoolDNs.length} note(s) for this school`} />
+                    <Button variant="accent" icon="plus" onClick={openNew}>New delivery note</Button>
                   </div>
-                ))}
-                {(school.deliveryNotes || []).length === 0 && (
-                  <div className="text-center py-4 text-xs text-ink-500 italic">No delivery notes yet.</div>
-                )}
-              </div>
+                  {schoolDNs.length === 0 ? (
+                    <div className="text-center py-8 text-xs text-ink-500 italic border border-dashed border-soft rounded-md">
+                      No delivery notes yet for this school. Click "New delivery note" above.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {schoolDNs.map(d => (
+                        <a key={d.id} href={`#/delivery-notes?id=${d.id}`}
+                           className="flex items-center gap-3 border border-soft rounded-md p-3 text-xs hover:bg-ink-50 cursor-pointer">
+                          <Icon name="file-text" size={14} />
+                          <div className="flex-1">
+                            <div className="font-medium">{d.supplier || 'Unknown supplier'} — {(d.items || []).length} item(s)</div>
+                            <div className="text-[10px] text-ink-500 mt-0.5">Delivered {fmtDate(d.deliveryDate)} · {d.contractor || '—'}</div>
+                          </div>
+                          <Pill tone={d.status === 'verified' ? 'ok' : d.status === 'received' ? 'soft' : 'warn'}>{d.status || 'received'}</Pill>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </>;
+              })()}
             </div>
           )}
 
