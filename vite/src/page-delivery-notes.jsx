@@ -16,6 +16,7 @@ function PageDeliveryNotes({ currentUser }) {
   const store = useStore();
   const { deliveryNotes, addDeliveryNote, updateDeliveryNote, deleteDeliveryNote, projects, schools } = store;
   const [view, setView] = React.useState('list');     // 'list' | 'detail' | 'edit'
+  const [pendingHint, setPendingHint] = React.useState(null);  // R30.25.2 — hint from school deep-link
   const [activeId, setActiveId] = React.useState(null);
   const [projectFilter, setProjectFilter] = React.useState('all');
   const [statusFilter, setStatusFilter] = React.useState('all');
@@ -37,10 +38,24 @@ function PageDeliveryNotes({ currentUser }) {
 
   const active = (deliveryNotes || []).find(n => n.id === activeId) || null;
 
-  // R30.22 — auto-open New form if URL hash has ?new=1 or zamil_new_dn_hint is set
+  // R30.22 / R30.25.2 — auto-open New form when deep-linked from School Detail.
+  // Hint flow: openNew on School Detail stashes context on window.__newDnContext
+  // (survives all React re-renders) + sessionStorage as fallback. We read from
+  // both and clear both, then set pendingHint to pre-fill the form's defaults.
   React.useEffect(() => {
     const hash = window.location.hash || '';
-    if (hash.includes('new=1')) {
+    const ctx = (typeof window !== 'undefined') ? window.__newDnContext : null;
+    if (hash.includes('new=1') || ctx) {
+      let hint = ctx || null;
+      if (!hint) {
+        try {
+          const raw = sessionStorage.getItem('zamil_new_dn_hint');
+          if (raw) hint = JSON.parse(raw);
+        } catch (_) {}
+      }
+      try { sessionStorage.removeItem('zamil_new_dn_hint'); } catch (_) {}
+      if (typeof window !== 'undefined') window.__newDnContext = null;
+      setPendingHint(hint);
       setActiveId(null);
       setView('edit');
     }
@@ -70,8 +85,10 @@ function PageDeliveryNotes({ currentUser }) {
                                 onEdit={() => openEdit(active.id)} onDelete={() => onDelete(active.id)} />;
   }
   if (view === 'edit') {
-    return <DeliveryNoteForm initial={active} projects={projects} schools={schools}
-                              onCancel={() => active ? openDetail(active.id) : back()} onSave={onSave} />;
+    return <DeliveryNoteForm initial={active} hint={!active ? pendingHint : null}
+                              projects={projects} schools={schools}
+                              onCancel={() => { setPendingHint(null); active ? openDetail(active.id) : back(); }}
+                              onSave={(data) => { setPendingHint(null); onSave(data); }} />;
   }
   return (
     <div className="p-6 space-y-4">

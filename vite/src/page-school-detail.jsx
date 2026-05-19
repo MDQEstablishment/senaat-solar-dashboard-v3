@@ -287,12 +287,10 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
                 const allDNs = (store && store.deliveryNotes) || [];
                 const schoolDNs = allDNs.filter(d => d.schoolId === school.id);
                 const openNew = () => {
-                  // Stash a hint so page-delivery-notes can pre-fill project + school
-                  try {
-                    sessionStorage.setItem('zamil_new_dn_hint', JSON.stringify({
-                      projectId: school.projectId, schoolId: school.id,
-                    }));
-                  } catch (_) {}
+                  // R30.25.2 — stash on window (survives re-renders); sessionStorage as fallback
+                  const hint = { projectId: school.projectId, schoolId: school.id };
+                  if (typeof window !== 'undefined') window.__newDnContext = hint;
+                  try { sessionStorage.setItem('zamil_new_dn_hint', JSON.stringify(hint)); } catch (_) {}
                   window.location.hash = '#/delivery-notes?new=1';
                 };
                 return <>
