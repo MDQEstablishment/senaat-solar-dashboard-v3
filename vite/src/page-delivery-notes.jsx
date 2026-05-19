@@ -288,22 +288,11 @@ function Field({ label, value }) {
 }
 
 // ── Create / edit form ─────────────────────────────────────────────────────
-function DeliveryNoteForm({ initial, projects, schools, onCancel, onSave }) {
+function DeliveryNoteForm({ initial, hint, projects, schools, onCancel, onSave }) {
   const isNew = !initial;
   const allSchools = schools || window.ALL_SCHOOLS || [];
-  // R30.25 — when creating a new delivery note, honor the hint stashed by the
-  // School Detail "New delivery note" deep link so the form opens pre-filled.
-  const hint = React.useMemo(() => {
-    if (initial) return null;  // editing existing — no hint
-    try {
-      const raw = sessionStorage.getItem('zamil_new_dn_hint');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      sessionStorage.removeItem('zamil_new_dn_hint');  // consume once
-      return parsed && typeof parsed === 'object' ? parsed : null;
-    } catch (_) { return null; }
-  }, [initial]);
-
+  // R30.25 — hint is passed from parent (page-delivery-notes), already read +
+  // consumed from sessionStorage there. Reliable across StrictMode double-mount.
   const [form, setForm] = React.useState(() => ({
     projectId:    initial?.projectId    || hint?.projectId    || (projects?.[0]?.id || ''),
     schoolId:     initial?.schoolId     || hint?.schoolId     || '',
