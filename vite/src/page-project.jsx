@@ -251,6 +251,27 @@ function ProjectStageSummaryCards({ distPerStage, totalSchools, activeStage, onS
 // no longer renders a per-school table. Schools List → Stages view is the single
 // source of truth for that data shape.
 
+// R31 — Mark Complete / Reopen project button. Manager / PgM group / Admin only.
+function MarkCompleteButton({ project, currentUser }) {
+  const store = useStore();
+  const role = currentUser?.role;
+  const canClose = role && (PROGRAM_MANAGER_GROUP.indexOf(role) !== -1 || role === 'Admin');
+  if (!canClose) return null;
+  const isClosed = String(project.status || '').toLowerCase() === 'completed'
+    || String(project.status || '').toLowerCase() === 'complete'
+    || project.status === 'Handed Over';
+  if (isClosed) {
+    return <Button variant="outline" icon="rotate-ccw"
+      onClick={() => { if (confirm('Reopen this project? Status will go back to In Progress.')) store.markProjectReopen && store.markProjectReopen(project.id, currentUser); }}>
+      Reopen project
+    </Button>;
+  }
+  return <Button variant="outline" icon="check-circle"
+    onClick={() => { if (confirm('Mark this project COMPLETE? This closes the project regardless of progress %.')) store.markProjectComplete && store.markProjectComplete(project.id, currentUser); }}>
+    Mark Complete
+  </Button>;
+}
+
 function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, onEscalate, currentUser }) {
   if (!project) return <div className="p-6 text-sm text-ink-500">Project not found.</div>;
 
@@ -308,25 +329,7 @@ function PageProject({ project, onBack, onOpenSchools, onAddTask, onOpenTask, on
         <div className="flex gap-2">
           <Button variant="outline" icon="school" onClick={() => onOpenSchools && onOpenSchools(project.id)}>View all {projSchoolCount} schools</Button>
           {/* R31 — Manager-only "Mark Complete" administrative closure. Visible to PG group + Admin, regardless of progress. */}
-          {(() => {
-            const store = useStore();
-            const role = currentUser?.role;
-            const canClose = role && (PROGRAM_MANAGER_GROUP.indexOf(role) !== -1 || role === 'Admin');
-            if (!canClose) return null;
-            const isClosed = String(project.status || '').toLowerCase() === 'completed'
-              || String(project.status || '').toLowerCase() === 'complete'
-              || project.status === 'Handed Over';
-            if (isClosed) {
-              return <Button variant="outline" icon="rotate-ccw"
-                onClick={() => { if (confirm('Reopen this project? Status will go back to In Progress.')) store.markProjectReopen && store.markProjectReopen(project.id, currentUser); }}>
-                Reopen project
-              </Button>;
-            }
-            return <Button variant="outline" icon="check-circle"
-              onClick={() => { if (confirm('Mark this project COMPLETE? This closes the project regardless of progress %.')) store.markProjectComplete && store.markProjectComplete(project.id, currentUser); }}>
-              Mark Complete
-            </Button>;
-          })()}
+          <MarkCompleteButton project={project} currentUser={currentUser} />
           {onEscalate && (() => {
             const t = (currentUser && typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, project.id) : null;
             return t ? <Button variant="outline" icon="alert-circle" onClick={onEscalate}>{t.label}</Button> : null;

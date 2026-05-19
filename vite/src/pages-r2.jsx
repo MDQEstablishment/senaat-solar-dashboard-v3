@@ -57,6 +57,9 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
   const [reason, setReason] = React.useState('');
   const [urgency, setUrgency] = React.useState('Medium');
   const [projectId, setProjectId] = React.useState(defaults.projectId || projects[0]?.id);
+  // R30.23 — track user-picked target when there are multiple candidates.
+  // R31.2 — moved ABOVE the early return so hooks count is stable across renders (React error #310).
+  const [pickedTargetId, setPickedTargetId] = React.useState(null);
   React.useEffect(() => {
     if (open) {
       setTitle(defaults.title || '');
@@ -65,10 +68,10 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
       setProjectId(defaults.projectId || projects[0]?.id);
     }
   }, [open]);
+  // Reset picker when modal reopens
+  React.useEffect(() => { if (open) setPickedTargetId(null); }, [open]);
   if (!open) return null;
 
-  // R30.23 — track user-picked target when there are multiple candidates
-  const [pickedTargetId, setPickedTargetId] = React.useState(null);
   const targetBase = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, projectId) : null;
   // If user explicitly picked a candidate, swap in that ID
   const target = targetBase && pickedTargetId
@@ -76,8 +79,6 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
     : targetBase;
   const targetUser = target ? PEOPLE.find(p => p.id === target.toUserId) : null;
   const modalTitle = target ? target.label : 'Escalate';
-  // Reset picker when modal reopens
-  React.useEffect(() => { if (open) setPickedTargetId(null); }, [open]);
 
   return (
     <Modal open={open} onClose={onClose} title={modalTitle} wide
