@@ -367,8 +367,8 @@ function TopBar({ role, onRoleChange, currentUser, search, onSearch, onOpenNotif
           <Icon name="chevron-down" size={12} />
         </button>
         {menuOpen && (
-          <div role="menu" className="absolute right-0 mt-1 w-44 surface border border-soft rounded-md shadow-pop z-30">
-            <div className="px-3 py-2 text-[11px] text-ink-500 border-b border-soft">{currentUser.email}</div>
+          <div role="menu" className="absolute right-0 mt-1 min-w-[15rem] max-w-[20rem] surface border border-soft rounded-md shadow-pop z-30 overflow-hidden">
+            <div className="px-3 py-2 text-[11px] text-ink-500 border-b border-soft break-all" title={currentUser.email}>{currentUser.email}</div>
             <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onSignOut && onSignOut(); }}
               className="w-full text-left px-3 py-2 text-sm hover:bg-ink-100 flex items-center gap-2 text-red-600">
               <Icon name="arrow-left" size={13} /> Sign out
