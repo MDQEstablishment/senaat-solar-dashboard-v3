@@ -27,7 +27,9 @@ function FinEntryModal({ open, onClose, onSave, projects, initial }) {
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="accent" icon="check" onClick={() => {
-          if (!amount || isNaN(+amount)) return;
+          // R31 — projectId is mandatory for every financial entry (no standalone/overhead).
+          if (!projectId) { alert('Please select a project for this entry.'); return; }
+          if (!amount || isNaN(+amount)) { alert('Please enter a valid amount.'); return; }
           onSave({ ...(initial||{}), type, projectId, contractorId: cId || null, amount: +amount, date, relatedMilestone: milestone, notes, document: initial?.document || null });
           onClose();
         }}>Save entry</Button>
@@ -45,7 +47,7 @@ function FinEntryModal({ open, onClose, onSave, projects, initial }) {
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Project</label>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Project <span className="text-red-600">*</span></label>
             <Select value={projectId} onChange={setPid} options={projects.map(p=>({value:p.id,label:p.name}))} className="w-full" />
           </div>
           <div>

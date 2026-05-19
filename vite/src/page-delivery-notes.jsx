@@ -323,6 +323,7 @@ function DeliveryNoteForm({ initial, hint, projects, schools, onCancel, onSave }
     items:        initial?.items?.length ? [...initial.items] : [{ description: '', quantity: '', unit: '' }],
     photos:       initial?.photos       || [],
     signatureDataUrl: initial?.signatureDataUrl || null,
+    signaturePhoto:   initial?.signaturePhoto   || null,
   }));
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setItem = (i, patch) => setForm(f => ({ ...f, items: f.items.map((it, idx) => idx === i ? { ...it, ...patch } : it) }));
@@ -445,102 +446,27 @@ function DeliveryNoteForm({ initial, hint, projects, schools, onCancel, onSave }
 
       <Card>
         <SectionTitle icon="pen-tool" title="Receiver signature"
-          subtitle="The receiver signs here to acknowledge delivery. Signature is embedded in the printed PDF." />
-        <SignaturePad value={form.signatureDataUrl} onChange={(url) => set('signatureDataUrl', url)} />
+          subtitle="Upload a photo of the signed delivery note (already-signed paper). Max 1 image." />
+        {/* R31 — pad removed per client request; signature is uploaded as an image. */}
+        {window.ImageUploader && (
+          <window.ImageUploader
+            path={`delivery-notes/${noteId}/signature`}
+            maxCount={1}
+            value={form.signaturePhoto ? [form.signaturePhoto] : (form.signatureDataUrl ? [{ url: form.signatureDataUrl, path: 'legacy' }] : [])}
+            onChange={(list) => {
+              const first = list && list[0];
+              set('signaturePhoto', first || null);
+              // Keep signatureDataUrl populated so existing readers (preview card,
+              // PDF generator) keep working without changes.
+              set('signatureDataUrl', first ? first.url : null);
+            }} />
+        )}
       </Card>
     </form>
   );
 }
 
-// R30.6 — Pure-canvas signature pad. No deps. Touch + mouse. Outputs a PNG data URL.
-function SignaturePad({ value, onChange }) {
-  const canvasRef = React.useRef(null);
-  const drawing = React.useRef(false);
-  const last = React.useRef(null);
-  const [restored, setRestored] = React.useState(false);
-
-  React.useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dpr = window.devicePixelRatio || 1;
-    const w = canvas.clientWidth, h = canvas.clientHeight;
-    canvas.width = w * dpr;
-    canvas.height = h * dpr;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(dpr, dpr);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#0f172a';
-    ctx.lineWidth = 2;
-    // Restore existing signature if any
-    if (value && !restored) {
-      const img = new Image();
-      img.onload = () => ctx.drawImage(img, 0, 0, w, h);
-      img.src = value;
-      setRestored(true);
-    }
-  }, [value, restored]);
-
-  const point = (e) => {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const t = e.touches && e.touches[0];
-    const x = (t ? t.clientX : e.clientX) - rect.left;
-    const y = (t ? t.clientY : e.clientY) - rect.top;
-    return { x, y };
-  };
-
-  const start = (e) => { e.preventDefault(); drawing.current = true; last.current = point(e); };
-  const move  = (e) => {
-    if (!drawing.current) return;
-    e.preventDefault();
-    const p = point(e);
-    const ctx = canvasRef.current.getContext('2d');
-    ctx.beginPath();
-    ctx.moveTo(last.current.x, last.current.y);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-    last.current = p;
-  };
-  const end = () => {
-    if (!drawing.current) return;
-    drawing.current = false;
-    const url = canvasRef.current.toDataURL('image/png');
-    onChange && onChange(url);
-  };
-
-  const clear = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
-    onChange && onChange(null);
-    setRestored(false);
-  };
-
-  return (
-    <div data-testid="signature-pad" className="space-y-2">
-      <canvas ref={canvasRef}
-        onMouseDown={start} onMouseMove={move} onMouseUp={end} onMouseLeave={end}
-        onTouchStart={start} onTouchMove={move} onTouchEnd={end}
-        className="w-full border border-ink-200 rounded-md bg-white touch-none"
-        style={{ height: 160 }} />
-      <div className="flex items-center gap-2">
-        <button type="button" onClick={clear}
-          className="px-3 py-1 text-xs rounded border border-ink-200 text-ink-600 hover:bg-ink-50">
-          Clear
-        </button>
-        <span className="text-xs text-ink-500">
-          {value ? 'Signature captured' : 'Sign above with mouse or finger'}
-        </span>
-      </div>
-    </div>
-  );
-}
-
+// R31 — SignaturePad component removed. Signature is now an uploaded photo.
 
 function FormField({ label, children }) {
   return (

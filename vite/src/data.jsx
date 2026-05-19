@@ -173,10 +173,11 @@ function canAssignTaskTo(actor, target) {
   const a = HIERARCHY_RANK[actor.role];
   const t = HIERARCHY_RANK[target.role];
   if (a === undefined || t === undefined) return false;
-  // Allowed when actor's rank is <= target's rank (i.e., actor is higher or peer).
-  // Upward assignment (a > t) is blocked — reassignment to a higher role must
-  // go through Escalation (page-escalations / raiseEscalation).
-  return a <= t;
+  // R31 — strict subordinates only. Allowed when actor's rank is STRICTLY less
+  // than target's rank (actor must be HIGHER than target). Peer-to-peer assignment
+  // and upward assignment are both blocked — peers should coordinate via comments,
+  // and upward escalation goes through raiseEscalation (page-escalations).
+  return a < t;
 }
 
 function assignableUsers(actor, allPeople) {
@@ -185,13 +186,20 @@ function assignableUsers(actor, allPeople) {
 }
 
 // Round 6: per-user allowlists (by user.id) — name-based gating
-const FINANCIALS_USERS     = ['u-vp', 'u-mgr1', 'u-mgr2'];               // Olaf, Fasiulla, Anas
+const FINANCIALS_USERS     = ['u-mgr1', 'u-mgr2'];                       // R31 — Manager-only by default (VP removed). Grant per-user via Settings → Users.
 const NEW_PROJECT_USERS    = ['u-mgr1', 'u-mgr2', 'u-pgm'];              // Fasiulla, Anas, Naif
 const ESCALATE_TO_VP_USERS = ['u-mgr1', 'u-mgr2'];                       // Fasiulla, Anas (Managers only)
 const AUDIT_LOG_USERS      = ['u-vp', 'u-mgr1', 'u-mgr2', 'u-op1', 'u-op2', 'u-pgm'];
 // Round 10: Settings is Manager-only (by user.id, not by role)
 const SETTINGS_USERS       = ['u-mgr1', 'u-mgr2'];                       // Fasiulla, Anas only
-function canViewFinancials(u) { return isAdmin(u) || (!!u && FINANCIALS_USERS.indexOf(u.id) !== -1); }
+function canViewFinancials(u) {
+  if (!u) return false;
+  if (isAdmin(u)) return true;
+  if (FINANCIALS_USERS.indexOf(u.id) !== -1) return true;
+  // R31 — per-user grant set from Settings → Users (financialsAccess column on profile)
+  if (u.financialsAccess === true || u.financials_access === true) return true;
+  return false;
+}
 function canCreateProject(u)  { return isAdmin(u) || (!!u && NEW_PROJECT_USERS.indexOf(u.id) !== -1); }
 function canEscalateToVP(u)   { return isAdmin(u) || (!!u && ESCALATE_TO_VP_USERS.indexOf(u.id) !== -1); }
 function canViewAuditLog(u)   { return isAdmin(u) || (!!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1); }

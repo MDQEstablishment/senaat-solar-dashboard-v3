@@ -433,10 +433,46 @@ function useStoreR2(base) {
     if (window.bgUpdate && window.userUuid && window.userUuid(id)) {
       window.bgUpdate('profiles', window.userUuid(id), { archived: true }, 'profile archive');
     }
+    // R31 — Archive cascade: unassign all open tasks + open escalations owned by the
+    // archived user, then push a notification to their direct manager so the work
+    // gets reassigned manually. The cascade runs server-side too via a DB trigger
+    // (cascade_user_archive) so even direct SQL updates trigger the unassign.
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      const targetUuid = window.userUuid ? window.userUuid(id) : null;
+      if (targetUuid) {
+        // 1) Unassign open tasks
+        window.supabase.from('tasks').update({ assigned_to_id: null, updated_at: new Date().toISOString() })
+          .eq('assigned_to_id', targetUuid).neq('status', 'completed')
+          .then(({ error }) => { if (error) console.error('[archive cascade tasks]', error); });
+        // 2) Unassign open escalations
+        window.supabase.from('escalations').update({ assigned_to_id: null, currently_with_id: null, updated_at: new Date().toISOString() })
+          .eq('currently_with_id', targetUuid).neq('status', 'resolved')
+          .then(({ error }) => { if (error) console.error('[archive cascade escalations]', error); });
+      }
+    }
+    // 3) Notify the archived user's manager via in-app + email
+    if (target) {
+      const managerRoleForArchived = (function(role){
+        const rank = window.HIERARCHY_RANK || {};
+        const myRank = rank[role];
+        // Find the closest higher-rank role
+        const above = Object.entries(rank).filter(([r,n]) => n < myRank).sort((a,b) => b[1]-a[1])[0];
+        return above ? above[0] : null;
+      })(target.role);
+      const managers = (typeof PEOPLE !== 'undefined' ? PEOPLE : []).filter(p => p.role === managerRoleForArchived);
+      managers.forEach(mgr => {
+        if (typeof base?.pushNotif === 'function') {
+          base.pushNotif({ kind: 'task', text: `${target.name} was archived. Their open tasks/escalations need reassignment.`, target: { kind: 'user', id: target.id } });
+        }
+        if (typeof window !== 'undefined' && window.notifyEmail) {
+          try { window.notifyEmail('user_archived', { id: target.id, title: `${target.name} archived`, name: target.name }, mgr.id, actor?.id); } catch (_) {}
+        }
+      });
+    }
     if (actor && target && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'user', entityId: id, entityLabel: target.name,
-      before: 'active', after: 'archived', summary: `Archived user "${target.name}"`,
+      before: 'active', after: 'archived', summary: `Archived user "${target.name}" — tasks/escalations unassigned; their manager notified.`,
     }), 0);
   };
   const resetUserPassword = (id, actor) => {

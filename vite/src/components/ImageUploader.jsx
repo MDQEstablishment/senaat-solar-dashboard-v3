@@ -100,9 +100,34 @@ function ImageUploader({ path, maxCount = 5, value = [], onChange, coverMode = f
     }
   };
 
+  // R31 — Photo delete gating: uploader OR Program Manager group can delete. Audit-logged.
   const removeUploaded = async (rec) => {
+    const me = (typeof window !== 'undefined' && window.__currentUser) ? window.__currentUser : null;
+    const role = me?.role;
+    const isUploader = !!me && (rec.uploadedBy === me.id || rec.uploaded_by_id === me.id || rec.uploaded_by === me.id);
+    const pgmGroup = (window.PROGRAM_MANAGER_GROUP || ['Manager','Operations Manager','Program Manager']);
+    const isPgmPlus = !!role && (pgmGroup.indexOf(role) !== -1 || role === 'Admin');
+    if (!isUploader && !isPgmPlus) {
+      alert('You can only delete photos you uploaded. Ask a Program Manager or Manager if this needs removal.');
+      return;
+    }
     try { await imageStorage.delete(rec.path); } catch (e) { /* ignore */ }
     onChange && onChange(value.filter(v => v.path !== rec.path));
+    // Audit log
+    if (typeof window !== 'undefined' && window.useStore) {
+      const store = (typeof window.__storeRef === 'object') ? window.__storeRef : null;
+      if (store && typeof store.logAudit === 'function' && me) {
+        try {
+          store.logAudit({
+            actorId: me.id, actorName: me.name, actorRole: me.role,
+            action: 'DELETE', entityType: 'photo', entityId: rec.path,
+            entityLabel: rec.path.split('/').pop() || rec.path,
+            before: rec.url || rec.path, after: null,
+            summary: `Deleted photo "${rec.path}"`,
+          });
+        } catch (_) {}
+      }
+    }
   };
 
   const dropzoneCls = cls(

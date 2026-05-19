@@ -47,6 +47,25 @@ function StoreProvider({ children }) {
     setProjects(ps => ps.filter(p => p.id !== id));
     if (window.bgDelete) window.bgDelete('projects', id, 'project');
   };
+  // R31 — Manager-only mutator: flip status to 'completed' regardless of progress %.
+  // Per client: project closure is an administrative decision (not an auto-flip at 100%).
+  const markProjectComplete = (id, actor) => {
+    let before = null;
+    setProjects(ps => ps.map(p => {
+      if (p.id !== id) return p;
+      before = p.status;
+      return { ...p, status: 'completed' };
+    }));
+    if (window.bgUpdate) window.bgUpdate('projects', id, { status: 'completed', updated_at: new Date().toISOString() }, 'project mark complete');
+    // Audit log (logAudit lives on the r2 store; fire via window if available)
+    if (typeof window !== 'undefined' && window.dispatchEvent) {
+      window.dispatchEvent(new CustomEvent('project-marked-complete', { detail: { projectId: id, by: actor?.id, before } }));
+    }
+  };
+  const markProjectReopen = (id, actor) => {
+    setProjects(ps => ps.map(p => p.id === id ? { ...p, status: 'In Progress' } : p));
+    if (window.bgUpdate) window.bgUpdate('projects', id, { status: 'in_progress', updated_at: new Date().toISOString() }, 'project reopen');
+  };
 
   // ----- Tasks -----
   const addTask = (t) => {
@@ -206,7 +225,7 @@ function StoreProvider({ children }) {
     sendChatMessage,
     updateSchoolStage, updateSchoolRemark, addSchoolPhoto,
     pushNotif, markNotifRead, markAllNotifsRead,
-    addProject, updateProject, deleteProject,
+    addProject, updateProject, deleteProject, markProjectComplete, markProjectReopen,
     // R30.2/R30.4 — internal setters exposed for the boot orchestrator (read side).
     // Each setter also syncs the corresponding window-level legacy array.
     _setSchools: (rows) => { _syncArray(typeof window !== 'undefined' && window.ALL_SCHOOLS, rows); setSchools(rows); },

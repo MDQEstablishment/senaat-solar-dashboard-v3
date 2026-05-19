@@ -34,7 +34,7 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
   const TABS = [
     'Users','Roles & Permissions','Projects','Lifecycle Stages','School Stages',
     'Custom Statuses','Custom Fields','Milestone Templates','KPIs',
-    'Branding','Notifications','My Account',
+    'Notifications','My Account',  // R31 — Branding tab removed per client request
     ...(showAudit ? ['Audit Log'] : []),
   ];
 
@@ -56,7 +56,7 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
           {tab === 'Custom Fields'      && <CustomFieldsTab />}
           {tab === 'Milestone Templates'&& <MilestoneTemplatesTab />}
           {tab === 'KPIs'               && <KPIsTab />}
-          {tab === 'Branding'           && <BrandingTab currentUser={currentUser} />}
+          {/* R31 — BrandingTab removed per client request */}
           {tab === 'Notifications'      && <NotificationsTab currentUser={currentUser} />}
           {tab === 'My Account'         && <MyAccountTab currentUser={currentUser} />}
           {tab === 'Audit Log'          && <AuditTab />}
@@ -569,7 +569,10 @@ function UsersTab({ currentUser }) {
               Show archived ({archivedCount})
             </label>
           )}
-          <Button icon="plus" variant="accent" onClick={() => setModal({ open: true, initial: null })}>Add User</Button>
+          {/* R31 — Add User restricted to Manager / Admin role only. PgM sees roster but cannot create. */}
+          {(currentUser && (currentUser.role === 'Manager' || currentUser.role === 'Admin')) && (
+            <Button icon="plus" variant="accent" onClick={() => setModal({ open: true, initial: null })}>Add User</Button>
+          )}
         </div>
       </div>
       {toast && (
@@ -586,6 +589,7 @@ function UsersTab({ currentUser }) {
             <th className="text-left px-3 py-2">Role</th>
             <th className="text-left px-3 py-2">Region</th>
             <th className="text-left px-3 py-2">Status</th>
+            <th className="text-left px-3 py-2">Financials</th>
             <th className="text-right px-3 py-2">Actions</th>
           </tr>
         </thead>
@@ -597,6 +601,18 @@ function UsersTab({ currentUser }) {
               <td className="px-3 py-2 text-xs">{u.role}</td>
               <td className="px-3 py-2 text-xs">{u.region || '—'}</td>
               <td className="px-3 py-2"><Pill tone={u.archived ? 'soft' : 'ok'}>{u.archived ? 'Archived' : 'Active'}</Pill></td>
+              <td className="px-3 py-2">
+                {/* R31 — Manager grants financial visibility per-user. Hidden if currentUser is not Manager. */}
+                {(currentUser && (currentUser.role === 'Manager' || currentUser.role === 'Admin')) ? (
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px]">
+                    <input type="checkbox" checked={!!(u.financialsAccess || u.financials_access)}
+                      onChange={(e) => updateUser(u.id, { financialsAccess: e.target.checked, financials_access: e.target.checked }, currentUser)} />
+                    {(u.financialsAccess || u.financials_access) ? 'Granted' : '—'}
+                  </label>
+                ) : (
+                  <span className="text-[11px] text-ink-500">{(u.financialsAccess || u.financials_access) ? '✓' : '—'}</span>
+                )}
+              </td>
               <td className="px-3 py-2 text-right">
                 <div className="inline-flex items-center gap-1">
                   <button type="button"
@@ -619,7 +635,7 @@ function UsersTab({ currentUser }) {
               </td>
             </tr>
           ))}
-          {list.length === 0 && <tr><td colSpan="6" className="text-center py-6 text-xs text-ink-500 italic">No users.</td></tr>}
+          {list.length === 0 && <tr><td colSpan="7" className="text-center py-6 text-xs text-ink-500 italic">No users.</td></tr>}
         </tbody>
       </table>
 
