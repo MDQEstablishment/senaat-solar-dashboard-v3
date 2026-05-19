@@ -108,6 +108,10 @@ function PageMyTasks({ currentUser, onAddTask, onOpenTask, onJump }) {
         <Card padding="p-4"><div className="text-[11px] uppercase tracking-wider text-ink-500">Completed</div><div className="text-3xl font-bold num mt-1 text-emerald-600">{visible.filter(t => t.assigneeId === currentUser.id && t.status === 'Done').length}</div></Card>
       </div>
 
+      {role === 'Manager' && (
+        <TeamPerformanceWidget allTasks={visible} currentUser={currentUser} />
+      )}
+
       <Card padding="p-3">
         <div className="flex gap-2 items-center flex-wrap">
           <Tabs tabs={tabOptions} active={filter} onChange={setFilter} />
