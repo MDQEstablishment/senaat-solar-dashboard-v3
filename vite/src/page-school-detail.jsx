@@ -160,7 +160,7 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
         )}
 
         <Card padding="p-0">
-          <div className="px-5 pt-3"><Tabs tabs={['Details','Stages','Materials','Photos','Delivery Notes','Snags']} active={tab} onChange={setTab} /></div>
+          <div className="px-5 pt-3"><Tabs tabs={['Details','Stages','Materials','Delivery Notes','Snags']} active={tab} onChange={setTab} /></div>
 
           {tab === 'Details' && (
             <div className="p-5 space-y-4">
@@ -252,36 +252,6 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
           {tab === 'Materials' && (
             <SchoolMaterialsTab school={school} catalog={materialsCatalog} usage={materialUsage}
               logUsage={logMaterialUsage} deleteUsage={deleteMaterialUsage} currentUser={currentUser} />
-          )}
-
-          {tab === 'Photos' && (
-            <div className="p-5 space-y-3">
-              <SectionTitle icon="upload" title="Stage photos"
-                subtitle="Up to 5 photos per stage. Compressed to ≤ 500 KB before upload — large phone photos shrink automatically." />
-              {(window.STAGE_KEYS || SCHOOL_STAGES).map((label, i) => {
-                const key = (window.STAGE_KEYS || [])[i] || label;
-                const list = (typeof getSchoolStagePhotos === 'function') ? getSchoolStagePhotos(school.id, key) : [];
-                const shortLabel = (window.SCHOOL_STAGE_SHORT || SCHOOL_STAGES)[i];
-                return (
-                  <div key={key} data-testid={`stage-photos-S${String(i + 1).padStart(2, '0')}`}
-                    className="border border-soft rounded-md p-3">
-                    <div className="flex items-baseline gap-2 mb-2">
-                      <span className="font-mono text-[10px] text-ink-500">S{String(i + 1).padStart(2, '0')}</span>
-                      <span className="text-sm font-medium">{shortLabel}</span>
-                      <span className="text-[11px] text-ink-500 ml-auto">{list.length}/5</span>
-                    </div>
-                    {window.ImageUploader && (
-                      <window.ImageUploader
-                        path={`projects/${school.projectId}/schools/${school.id}/stages/${key}`}
-                        maxCount={5}
-                        compact={true}
-                        value={list}
-                        onChange={(next) => setSchoolStagePhotosFor && setSchoolStagePhotosFor(school.id, key, next)} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
           )}
 
           {tab === 'Delivery Notes' && (
