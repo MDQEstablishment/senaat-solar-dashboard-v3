@@ -983,10 +983,16 @@ function getEscalationTarget(currentUser, projectId) {
     return vp ? { toUserId: vp.id, toRole: 'VP', label: 'Escalate to VP' } : null;
   }
 
-  // Operations Manager / Program Manager → Manager
+  // Operations Manager / Program Manager → Manager (R30.23: multi-candidate picker)
   if (role === 'Operations Manager' || role === 'Program Manager') {
-    const mgr = PEOPLE.find(p => p.role === 'Manager');  // first manager (Fasiulla)
-    return mgr ? { toUserId: mgr.id, toRole: 'Manager', label: 'Escalate to Manager' } : null;
+    const mgrs = PEOPLE.filter(p => p.role === 'Manager');
+    if (!mgrs.length) return null;
+    return {
+      toUserId: mgrs[0].id,
+      toRole: 'Manager',
+      label: 'Escalate to Manager',
+      candidates: mgrs.map(m => ({ id: m.id, name: m.name })),  // UI shows picker if > 1
+    };
   }
 
   // Project Manager / Material planning / Coordinator / Project Engineer / QA / Procurement → Program Manager (Naif)

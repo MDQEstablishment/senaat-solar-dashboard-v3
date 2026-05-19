@@ -67,10 +67,17 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
   }, [open]);
   if (!open) return null;
 
-  // Compute the target dynamically from the chosen project + current user
-  const target = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, projectId) : null;
+  // R30.23 — track user-picked target when there are multiple candidates
+  const [pickedTargetId, setPickedTargetId] = React.useState(null);
+  const targetBase = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, projectId) : null;
+  // If user explicitly picked a candidate, swap in that ID
+  const target = targetBase && pickedTargetId
+    ? { ...targetBase, toUserId: pickedTargetId }
+    : targetBase;
   const targetUser = target ? PEOPLE.find(p => p.id === target.toUserId) : null;
   const modalTitle = target ? target.label : 'Escalate';
+  // Reset picker when modal reopens
+  React.useEffect(() => { if (open) setPickedTargetId(null); }, [open]);
 
   return (
     <Modal open={open} onClose={onClose} title={modalTitle} wide
@@ -87,6 +94,14 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
           <div className="bg-accent-soft border border-accent rounded-md p-2.5 flex items-center gap-2 text-xs">
             <Icon name="alert-circle" size={14} />
             <span>Routes to <strong>{targetUser.name}</strong> ({target.toRole}) — your next level in the escalation chain.</span>
+          </div>
+        )}
+        {target && Array.isArray(target.candidates) && target.candidates.length > 1 && (
+          <div>
+            <label className="text-[11px] font-medium text-ink-700 mb-1 block">Which {target.toRole}?</label>
+            <Select value={target.toUserId} onChange={setPickedTargetId}
+              options={target.candidates.map(c => ({ value: c.id, label: c.name }))}
+              className="w-full" />
           </div>
         )}
         {!target && (

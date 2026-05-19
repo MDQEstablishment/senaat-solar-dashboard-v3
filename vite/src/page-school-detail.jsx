@@ -234,6 +234,8 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
                 {SCHOOL_STAGES.map((stageName, i) => (
                   <StageRow key={i} index={i} stageName={stageName} school={school}
                     onToggle={() => toggleSchoolStage && toggleSchoolStage(school.id, i, currentUser)}
+                    photoCount={typeof getSchoolStagePhotos === 'function' && (window.STAGE_KEYS || [])[i]
+                      ? getSchoolStagePhotos(school.id, (window.STAGE_KEYS || [])[i]).length : 0}
                     onUploadPhoto={() => uploadPhoto(i)}
                     onAddTask={() => onAddTask({ projectId: school.projectId, schoolId: school.id, stageIndex: i })} />
                 ))}
@@ -403,7 +405,7 @@ function FieldRow({ label, value, editMode, onChange, type, options, dir, placeh
 
 // Stage row with flexible status picker (Round 4 preserved)
 // Round 10: Single-click toggle (Done ⇄ Not Started). No menu, no multi-state.
-function StageRow({ index, stageName, school, onToggle, onUploadPhoto, onAddTask }) {
+function StageRow({ index, stageName, school, onToggle, onUploadPhoto, onAddTask, photoCount = 0 }) {
   const st = school.stages[index] || {};
   const photos = school.photos[index] || [];
   const isDone = !!st.done;
@@ -445,7 +447,10 @@ function StageRow({ index, stageName, school, onToggle, onUploadPhoto, onAddTask
         <Button size="sm" variant={isDone ? 'outline' : 'accent'} icon={isDone ? 'x' : 'check'} onClick={onToggle}>
           {isDone ? 'Undo' : 'Mark Done'}
         </Button>
-        <Button size="sm" variant="outline" icon="upload" onClick={onUploadPhoto}>Photo</Button>
+        <Button size="sm" variant="outline" icon="upload" onClick={onUploadPhoto}
+          title={photoCount > 0 ? `${photoCount} photo(s) — click to add more in the Photos tab` : 'Add stage photo (opens Photos tab)'}>
+          {photoCount > 0 ? `Photos (${photoCount})` : 'Add photo'}
+        </Button>
         <Button size="sm" variant="ghost" icon="plus" onClick={onAddTask}>Task</Button>
       </div>
     </div>

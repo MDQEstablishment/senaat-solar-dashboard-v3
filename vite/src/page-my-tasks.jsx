@@ -5,25 +5,51 @@ import React from 'react';
 //   Project Manager               → own + tasks of users on their assigned project(s)
 //   Material planning / Coordinator → only own tasks
 
+// R30.23 — team task visibility now respects hierarchy.
+// Each role sees own tasks + tasks of users STRICTLY junior (rank > my rank).
+// Manager-rank users cannot see VP tasks, PgM cannot see Manager tasks, etc.
 function tasksVisibleToRole(allTasks, currentUser) {
   if (!currentUser) return [];
   const role = currentUser.role;
   if (role === 'VP') return [];
 
-  if (typeof PROGRAM_MANAGER_GROUP !== 'undefined' && PROGRAM_MANAGER_GROUP.indexOf(role) !== -1) {
-    return allTasks; // Program Manager group sees everything
-  }
+  const RANK = (typeof window !== 'undefined' && window.HIERARCHY_RANK) || {};
+  const myRank = RANK[role];
 
+  // Special case kept from R5: Project Manager → own + same-project tasks
   if (role === 'Project Manager') {
     const myProjects = currentUser.projectIds || (currentUser.projectId ? [currentUser.projectId] : []);
     return allTasks.filter(t => {
       if (t.assigneeId === currentUser.id) return true;
-      return myProjects.indexOf(t.projectId) !== -1;
+      // Plus tasks of users below me in hierarchy (Coord/Material)
+      const assigneeRole = (typeof window !== 'undefined' && window.PEOPLE)
+        ? (window.PEOPLE.find(u => u.id === t.assigneeId) || {}).role : null;
+      if (assigneeRole && RANK[assigneeRole] > myRank) {
+        return myProjects.indexOf(t.projectId) !== -1;
+      }
+      return false;
     });
   }
 
-  // Material planning / Coordinator / others — only own tasks
-  return allTasks.filter(t => t.assigneeId === currentUser.id);
+  // Material planning / Coordinator (no juniors) → only own tasks
+  if (role === 'Material planning' || role === 'Coordinator') {
+    return allTasks.filter(t => t.assigneeId === currentUser.id);
+  }
+
+  // Manager / Operations Manager / Program Manager / Admin → own + tasks of
+  // anyone strictly junior. NO LONGER returns the whole org's task list.
+  if (myRank === undefined) {
+    return allTasks.filter(t => t.assigneeId === currentUser.id);
+  }
+  const peopleById = (typeof window !== 'undefined' && window.PEOPLE)
+    ? Object.fromEntries(window.PEOPLE.map(u => [u.id, u])) : {};
+  return allTasks.filter(t => {
+    if (t.assigneeId === currentUser.id) return true;
+    const assignee = peopleById[t.assigneeId];
+    if (!assignee) return false;
+    const aRank = RANK[assignee.role];
+    return aRank !== undefined && aRank > myRank;
+  });
 }
 
 function PageMyTasks({ currentUser, onAddTask, onOpenTask, onJump }) {

@@ -293,7 +293,9 @@ function AppInner() {
   }, [page, activeProjectId, activeSchoolId, activeEscId, currentUser]);
   React.useEffect(() => {
     const onPop = () => {
-      const h = window.location.hash.replace(/^#\/?/, '');
+      // R30.23 — strip any ?query=foo before splitting on '/' so hash routes
+      // like #/delivery-notes?new=1 don't break the page-name parser.
+      const h = window.location.hash.replace(/^#\/?/, '').split('?')[0];
       if (!h) return;
       const [nextPage, idSegment] = h.split('/');
       if (idSegment) {
@@ -313,7 +315,8 @@ function AppInner() {
   // On first load: parse hash → restore page + active id once.
   React.useEffect(() => {
     if (!currentUser) return;
-    const h = window.location.hash.replace(/^#\/?/, '');
+    // R30.23 — strip query string (see onPop comment).
+    const h = window.location.hash.replace(/^#\/?/, '').split('?')[0];
     if (!h) return;
     const [nextPage, idSegment] = h.split('/');
     if (nextPage && nextPage !== page) setPage(nextPage);
