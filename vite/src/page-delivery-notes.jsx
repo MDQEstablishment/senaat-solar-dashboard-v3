@@ -291,10 +291,23 @@ function Field({ label, value }) {
 function DeliveryNoteForm({ initial, projects, schools, onCancel, onSave }) {
   const isNew = !initial;
   const allSchools = schools || window.ALL_SCHOOLS || [];
+  // R30.25 — when creating a new delivery note, honor the hint stashed by the
+  // School Detail "New delivery note" deep link so the form opens pre-filled.
+  const hint = React.useMemo(() => {
+    if (initial) return null;  // editing existing — no hint
+    try {
+      const raw = sessionStorage.getItem('zamil_new_dn_hint');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      sessionStorage.removeItem('zamil_new_dn_hint');  // consume once
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch (_) { return null; }
+  }, [initial]);
+
   const [form, setForm] = React.useState(() => ({
-    projectId:    initial?.projectId    || (projects?.[0]?.id || ''),
-    schoolId:     initial?.schoolId     || '',
-    stageKey:     initial?.stageKey     || '',
+    projectId:    initial?.projectId    || hint?.projectId    || (projects?.[0]?.id || ''),
+    schoolId:     initial?.schoolId     || hint?.schoolId     || '',
+    stageKey:     initial?.stageKey     || hint?.stageKey     || '',
     deliveryDate: initial?.deliveryDate || new Date().toISOString().slice(0, 10),
     supplier:     initial?.supplier     || '',
     contractor:   initial?.contractor   || '',
