@@ -59,7 +59,7 @@ function navForRole(role, currentUser) {
   if (role === 'Project Manager') {
     // M4: PM's primary route is /my-projects (not /home).
     return [
-      { id: 'my-projects',    label: 'My Projects',    icon: 'home' },
+      { id: 'my-projects',    label: 'My Programs',    icon: 'home' },
       { id: 'my-schools',     label: 'My Schools',     icon: 'school' },
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },
@@ -70,7 +70,7 @@ function navForRole(role, currentUser) {
   if (role === 'Material planning') {
     return [
       { id: 'home',           label: 'Dashboard',      icon: 'home' },
-      { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
+      { id: 'projects',       label: 'Programs',       icon: 'folder-kanban' },
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
@@ -80,7 +80,7 @@ function navForRole(role, currentUser) {
   if (role === 'Coordinator') {
     return [
       { id: 'home',           label: 'Dashboard',      icon: 'home' },
-      { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
+      { id: 'projects',       label: 'Programs',       icon: 'folder-kanban' },
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
@@ -99,7 +99,7 @@ function navForRole(role, currentUser) {
     : [];
   return [
     { id: 'home',           label: 'Dashboard',      icon: 'home' },
-    { id: 'projects',       label: 'Projects',       icon: 'folder-kanban' },
+    { id: 'projects',       label: 'Programs',       icon: 'folder-kanban' },
     { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
     { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },
     ...finItem,

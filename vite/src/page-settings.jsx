@@ -605,7 +605,14 @@ function UsersTab({ currentUser }) {
               <td className="px-3 py-2"><Pill tone={u.archived ? 'soft' : 'ok'}>{u.archived ? 'Archived' : 'Active'}</Pill></td>
               <td className="px-3 py-2 text-right">
                 <div className="inline-flex items-center gap-1">
-                  <button type="button" disabled={u.archived}
+                  <button type="button"
+                    disabled={u.archived
+                      || (window.canAssignTaskTo  // same hierarchy rule: rank-strictly-less = can reset
+                          && currentUser
+                          && (u.id === currentUser.id
+                              || !(window.HIERARCHY_RANK?.[currentUser.role] < window.HIERARCHY_RANK?.[u.role])))}
+                    title={(u.id === currentUser.id) ? 'Use My Account → Change my password' :
+                      (window.HIERARCHY_RANK?.[currentUser.role] >= window.HIERARCHY_RANK?.[u.role] ? 'Cannot reset password of equal or senior role' : 'Reset password')}
                     onClick={() => setConfirmReset(u)}
                     className="text-[11px] px-2 py-1 rounded hover:bg-ink-100 disabled:opacity-30">Reset PW</button>
                   <button type="button" aria-label={`Edit ${u.name}`} onClick={() => setModal({ open: true, initial: u })}
