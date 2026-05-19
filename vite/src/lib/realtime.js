@@ -1,25 +1,42 @@
-// R30.7 + R30.29 — Supabase Realtime subscriptions for ALL hot tables.
+// R30.7 + R30.29 + R30.29.1 — Supabase Realtime subscriptions for ALL hot tables.
 //
-// Subscribes to:
-//   - tasks, task_messages, escalations, escalation_history
-//   - delivery_notes, delivery_note_items, photos, material_usage
-//   - projects, schools, contractors, profiles, app_settings
-//
-// On any postgres_changes event, debounce 250ms then re-run the matching
-// bgFetch* and route through the same _set* the boot orchestrator uses —
-// so the UI never sees a half-migrated state.
-//
-// RLS is respected automatically: each session's realtime stream only emits
-// rows that session's user can SELECT.
+// CRITICAL: when projects OR schools refresh, we must re-run the schoolDist/
+// progress/currentStage computation that app.jsx's bootFromSupabase does
+// (see app.jsx ~line 132). Without it, the dashboard widgets read 0 across
+// the board because those fields don't exist on the raw fromDbProject output.
 
 import { supabase } from './supabase.js';
 
 let _channel = null;
 let _timers = {};
+let _lastSchools = null;   // remember last fetched schools so a projects-only
+                            // refresh can recompute schoolDist correctly.
 
 function debounce(key, fn, ms = 250) {
   if (_timers[key]) clearTimeout(_timers[key]);
   _timers[key] = setTimeout(fn, ms);
+}
+
+// Re-implement the post-process from app.jsx bootFromSupabase so projects
+// realtime refresh produces the same enriched shape.
+function enrichProjectsFromSchools(projects, schools) {
+  const STAGE_KEYS_W = (typeof window !== 'undefined' && window.STAGE_KEYS) || [];
+  const stageCount = STAGE_KEYS_W.length;
+  if (stageCount === 0 || !Array.isArray(projects) || !Array.isArray(schools)) return projects;
+  return projects.map(p => {
+    const ss = schools.filter(s => s.projectId === p.id);
+    const totalStages = ss.length * stageCount;
+    const doneStages  = ss.reduce((a, s) => a + (Array.isArray(s.stages) ? s.stages.filter(st => st && st.done).length : 0), 0);
+    const progress    = totalStages > 0 ? Math.round((doneStages / totalStages) * 100) : (p.progress || 0);
+    const dist = STAGE_KEYS_W.map(() => 0);
+    ss.forEach(s => {
+      const reached = Array.isArray(s.stages) ? s.stages.filter(st => st && st.done).length : 0;
+      if (reached > 0) dist[reached - 1]++;
+    });
+    const maxIdx = dist.indexOf(Math.max(...dist));
+    const currentStage = Math.min(stageCount - 1, Math.max(0, maxIdx));
+    return { ...p, progress, schoolDist: dist, currentStage };
+  });
 }
 
 const refreshers = {
@@ -43,14 +60,38 @@ const refreshers = {
   },
   projects: (store) => {
     if (!window.bgFetchProjects || !window.fromDbProject || !store._setProjects) return;
-    window.bgFetchProjects().then(rows => {
-      if (Array.isArray(rows)) store._setProjects(rows.map(window.fromDbProject));
+    // Fetch projects, then enrich with schoolDist using the last-known schools.
+    // If we don't have schools yet, fall back to refetching them too.
+    Promise.all([
+      window.bgFetchProjects(),
+      _lastSchools ? Promise.resolve(_lastSchools) :
+        (window.bgFetchSchools ? window.bgFetchSchools() : Promise.resolve([])),
+    ]).then(([projRows, schRows]) => {
+      if (!Array.isArray(projRows)) return;
+      const projTranslated = projRows.map(window.fromDbProject);
+      const schTranslated  = Array.isArray(schRows)
+        ? (typeof window.fromDbSchool === 'function' ? schRows.map(window.fromDbSchool) : schRows)
+        : (window.ALL_SCHOOLS || []);
+      _lastSchools = schTranslated;
+      const enriched = enrichProjectsFromSchools(projTranslated, schTranslated);
+      store._setProjects(enriched);
     }).catch(() => {});
   },
   schools: (store) => {
     if (!window.bgFetchSchools || !window.fromDbSchool || !store._setSchools) return;
     window.bgFetchSchools().then(rows => {
-      if (Array.isArray(rows)) store._setSchools(rows.map(window.fromDbSchool));
+      if (!Array.isArray(rows)) return;
+      const schTranslated = rows.map(window.fromDbSchool);
+      _lastSchools = schTranslated;
+      store._setSchools(schTranslated);
+      // School change → project progress/dist changes too. Re-enrich projects.
+      if (store._setProjects && window.bgFetchProjects && window.fromDbProject) {
+        window.bgFetchProjects().then(projRows => {
+          if (!Array.isArray(projRows)) return;
+          const enriched = enrichProjectsFromSchools(projRows.map(window.fromDbProject), schTranslated);
+          store._setProjects(enriched);
+        }).catch(() => {});
+      }
     }).catch(() => {});
   },
   profiles: (store) => {
@@ -66,24 +107,18 @@ const refreshers = {
     if (!window.bgFetchAppSettings) return;
     window.bgFetchAppSettings().then(settings => {
       if (!settings) return;
-      if (settings['lifecycle.stages'] && store._setLifecycleStages) store._setLifecycleStages(settings['lifecycle.stages']);
-      if (settings['stage.statuses'] && store._setStageStatuses) store._setStageStatuses(settings['stage.statuses']);
-      if (settings['role.permissions'] && store._setRolePermissions) store._setRolePermissions(settings['role.permissions']);
-      if (settings['theme.colors'] && store._setThemeColors) store._setThemeColors(settings['theme.colors']);
-      if (settings['theme.logo'] && store._setThemeLogo) store._setThemeLogo(settings['theme.logo']);
+      if (settings['lifecycle.stages']  && store._setLifecycleStages)  store._setLifecycleStages(settings['lifecycle.stages']);
+      if (settings['stage.statuses']    && store._setStageStatuses)    store._setStageStatuses(settings['stage.statuses']);
+      if (settings['role.permissions']  && store._setRolePermissions)  store._setRolePermissions(settings['role.permissions']);
+      if (settings['theme.colors']      && store._setThemeColors)      store._setThemeColors(settings['theme.colors']);
+      if (settings['theme.logo']        && store._setThemeLogo)        store._setThemeLogo(settings['theme.logo']);
     }).catch(() => {});
   },
   photos: (store) => {
-    // Photos drive school stage thumbnails — easiest path: re-fetch schools so the
-    // stage_photos cache rebuilds via the boot pipeline. Cheap because RLS-scoped.
-    if (window.bgFetchSchools && window.fromDbSchool && store._setSchools) {
-      window.bgFetchSchools().then(rows => {
-        if (Array.isArray(rows)) store._setSchools(rows.map(window.fromDbSchool));
-      }).catch(() => {});
-    }
+    // Photo change → re-fetch schools (stage_photo cache lives there).
+    refreshers.schools(store);
   },
   task_messages: (store) => {
-    // No global task_messages fetcher; chat UIs read on demand. Just emit a hint.
     window.dispatchEvent(new CustomEvent('realtime-task-messages'));
   },
   contractors: (store) => {
@@ -99,8 +134,13 @@ const TABLES = Object.keys(refreshers);
 export function installRealtime(store) {
   if (!supabase || typeof window === 'undefined' || !window.USE_SUPABASE) return () => {};
   if (_channel) { try { supabase.removeChannel(_channel); } catch (_) {} _channel = null; }
+  // Seed _lastSchools from the boot orchestrator's result so the first projects
+  // realtime fires with a real schools list (not empty → 0% everywhere).
+  if (!_lastSchools && Array.isArray(window.ALL_SCHOOLS) && window.ALL_SCHOOLS.length > 0) {
+    _lastSchools = window.ALL_SCHOOLS;
+  }
 
-  let ch = supabase.channel('senaat-everything-v2');
+  let ch = supabase.channel('senaat-everything-v3');
   for (const t of TABLES) {
     ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: t }, () => {
       debounce(t, () => refreshers[t](store));
