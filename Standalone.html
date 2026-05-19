@@ -4141,10 +4141,27 @@ function useStoreR2(base) {
       createdBy:  currentUser?.id || null,
     };
     setDeliveryNotes(ns => [note, ...ns]);
-    if (window.bgInsert) {
-      window.bgInsert('delivery_notes', window.toDbDeliveryNote(note), 'delivery note');
+    // R30.18 — Chain inserts: items must wait for parent to commit, else FK violation.
+    // Previously both inserts fired in parallel and items lost the race ~100% of the time.
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
       const itemRows = window.toDbDeliveryNoteItems(id, note.items);
-      if (itemRows.length) window.bgInsert('delivery_note_items', itemRows, 'delivery note items');
+      window.supabase.from('delivery_notes').insert(window.toDbDeliveryNote(note))
+        .then(({ error: parentErr }) => {
+          if (parentErr) {
+            console.error('[supabase insert delivery note]', parentErr);
+            window.dispatchEvent(new CustomEvent('supabase-error', { detail: { label: 'insert delivery note', error: parentErr } }));
+            return;
+          }
+          if (!itemRows.length) return;
+          return window.supabase.from('delivery_note_items').insert(itemRows)
+            .then(({ error: itemErr }) => {
+              if (itemErr) {
+                console.error('[supabase insert delivery note items]', itemErr);
+                window.dispatchEvent(new CustomEvent('supabase-error', { detail: { label: 'insert delivery note items', error: itemErr } }));
+              }
+            });
+        })
+        .catch(err => console.error('[supabase delivery note insert threw]', err));
     }
     setTimeout(() => {
       if (typeof logAudit === 'function') logAudit({
