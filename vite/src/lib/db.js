@@ -806,6 +806,7 @@ export function fromDbFinancialEntry(row) {
     projectId: row.project_id,
     date: row.date,
     kind: row.kind,
+    type: row.kind,    // R30.32.2 — store-r2.finRollup filters by e.type, not e.kind
     category: row.category,
     amount: Number(row.amount) || 0,
     currency: row.currency || 'SAR',
