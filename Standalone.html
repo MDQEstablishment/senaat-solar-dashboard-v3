@@ -11137,7 +11137,8 @@ function DashStageInsights({ projects }) {
     <div data-testid="dash-transitions-row-exec" className="flex flex-col lg:flex-row gap-4">
       <div className="lg:flex-[3] min-w-0">
         <Chart stages={stageData} />
-        {usingMockWeekly && (
+        {usingMockWeekly && !window.USE_SUPABASE && (
+          /* R30.17: hide demo-data footnote when running in production (USE_SUPABASE=true). */
           <div className="text-[10px] text-ink-400 italic text-right mt-1" data-testid="weekly-crossings-mock-note">
             (demo data — no stage transitions recorded in last 7 days)
           </div>
