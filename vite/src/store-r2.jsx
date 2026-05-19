@@ -892,13 +892,44 @@ function useStoreR2(base) {
   const updateMaterial = (id, patch) => setMaterials(ms => ms.map(m => m.id === id ? { ...m, ...patch } : m));
   const deleteMaterial = (id) => setMaterials(ms => ms.filter(x => x.id !== id));
 
-  // Per-school material consumption logging
+  // Per-school material consumption logging — R30.30: persists to Supabase material_usage table
   const logMaterialUsage = (entry) => {
     const id = 'mu' + Date.now();
-    setMaterialUsage(mu => [{ id, ...entry, when: new Date().toISOString().slice(0, 10) }, ...mu]);
+    const isoDate = entry.when || entry.date || new Date().toISOString().slice(0, 10);
+    setMaterialUsage(mu => [{ id, ...entry, when: isoDate }, ...mu]);
+
+    // Persist to Supabase material_usage table (DB trigger logs audit_log automatically)
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      // Look up the material name + unit from the catalog (entry has materialNo)
+      const mat = (typeof materialsCatalog !== 'undefined' ? materialsCatalog : [])
+        .find(m => String(m.no) === String(entry.materialNo));
+      const recordedByUuid = window.userUuid && window.__currentUser
+        ? window.userUuid(window.__currentUser.id) : null;
+      const row = {
+        project_id: entry.projectId || null,
+        school_id:  entry.schoolId  || null,
+        stage_key:  entry.stageKey  || null,
+        material:   mat ? mat.name : (entry.materialName || ('Material #' + entry.materialNo)),
+        quantity:   Number(entry.qty) || 0,
+        unit:       mat ? mat.unit : (entry.unit || null),
+        recorded_by_id: recordedByUuid,
+        notes:      entry.notes || null,
+      };
+      window.supabase.from('material_usage').insert(row).then(({ error }) => {
+        if (error) {
+          console.error('[supabase insert material_usage]', error);
+          window.dispatchEvent(new CustomEvent('supabase-error', { detail: { label: 'log material', error } }));
+        }
+      });
+    }
     return id;
   };
-  const deleteMaterialUsage = (id) => setMaterialUsage(mu => mu.filter(x => x.id !== id));
+
+  const deleteMaterialUsage = (id) => {
+    setMaterialUsage(mu => mu.filter(x => x.id !== id));
+    // We don't persist deletes of locally-logged usage (id format 'mu...') because
+    // they may not have a matching DB row yet. Real deletes would need a separate path.
+  };
 
   return {
     escalations, addEscalation, addEscalationComment, resolveEscalation, escalateFurther,
