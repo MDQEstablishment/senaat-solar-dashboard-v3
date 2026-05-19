@@ -40,12 +40,11 @@ function navForRole(role, currentUser) {
     ? [{ id: 'audit-log', label: 'Audit Log', icon: 'clipboard-list' }]
     : [];
 
-  // R29 — Delivery Notes nav item: visible to Manager / VP / Operations Manager /
-  // Program Manager / Project Manager / Coordinator. Hidden for Material Planning
-  // (they use the Materials flow instead).
-  const deliveryNotesItem = (role !== 'Material planning')
-    ? [{ id: 'delivery-notes', label: 'Delivery Notes', icon: 'package' }]
-    : [];
+  // R30.19 — Delivery Notes removed from the global sidebar. The page is still
+  // reachable via the "Delivery Notes" tab inside Project Detail and inside
+  // School Detail, and via the direct URL #/delivery-notes for permalinks.
+  // It does NOT belong as a top-level sidebar entry — it is always scoped to
+  // a project/school context.
 
   if (role === 'VP') {
     return [
@@ -53,7 +52,6 @@ function navForRole(role, currentUser) {
       { id: 'projects',    label: 'Programs',    icon: 'folder-kanban' },
       { id: 'escalations', label: 'Escalations', icon: 'alert-circle' },
       ...finItem,
-      ...deliveryNotesItem,
       { id: 'reports',     label: 'Reports',     icon: 'file-text' },
       ...auditLogItem,
     ];
@@ -66,7 +64,6 @@ function navForRole(role, currentUser) {
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },
       ...finItem,
-      ...deliveryNotesItem,
       { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
@@ -77,7 +74,6 @@ function navForRole(role, currentUser) {
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
-      // Delivery Notes intentionally hidden for Material planning (they use Materials).
       { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
@@ -88,11 +84,10 @@ function navForRole(role, currentUser) {
       { id: 'tasks',          label: 'My Tasks',       icon: 'check-circle' },
       { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },  // M5
       ...finItem,
-      ...deliveryNotesItem,
       { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ];
   }
-  // Program Manager group (Manager / Operations Manager / Program Manager)
+  // Program Manager group (Manager / Operations Manager / Program Manager / Admin)
   const settingsItem = canViewSettings(currentUser)
     ? [{ id: 'settings', label: 'Settings', icon: 'settings' }]
     : [];
@@ -109,7 +104,6 @@ function navForRole(role, currentUser) {
     { id: 'my-escalations', label: 'My Escalations', icon: 'alert-circle' },
     ...finItem,
     { id: 'contractors',    label: 'Contractors',    icon: 'hard-hat' },
-    ...deliveryNotesItem,
     { id: 'reports',        label: 'Reports',        icon: 'file-text' },
     ...auditLogItemPgm,
     ...settingsItem,

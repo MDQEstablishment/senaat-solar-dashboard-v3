@@ -440,15 +440,43 @@ function useStoreR2(base) {
     }), 0);
   };
   const resetUserPassword = (id, actor) => {
-    const tempPw = 'Welcome@123';
+    const tempPw = 'Welcome@' + Math.floor(100 + Math.random() * 900); // unique per reset
     let target = null;
     setUsers(us => { target = us.find(u => u.id === id); return us.map(u => u.id === id ? { ...u, tempPassword: tempPw } : u); });
+    // R30.19 — actually invoke the admin-reset-password Edge Function so the
+    // change takes effect in auth.users, not just local React state.
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE
+        && window.userUuid && target) {
+      const targetUuid = window.userUuid(id);
+      if (targetUuid) {
+        window.supabase.functions.invoke('admin-reset-password', {
+          body: { target_user_id: targetUuid, new_password: tempPw },
+        }).then(({ data, error }) => {
+          if (error) {
+            console.error('[admin-reset-password]', error);
+            window.dispatchEvent(new CustomEvent('supabase-error', {
+              detail: { label: 'admin-reset-password', error },
+            }));
+          }
+        }).catch(err => console.error('[admin-reset-password] threw', err));
+      }
+    }
     if (actor && target && typeof logAudit === 'function') setTimeout(() => logAudit({
       actorId: actor.id, actorName: actor.name, actorRole: actor.role,
       action: 'UPDATE', entityType: 'user', entityId: id, entityLabel: target.name,
       summary: `Reset password for "${target.name}" — temp password "${tempPw}"`,
     }), 0);
     return tempPw;
+  };
+
+  // R30.19 — self-service "Change my password" — uses the logged-in session's
+  // own JWT to update via supabase.auth.updateUser (no admin privilege needed).
+  const changeMyPassword = async (newPassword) => {
+    if (!window.supabase) throw new Error('No Supabase client');
+    if (!newPassword || newPassword.length < 8) throw new Error('Password must be at least 8 characters');
+    const { error } = await window.supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+    return true;
   };
 
   // P4 Roles & Permissions: role × feature matrix
@@ -887,7 +915,7 @@ function useStoreR2(base) {
     auditLog, logAudit,
     projectLifecycleState, toggleProjectLifecycleStage, toggleSchoolStage,
     // Round 14 settings admin
-    users, addUser, updateUser, archiveUser, resetUserPassword,
+    users, addUser, updateUser, archiveUser, resetUserPassword, changeMyPassword,
     rolePermissions, toggleRolePermission, resetRolePermissions,
     themeColors, themeLogo, updateThemeColor, updateThemeLogo, resetBranding,
     notificationTemplates, updateNotificationTemplate,

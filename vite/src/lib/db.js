@@ -53,6 +53,7 @@ export const ROLE_TO_ENUM = {
   'Project Manager':    'project_manager',
   'Material planning':  'material_planning',
   'Coordinator':        'coordinator',
+  'Admin':              'admin',           // R30.19: full-access role
 };
 export const ENUM_TO_ROLE = Object.fromEntries(Object.entries(ROLE_TO_ENUM).map(([k, v]) => [v, k]));
 

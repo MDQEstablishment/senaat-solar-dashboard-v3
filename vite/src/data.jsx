@@ -144,9 +144,13 @@ const REGION_CENTROIDS = {
   'Al Jouf':           { lat: 29.7858, lng: 40.2192 },  // Sakaka
 };
 
-// ROLES (Round 5 — Site Engineer removed)
-const ROLES = ['VP', 'Manager', 'Operations Manager', 'Program Manager', 'Project Manager', 'Material planning', 'Coordinator'];
-const PROGRAM_MANAGER_GROUP = ['Manager', 'Operations Manager', 'Program Manager'];
+// ROLES (Round 5 — Site Engineer removed; R30.19 — Admin added)
+const ROLES = ['VP', 'Manager', 'Operations Manager', 'Program Manager', 'Project Manager', 'Material planning', 'Coordinator', 'Admin'];
+const PROGRAM_MANAGER_GROUP = ['Manager', 'Operations Manager', 'Program Manager', 'Admin'];
+
+// R30.19 — Admin role escape hatch. Any user with role === 'Admin' gets
+// unconditional access to every capability, regardless of user.id allowlist.
+function isAdmin(u) { return !!u && u.role === 'Admin'; }
 
 // Round 6: per-user allowlists (by user.id) — name-based gating
 const FINANCIALS_USERS     = ['u-vp', 'u-mgr1', 'u-mgr2'];               // Olaf, Fasiulla, Anas
@@ -155,15 +159,15 @@ const ESCALATE_TO_VP_USERS = ['u-mgr1', 'u-mgr2'];                       // Fasi
 const AUDIT_LOG_USERS      = ['u-vp', 'u-mgr1', 'u-mgr2', 'u-op1', 'u-op2', 'u-pgm'];
 // Round 10: Settings is Manager-only (by user.id, not by role)
 const SETTINGS_USERS       = ['u-mgr1', 'u-mgr2'];                       // Fasiulla, Anas only
-function canViewFinancials(u) { return !!u && FINANCIALS_USERS.indexOf(u.id) !== -1; }
-function canCreateProject(u)  { return !!u && NEW_PROJECT_USERS.indexOf(u.id) !== -1; }
-function canEscalateToVP(u)   { return !!u && ESCALATE_TO_VP_USERS.indexOf(u.id) !== -1; }
-function canViewAuditLog(u)   { return !!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1; }
-function canViewSettings(u)   { return !!u && SETTINGS_USERS.indexOf(u.id) !== -1; }
+function canViewFinancials(u) { return isAdmin(u) || (!!u && FINANCIALS_USERS.indexOf(u.id) !== -1); }
+function canCreateProject(u)  { return isAdmin(u) || (!!u && NEW_PROJECT_USERS.indexOf(u.id) !== -1); }
+function canEscalateToVP(u)   { return isAdmin(u) || (!!u && ESCALATE_TO_VP_USERS.indexOf(u.id) !== -1); }
+function canViewAuditLog(u)   { return isAdmin(u) || (!!u && AUDIT_LOG_USERS.indexOf(u.id) !== -1); }
+function canViewSettings(u)   { return isAdmin(u) || (!!u && SETTINGS_USERS.indexOf(u.id) !== -1); }
 // R27: portfolio-level roles see the richer "School Execution Stages" widget on
 // their dashboards. PM / Coordinator / Material planning don't (their workload
 // is per-project, so the 18-stage portfolio rollup is noise for them).
-const SCHOOL_EXECUTION_STAGES_ROLES = ['Manager', 'VP', 'Operations Manager', 'Program Manager'];
+const SCHOOL_EXECUTION_STAGES_ROLES = ['Manager', 'VP', 'Operations Manager', 'Program Manager', 'Admin'];
 function canViewSchoolExecutionStages(u) {
   return !!u && SCHOOL_EXECUTION_STAGES_ROLES.indexOf(u.role) !== -1;
 }
@@ -813,6 +817,7 @@ Object.assign(window, {
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, REGION_CENTROIDS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
+  isAdmin,
   canViewSchoolExecutionStages, SCHOOL_EXECUTION_STAGES_ROLES,
   countEnergized, countHandedOver, countCOCSigned, stageByKey,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,

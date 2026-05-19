@@ -229,6 +229,18 @@ function AppInner() {
             __realtimeCleanupRef.current = window.installRealtime(store);
           }
         } catch (_) {}
+        // R30.19 fix Bug #4 — projects, profiles, app_settings aren't in the
+        // realtime publication (would require deeper React refactor). Instead,
+        // when the user returns to the tab, re-run the boot fetch so they see
+        // the latest cross-account state without a manual Ctrl-R.
+        if (typeof window !== 'undefined' && !window.__visRefreshInstalled) {
+          window.__visRefreshInstalled = true;
+          document.addEventListener('visibilitychange', () => {
+            if (!document.hidden && window.USE_SUPABASE) {
+              bootFromSupabase().catch(() => {});
+            }
+          });
+        }
       });
     };
 

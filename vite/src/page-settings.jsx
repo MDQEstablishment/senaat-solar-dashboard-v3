@@ -39,7 +39,7 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
   const TABS = [
     'Users','Roles & Permissions','Projects','Lifecycle Stages','School Stages',
     'Custom Statuses','Custom Fields','Milestone Templates','KPIs',
-    'Branding','Notifications','Storage',
+    'Branding','Notifications','Storage','My Account',
     ...(showAudit ? ['Audit Log'] : []),
   ];
 
@@ -64,9 +64,70 @@ function PageSettings({ currentUser, auditLogOnly = false }) {
           {tab === 'Branding'           && <BrandingTab currentUser={currentUser} />}
           {tab === 'Notifications'      && <NotificationsTab currentUser={currentUser} />}
           {tab === 'Storage'            && <StorageTab />}
+          {tab === 'My Account'         && <MyAccountTab currentUser={currentUser} />}
           {tab === 'Audit Log'          && <AuditTab />}
         </div>
       </Card>
+    </div>
+  );
+}
+
+// ── My Account (R30.19) ────────────────────────────────────────────────────
+// Self-service "Change my password" — uses supabase.auth.updateUser() under
+// the hood, so no admin privilege required. Mirrors the change in store-r2.jsx.
+function MyAccountTab({ currentUser }) {
+  const store = useStore();
+  const changeMyPassword = store.changeMyPassword;
+  const [pw, setPw] = React.useState('');
+  const [pw2, setPw2] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const [toast, setToast] = React.useState(null);
+
+  const submit = async () => {
+    setToast(null);
+    if (pw.length < 8) { setToast({ kind: 'error', msg: 'Password must be at least 8 characters.' }); return; }
+    if (pw !== pw2)    { setToast({ kind: 'error', msg: 'Passwords do not match.' }); return; }
+    setBusy(true);
+    try {
+      await changeMyPassword(pw);
+      setToast({ kind: 'success', msg: 'Password changed. Use the new password next time you sign in.' });
+      setPw(''); setPw2('');
+    } catch (err) {
+      setToast({ kind: 'error', msg: err.message || String(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4 max-w-md">
+      <div>
+        <h3 className="text-base font-semibold">My Account</h3>
+        <p className="text-xs text-ink-500 mt-1">Signed in as <strong>{currentUser?.name || currentUser?.full_name}</strong> ({currentUser?.role})</p>
+      </div>
+      <div className="border border-soft rounded-md p-4 space-y-3">
+        <div className="font-medium text-sm">Change password</div>
+        <label className="block text-xs">
+          <span className="text-ink-600">New password (min 8 characters)</span>
+          <input type="password" value={pw} onChange={e => setPw(e.target.value)}
+            className="mt-1 block w-full border border-soft rounded px-2 py-1.5 text-sm" autoComplete="new-password" />
+        </label>
+        <label className="block text-xs">
+          <span className="text-ink-600">Confirm new password</span>
+          <input type="password" value={pw2} onChange={e => setPw2(e.target.value)}
+            className="mt-1 block w-full border border-soft rounded px-2 py-1.5 text-sm" autoComplete="new-password" />
+        </label>
+        <div className="flex items-center gap-2">
+          <Button kind="primary" onClick={submit} disabled={busy}>{busy ? 'Saving…' : 'Update password'}</Button>
+          {toast && (
+            <span className={'text-xs ' + (toast.kind === 'error' ? 'text-red-700' : 'text-emerald-700')}>{toast.msg}</span>
+          )}
+        </div>
+        <p className="text-[11px] text-ink-500 leading-relaxed mt-2">
+          This updates your Supabase Auth credentials via <code>auth.updateUser()</code>.
+          The change takes effect immediately for new sign-ins.
+        </p>
+      </div>
     </div>
   );
 }
