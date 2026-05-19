@@ -326,6 +326,13 @@ function DeliveryNoteForm({ initial, hint, projects, schools, onCancel, onSave }
     signaturePhoto:   initial?.signaturePhoto   || null,
   }));
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // R32 — autosave draft to localStorage so a crash/refresh doesn't lose input.
+  // Skip photos + signaturePhoto (already in Supabase Storage — too big for localStorage).
+  const autoKey = 'delivery-note:' + (initial?.id || 'new');
+  if (typeof window !== 'undefined' && typeof window.useFormAutosave === 'function') {
+    window.useFormAutosave(autoKey, form, setForm, { skipKeys: ['photos', 'signaturePhoto'] });
+  }
   const setItem = (i, patch) => setForm(f => ({ ...f, items: f.items.map((it, idx) => idx === i ? { ...it, ...patch } : it) }));
   const addItem = () => setForm(f => ({ ...f, items: [...f.items, { description: '', quantity: '', unit: '' }] }));
   const removeItem = (i) => setForm(f => ({ ...f, items: f.items.filter((_, idx) => idx !== i) }));
@@ -338,6 +345,9 @@ function DeliveryNoteForm({ initial, hint, projects, schools, onCancel, onSave }
     if (!form.schoolId) { alert('Please pick a school for this delivery.'); return; }
     const cleanedItems = form.items.filter(it => it.description.trim());
     onSave({ ...form, items: cleanedItems });
+    if (typeof window !== 'undefined' && typeof window.clearFormAutosave === 'function') {
+      window.clearFormAutosave(autoKey);
+    }
   };
 
   return (

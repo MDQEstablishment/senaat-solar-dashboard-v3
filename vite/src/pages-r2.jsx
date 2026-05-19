@@ -70,6 +70,23 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
   }, [open]);
   // Reset picker when modal reopens
   React.useEffect(() => { if (open) setPickedTargetId(null); }, [open]);
+
+  // R32 — autosave escalation draft (title + reason + urgency + projectId).
+  // Key includes the source context (project + school + task) so drafts don't collide.
+  const autoKey = 'escalation:' + (defaults.projectId || 'no-proj') + ':' + (defaults.schoolId || 'no-school') + ':' + (defaults.taskId || 'no-task');
+  const draft = { title, reason, urgency, projectId };
+  const applyDraft = React.useCallback((updater) => {
+    const next = typeof updater === 'function' ? updater(draft) : updater;
+    if (!next) return;
+    if ('title'     in next) setTitle(next.title);
+    if ('reason'    in next) setReason(next.reason);
+    if ('urgency'   in next) setUrgency(next.urgency);
+    if ('projectId' in next) setProjectId(next.projectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (typeof window !== 'undefined' && typeof window.useFormAutosave === 'function') {
+    window.useFormAutosave(autoKey, draft, applyDraft);
+  }
   if (!open) return null;
 
   const targetBase = (typeof getEscalationTarget === 'function') ? getEscalationTarget(currentUser, projectId) : null;
@@ -87,6 +104,7 @@ function EscalationModal({ open, onClose, defaults = {}, projects, currentUser, 
         <Button variant="accent" icon="alert-circle" disabled={!target} onClick={() => {
           if (!title.trim() || !target) return;
           onCreate({ title, reason, urgency, projectId, fromUserId: currentUser.id, schoolId: defaults.schoolId || null, taskId: defaults.taskId || null, target });
+          if (typeof window !== 'undefined' && typeof window.clearFormAutosave === 'function') window.clearFormAutosave(autoKey);
           onClose();
         }}>Submit escalation</Button>
       </>}>

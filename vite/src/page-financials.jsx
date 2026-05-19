@@ -22,6 +22,27 @@ function FinEntryModal({ open, onClose, onSave, projects, initial }) {
     }
   }, [open, initial]);
 
+  // R32 — autosave draft. Key is per-entry (new vs editing). Called unconditionally
+  // to respect React hooks rules. The hook itself ignores writes while open=false
+  // because the form values won't change.
+  const autoKey = 'fin-entry:' + (initial?.id || 'new');
+  const draft = { type, projectId, contractorId: cId, amount, date, milestone, notes };
+  const applyDraft = React.useCallback((updater) => {
+    const next = typeof updater === 'function' ? updater(draft) : updater;
+    if (!next) return;
+    if ('type' in next) setType(next.type);
+    if ('projectId' in next) setPid(next.projectId);
+    if ('contractorId' in next) setCId(next.contractorId);
+    if ('amount' in next) setAmount(next.amount);
+    if ('date' in next) setDate(next.date);
+    if ('milestone' in next) setMile(next.milestone);
+    if ('notes' in next) setNotes(next.notes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  if (typeof window !== 'undefined' && typeof window.useFormAutosave === 'function') {
+    window.useFormAutosave(autoKey, draft, applyDraft);
+  }
+
   return (
     <Modal open={open} onClose={onClose} title={initial ? 'Edit Financial Entry' : 'Add Financial Entry'}
       footer={<>
@@ -31,6 +52,7 @@ function FinEntryModal({ open, onClose, onSave, projects, initial }) {
           if (!projectId) { alert('Please select a project for this entry.'); return; }
           if (!amount || isNaN(+amount)) { alert('Please enter a valid amount.'); return; }
           onSave({ ...(initial||{}), type, projectId, contractorId: cId || null, amount: +amount, date, relatedMilestone: milestone, notes, document: initial?.document || null });
+          if (typeof window !== 'undefined' && typeof window.clearFormAutosave === 'function') window.clearFormAutosave(autoKey);
           onClose();
         }}>Save entry</Button>
       </>}>

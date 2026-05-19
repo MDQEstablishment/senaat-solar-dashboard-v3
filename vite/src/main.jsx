@@ -113,6 +113,7 @@ import './lib/image.js';
 import './lib/storage.js';
 import './lib/notify.js'; // R30.5
 import './lib/realtime.js'; // R30.7
+import './lib/use-form-autosave.js'; // R32 — form drafts persist across crashes/refreshes
 import './components/StageCard.jsx';
 import './components/StageChecklistTable.jsx';
 import './components/MapPreview.jsx';
