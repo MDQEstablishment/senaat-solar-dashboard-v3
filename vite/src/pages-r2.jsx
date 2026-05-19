@@ -480,8 +480,10 @@ function PagePMDashboard({ projects, currentUser, onOpenEscalation, onNewEscalat
 
 function ExecutiveKPIStrip({ projects, totalSchools, energizedAll, handedAll, avgProgress }) {
   const totalValue = projects.reduce((a, p) => a + (p.value || 0), 0);
-  const openProj = projects.filter(p => p.progress < 100).length;
-  const closedProj = projects.length - openProj;
+  // R30.32 — count as Closed if progress=100 OR status matches Complete/completed/Handed Over
+  const isClosedProject = (p) => p.progress >= 100 || /^(complete|completed|handed over|handover)$/i.test(p.status || '');
+  const closedProj = projects.filter(isClosedProject).length;
+  const openProj = projects.length - closedProj;
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
       <ExecKPI label="Total Programs Value" value={'SAR ' + SAR(totalValue)} sub={`${projects.length} active`} accent />
