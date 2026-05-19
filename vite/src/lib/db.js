@@ -769,6 +769,35 @@ export async function bgFetchDeliveryNotes() {
   return (res && res.data) || [];
 }
 
+// R30.30 — Material consumption rows (per-school, per-material).
+export function fromDbMaterialUsage(row, catalog) {
+  if (!row) return null;
+  // Map material name back to catalog no if possible
+  let matNo = null;
+  if (Array.isArray(catalog)) {
+    const m = catalog.find(c => c.name === row.material);
+    if (m) matNo = m.no;
+  }
+  return {
+    id: 'mu-db-' + row.id,
+    schoolId:   row.school_id,
+    projectId:  row.project_id,
+    stageKey:   row.stage_key || null,
+    materialNo: matNo,
+    materialName: row.material,
+    qty:        Number(row.quantity) || 0,
+    unit:       row.unit || null,
+    by:         legacyUserId(row.recorded_by_id),
+    when:       (row.created_at || '').slice(0, 10),
+    notes:      row.notes || null,
+  };
+}
+
+export async function bgFetchMaterialUsage() {
+  const res = await _safeFetch('material_usage', () => supabase.from('material_usage').select('*').order('created_at', { ascending: false }));
+  return (res && res.data) || [];
+}
+
 export async function bgFetchAppSettings() {
   const res = await _safeFetch('app_settings', () => supabase.from('app_settings').select('*'));
   return (res && res.data) || [];
@@ -799,6 +828,7 @@ if (typeof window !== 'undefined') {
     fromDbAuditLog,
     bgFetchProfiles, bgFetchProjects, bgFetchSchools, bgFetchContractors,
     bgFetchTasks, bgFetchEscalations, bgFetchDeliveryNotes, bgFetchAppSettings,
+    bgFetchMaterialUsage, fromDbMaterialUsage,
     bgFetchAuditLog, bgFetchCurrentProfile,
   });
 }

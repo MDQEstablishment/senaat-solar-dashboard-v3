@@ -92,7 +92,8 @@ function AppInner() {
     setBootStatus('loading');
     try {
       const [rawProfiles, rawProjects, rawSchools, rawContractors,
-             rawTasks, rawEscalations, rawDeliveryNotes, rawAppSettings] = await Promise.all([
+             rawTasks, rawEscalations, rawDeliveryNotes, rawAppSettings,
+             rawMaterialUsage] = await Promise.all([
         window.bgFetchProfiles(),
         window.bgFetchProjects(),
         window.bgFetchSchools(),
@@ -101,6 +102,7 @@ function AppInner() {
         window.bgFetchEscalations(),
         window.bgFetchDeliveryNotes(),
         window.bgFetchAppSettings(),
+        window.bgFetchMaterialUsage ? window.bgFetchMaterialUsage() : Promise.resolve([]),
       ]);
 
       // Build PM-uuid → legacy-project-id[] map from raw projects rows.
@@ -168,6 +170,12 @@ function AppInner() {
       if (projectsTranslated.length && store._setProjects) store._setProjects(projectsTranslated);
       if (schoolsTranslated.length && store._setSchools)   store._setSchools(schoolsTranslated);
       if (contractorsTranslated.length && store._setContractorsLocal) store._setContractorsLocal(contractorsTranslated);
+      // R30.30 — seed material_usage from DB so reports + tabs see it across sessions
+      if (Array.isArray(rawMaterialUsage) && rawMaterialUsage.length > 0 && store._setMaterialUsage && window.fromDbMaterialUsage) {
+        const catalog = (typeof MATERIALS_CATALOG !== 'undefined' ? MATERIALS_CATALOG : (window.MATERIALS_CATALOG || []));
+        const muTranslated = rawMaterialUsage.map(r => window.fromDbMaterialUsage(r, catalog));
+        store._setMaterialUsage(muTranslated);
+      }
       if (tasksTranslated.length && store._setTasks)       store._setTasks(tasksTranslated);
       if (escalationsTranslated.length && store._setEscalations) store._setEscalations(escalationsTranslated);
       if (dnTranslated.length && store._setDeliveryNotes)  store._setDeliveryNotes(dnTranslated);

@@ -996,6 +996,7 @@ function useStoreR2(base) {
     // R30.29 — realtime app_settings refresh writes to these
     _setLifecycleStages: setLifecycleStages,
     _setStageStatuses:   setStageStatuses,
+    _setMaterialUsage:   setMaterialUsage,
   };
 }
 

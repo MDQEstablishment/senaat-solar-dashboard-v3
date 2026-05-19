@@ -121,6 +121,14 @@ const refreshers = {
   task_messages: (store) => {
     window.dispatchEvent(new CustomEvent('realtime-task-messages'));
   },
+  material_usage: (store) => {
+    if (!window.bgFetchMaterialUsage || !window.fromDbMaterialUsage || !store._setMaterialUsage) return;
+    window.bgFetchMaterialUsage().then(rows => {
+      if (!Array.isArray(rows)) return;
+      const catalog = (typeof window.MATERIALS_CATALOG !== 'undefined' ? window.MATERIALS_CATALOG : []);
+      store._setMaterialUsage(rows.map(r => window.fromDbMaterialUsage(r, catalog)));
+    }).catch(() => {});
+  },
   contractors: (store) => {
     if (!window.bgFetchContractors || !window.fromDbContractor || !store._setContractorsLocal) return;
     window.bgFetchContractors().then(rows => {
