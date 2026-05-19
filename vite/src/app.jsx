@@ -631,7 +631,8 @@ function AppInner() {
         onNavigate={navigateNotif} onMarkAllRead={markAllNotifsRead} />
 
       <TaskModal open={taskModalOpen} onClose={() => setTaskModalOpen(false)}
-        projects={projects} schools={schools} defaults={taskDefaults} onCreate={onCreateTask} />
+        projects={projects} schools={schools} defaults={taskDefaults} onCreate={onCreateTask}
+        currentUser={currentUser} />
 
       <TaskDetailPanel task={openTask} open={!!openTask} onClose={() => setOpenTask(null)}
         currentUserId={currentUser.id}

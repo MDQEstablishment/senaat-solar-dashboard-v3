@@ -1,7 +1,7 @@
 import React from 'react';
 // Task creation modal & side panel
 
-function TaskModal({ open, onClose, projects, schools, defaults = {}, onCreate }) {
+function TaskModal({ open, onClose, projects, schools, defaults = {}, onCreate, currentUser }) {
   const [title, setTitle] = React.useState(defaults.title || '');
   const [description, setDescription] = React.useState('');
   const [assigneeId, setAssigneeId] = React.useState(defaults.assigneeId || 'u8');
@@ -57,7 +57,7 @@ function TaskModal({ open, onClose, projects, schools, defaults = {}, onCreate }
         <div>
           <label className="text-[11px] font-medium text-ink-700 mb-1 block">Assignee</label>
           <Select value={assigneeId} onChange={setAssigneeId}
-            options={PEOPLE.map(p => ({ value: p.id, label: `${p.name} · ${p.role}` }))} className="w-full" />
+            options={(window.assignableUsers ? window.assignableUsers(currentUser, PEOPLE) : PEOPLE).map(p => ({ value: p.id, label: `${p.name} · ${p.role}` }))} className="w-full" />
         </div>
         <div>
           <label className="text-[11px] font-medium text-ink-700 mb-1 block">Priority</label>

@@ -152,6 +152,38 @@ const PROGRAM_MANAGER_GROUP = ['Manager', 'Operations Manager', 'Program Manager
 // unconditional access to every capability, regardless of user.id allowlist.
 function isAdmin(u) { return !!u && u.role === 'Admin'; }
 
+// R30.20 — Organizational hierarchy ranking for task assignment.
+// Lower rank = higher authority. Task assignment flows DOWNWARD only:
+// an actor can assign to a target whose rank >= actor's rank (peer or below).
+// Upward assignment is BLOCKED — use the Escalation flow instead.
+const HIERARCHY_RANK = {
+  'Admin':              0,  // top — can assign to anyone
+  'VP':                 1,
+  'Manager':            2,
+  'Operations Manager': 3,
+  'Program Manager':    3,
+  'Project Manager':    4,
+  'Coordinator':        5,
+  'Material planning':  5,
+};
+
+function canAssignTaskTo(actor, target) {
+  if (!actor || !target) return false;
+  if (actor.id === target.id) return true;  // self-tasks always allowed
+  const a = HIERARCHY_RANK[actor.role];
+  const t = HIERARCHY_RANK[target.role];
+  if (a === undefined || t === undefined) return false;
+  // Allowed when actor's rank is <= target's rank (i.e., actor is higher or peer).
+  // Upward assignment (a > t) is blocked — reassignment to a higher role must
+  // go through Escalation (page-escalations / raiseEscalation).
+  return a <= t;
+}
+
+function assignableUsers(actor, allPeople) {
+  if (!actor || !Array.isArray(allPeople)) return [];
+  return allPeople.filter(p => canAssignTaskTo(actor, p));
+}
+
 // Round 6: per-user allowlists (by user.id) — name-based gating
 const FINANCIALS_USERS     = ['u-vp', 'u-mgr1', 'u-mgr2'];               // Olaf, Fasiulla, Anas
 const NEW_PROJECT_USERS    = ['u-mgr1', 'u-mgr2', 'u-pgm'];              // Fasiulla, Anas, Naif
@@ -817,7 +849,7 @@ Object.assign(window, {
   REMARKS, STATUS_VALUES, PROJECT_STAGES, REGIONS, REGION_CENTROIDS, ROLES, PROGRAM_MANAGER_GROUP,
   FINANCIALS_USERS, NEW_PROJECT_USERS, ESCALATE_TO_VP_USERS, AUDIT_LOG_USERS, SETTINGS_USERS,
   canViewFinancials, canCreateProject, canEscalateToVP, canViewAuditLog, canViewSettings,
-  isAdmin,
+  isAdmin, HIERARCHY_RANK, canAssignTaskTo, assignableUsers,
   canViewSchoolExecutionStages, SCHOOL_EXECUTION_STAGES_ROLES,
   countEnergized, countHandedOver, countCOCSigned, stageByKey,
   PEOPLE, PROJECTS, ALL_SCHOOLS, CONTRACTORS, CONTRACTOR_NAMES,
