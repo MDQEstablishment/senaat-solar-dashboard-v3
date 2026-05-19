@@ -236,6 +236,8 @@ function StoreProvider({ children }) {
   };
   const r2 = (typeof useStoreR2 === 'function') ? useStoreR2(baseValue) : {};
   const value = { ...baseValue, ...r2 };
+  // R31 — expose latest store value to non-React callers (e.g. canViewFinancials in data.jsx)
+  if (typeof window !== 'undefined') window.__lastStoreValue = value;
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }
 

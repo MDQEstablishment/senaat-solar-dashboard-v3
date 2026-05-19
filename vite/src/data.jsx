@@ -195,10 +195,21 @@ const SETTINGS_USERS       = ['u-mgr1', 'u-mgr2'];                       // Fasi
 function canViewFinancials(u) {
   if (!u) return false;
   if (isAdmin(u)) return true;
-  if (FINANCIALS_USERS.indexOf(u.id) !== -1) return true;
-  // R31 — per-user grant set from Settings → Users (financialsAccess column on profile)
-  if (u.financialsAccess === true || u.financials_access === true) return true;
-  return false;
+  // R31 — Settings → Roles & Permissions is the source of truth.
+  // The matrix lives on window.useStore().rolePermissions; if the role has Financials = false
+  // we hide it, otherwise allow. Manager / VP defaults are TRUE; PM / Coordinator / Material default FALSE.
+  // Falls back to the legacy allowlist when the store isn't mounted (boot / standalone).
+  if (typeof window !== 'undefined' && typeof window.useStore === 'function') {
+    try {
+      const ctxStore = window.__lastStoreValue;
+      const rp = ctxStore && ctxStore.rolePermissions;
+      if (rp && rp[u.role] && Object.prototype.hasOwnProperty.call(rp[u.role], 'Financials')) {
+        return rp[u.role].Financials !== false;
+      }
+    } catch (_) { /* fall through */ }
+  }
+  // Legacy fallback (Manager allowlist by user id)
+  return FINANCIALS_USERS.indexOf(u.id) !== -1;
 }
 function canCreateProject(u)  { return isAdmin(u) || (!!u && NEW_PROJECT_USERS.indexOf(u.id) !== -1); }
 function canEscalateToVP(u)   { return isAdmin(u) || (!!u && ESCALATE_TO_VP_USERS.indexOf(u.id) !== -1); }

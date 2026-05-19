@@ -589,7 +589,6 @@ function UsersTab({ currentUser }) {
             <th className="text-left px-3 py-2">Role</th>
             <th className="text-left px-3 py-2">Region</th>
             <th className="text-left px-3 py-2">Status</th>
-            <th className="text-left px-3 py-2">Financials</th>
             <th className="text-right px-3 py-2">Actions</th>
           </tr>
         </thead>
@@ -601,18 +600,6 @@ function UsersTab({ currentUser }) {
               <td className="px-3 py-2 text-xs">{u.role}</td>
               <td className="px-3 py-2 text-xs">{u.region || '—'}</td>
               <td className="px-3 py-2"><Pill tone={u.archived ? 'soft' : 'ok'}>{u.archived ? 'Archived' : 'Active'}</Pill></td>
-              <td className="px-3 py-2">
-                {/* R31 — Manager grants financial visibility per-user. Hidden if currentUser is not Manager. */}
-                {(currentUser && (currentUser.role === 'Manager' || currentUser.role === 'Admin')) ? (
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-[11px]">
-                    <input type="checkbox" checked={!!(u.financialsAccess || u.financials_access)}
-                      onChange={(e) => updateUser(u.id, { financialsAccess: e.target.checked, financials_access: e.target.checked }, currentUser)} />
-                    {(u.financialsAccess || u.financials_access) ? 'Granted' : '—'}
-                  </label>
-                ) : (
-                  <span className="text-[11px] text-ink-500">{(u.financialsAccess || u.financials_access) ? '✓' : '—'}</span>
-                )}
-              </td>
               <td className="px-3 py-2 text-right">
                 <div className="inline-flex items-center gap-1">
                   <button type="button"
@@ -635,7 +622,7 @@ function UsersTab({ currentUser }) {
               </td>
             </tr>
           ))}
-          {list.length === 0 && <tr><td colSpan="7" className="text-center py-6 text-xs text-ink-500 italic">No users.</td></tr>}
+          {list.length === 0 && <tr><td colSpan="6" className="text-center py-6 text-xs text-ink-500 italic">No users.</td></tr>}
         </tbody>
       </table>
 
