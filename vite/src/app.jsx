@@ -93,7 +93,7 @@ function AppInner() {
     try {
       const [rawProfiles, rawProjects, rawSchools, rawContractors,
              rawTasks, rawEscalations, rawDeliveryNotes, rawAppSettings,
-             rawMaterialUsage] = await Promise.all([
+             rawMaterialUsage, rawFinancialEntries] = await Promise.all([
         window.bgFetchProfiles(),
         window.bgFetchProjects(),
         window.bgFetchSchools(),
@@ -103,6 +103,7 @@ function AppInner() {
         window.bgFetchDeliveryNotes(),
         window.bgFetchAppSettings(),
         window.bgFetchMaterialUsage ? window.bgFetchMaterialUsage() : Promise.resolve([]),
+        window.bgFetchFinancialEntries ? window.bgFetchFinancialEntries() : Promise.resolve([]),
       ]);
 
       // Build PM-uuid → legacy-project-id[] map from raw projects rows.
@@ -175,6 +176,10 @@ function AppInner() {
         const catalog = (typeof MATERIALS_CATALOG !== 'undefined' ? MATERIALS_CATALOG : (window.MATERIALS_CATALOG || []));
         const muTranslated = rawMaterialUsage.map(r => window.fromDbMaterialUsage(r, catalog));
         store._setMaterialUsage(muTranslated);
+      }
+      // R30.32.1 — seed financial_entries from DB on boot
+      if (Array.isArray(rawFinancialEntries) && rawFinancialEntries.length > 0 && store._setFinancialEntries && window.fromDbFinancialEntry) {
+        store._setFinancialEntries(rawFinancialEntries.map(window.fromDbFinancialEntry));
       }
       if (tasksTranslated.length && store._setTasks)       store._setTasks(tasksTranslated);
       if (escalationsTranslated.length && store._setEscalations) store._setEscalations(escalationsTranslated);

@@ -1106,6 +1106,7 @@ function useStoreR2(base) {
     _setLifecycleStages: setLifecycleStages,
     _setStageStatuses:   setStageStatuses,
     _setMaterialUsage:   setMaterialUsage,
+    _setFinancialEntries: setFinancialEntries,
   };
 }
 

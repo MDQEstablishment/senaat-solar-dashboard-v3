@@ -135,6 +135,16 @@ const refreshers = {
       if (Array.isArray(rows)) store._setContractorsLocal(rows.map(window.fromDbContractor));
     }).catch(() => {});
   },
+  financial_entries: (store) => {
+    if (!window.bgFetchFinancialEntries || !window.fromDbFinancialEntry || !store._setFinancialEntries) return;
+    window.bgFetchFinancialEntries().then(rows => {
+      if (Array.isArray(rows)) store._setFinancialEntries(rows.map(window.fromDbFinancialEntry));
+    }).catch(() => {});
+  },
+  milestone_entries: (store) => {
+    // Just emit a hint; per-contractor reads happen on demand
+    window.dispatchEvent(new CustomEvent('realtime-milestone-entries'));
+  },
 };
 
 const TABLES = Object.keys(refreshers);

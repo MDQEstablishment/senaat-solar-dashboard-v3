@@ -798,6 +798,30 @@ export async function bgFetchMaterialUsage() {
   return (res && res.data) || [];
 }
 
+// R30.32.1 — Financial entries fetcher + translator.
+export function fromDbFinancialEntry(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    projectId: row.project_id,
+    date: row.date,
+    kind: row.kind,
+    category: row.category,
+    amount: Number(row.amount) || 0,
+    currency: row.currency || 'SAR',
+    description: row.description,
+    vendor: row.vendor,
+    documentPath: row.document_path,
+    archived: !!row.archived,
+    createdBy: legacyUserId(row.created_by_id),
+  };
+}
+
+export async function bgFetchFinancialEntries() {
+  const res = await _safeFetch('financial_entries', () => supabase.from('financial_entries').select('*').eq('archived', false).order('created_at', { ascending: false }));
+  return (res && res.data) || [];
+}
+
 export async function bgFetchAppSettings() {
   const res = await _safeFetch('app_settings', () => supabase.from('app_settings').select('*'));
   return (res && res.data) || [];
@@ -829,6 +853,7 @@ if (typeof window !== 'undefined') {
     bgFetchProfiles, bgFetchProjects, bgFetchSchools, bgFetchContractors,
     bgFetchTasks, bgFetchEscalations, bgFetchDeliveryNotes, bgFetchAppSettings,
     bgFetchMaterialUsage, fromDbMaterialUsage,
+    bgFetchFinancialEntries, fromDbFinancialEntry,
     bgFetchAuditLog, bgFetchCurrentProfile,
   });
 }
