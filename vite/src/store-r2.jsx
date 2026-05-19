@@ -962,6 +962,9 @@ function useStoreR2(base) {
     _setThemeLogo: setThemeLogo,
     _setNotificationTemplates: setNotificationTemplates,
     _setRolePermissions: setRolePermissions,
+    // R30.29 — realtime app_settings refresh writes to these
+    _setLifecycleStages: setLifecycleStages,
+    _setStageStatuses:   setStageStatuses,
   };
 }
 
