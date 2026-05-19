@@ -10,7 +10,11 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
     // R29 — per-stage photo storage
     getSchoolStagePhotos, setSchoolStagePhotosFor,
+    // R33 — Snag CRUD
+    addSnag, updateSnag, deleteSnag,
   } = useStore();
+  // R33 — snag modal state (defined here so it lives across tab switches)
+  const [snagModal, setSnagModal] = React.useState({ open: false, initial: null });
   // R28 — edit-coordinates modal (opened from the map preview's empty-state button
   // or its "Add precise coordinates" link when the school falls back to a region
   // centroid). Lives at PageSchoolDetail level so the modal can persist across
@@ -301,21 +305,70 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
 
           {tab === 'Snags' && (
             <div className="p-5">
-              <SectionTitle icon="alert-circle" title="Snag / issue log" subtitle={`${school.issues.length} item(s)`} />
-              {school.issues.length === 0 ? (
-                <div className="text-xs text-ink-500 italic">No snags logged for this school.</div>
+              <div className="flex items-center justify-between mb-3">
+                <SectionTitle icon="alert-circle" title="Snag / issue log" subtitle={`${(school.issues || []).length} item(s)`} className="!mb-0" />
+                <Button variant="accent" icon="plus" onClick={() => setSnagModal({ open: true, initial: null })}>Add snag</Button>
+              </div>
+              {(school.issues || []).length === 0 ? (
+                <div className="text-xs text-ink-500 italic">No snags logged for this school. Click <strong>Add snag</strong> to record a defect found during inspection.</div>
               ) : (
                 <div className="space-y-2">
-                  {school.issues.map(iss => (
-                    <div key={iss.id} className="flex items-start gap-3 p-3 rounded-md border border-soft surface-2 text-xs">
-                      <Pill tone={iss.severity === 'High' ? 'danger' : iss.severity === 'Medium' ? 'warn' : 'soft'}>{iss.severity}</Pill>
-                      <div className="flex-1">
-                        <div>{iss.text}</div>
-                        <div className="text-[10px] text-ink-500 mt-0.5">Opened {fmtDate(iss.opened)}</div>
+                  {(school.issues || []).map(iss => {
+                    const sevTone = iss.severity === 'Critical' ? 'danger'
+                      : iss.severity === 'High' ? 'danger'
+                      : iss.severity === 'Medium' ? 'warn' : 'soft';
+                    const stTone = iss.status === 'Verified' ? 'ok'
+                      : iss.status === 'Fixed' ? 'info'
+                      : 'warn';
+                    return (
+                      <div key={iss.id} className="flex items-start gap-3 p-3 rounded-md border border-soft surface-2 text-xs">
+                        <Pill tone={sevTone}>{iss.severity}</Pill>
+                        {iss.photoUrl && (
+                          <a href={iss.photoUrl} target="_blank" rel="noopener noreferrer"
+                            className="block w-12 h-12 rounded border border-soft overflow-hidden flex-shrink-0">
+                            <img src={iss.photoUrl} alt="" className="w-full h-full object-cover" />
+                          </a>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-ink-900 whitespace-pre-wrap">{iss.text}</div>
+                          <div className="text-[10px] text-ink-500 mt-0.5">
+                            Opened {fmtDate(iss.opened)}
+                            {iss.fixedAt && <span> · Fixed {fmtDate(iss.fixedAt)}</span>}
+                            {iss.verifiedAt && <span> · Verified {fmtDate(iss.verifiedAt)}</span>}
+                          </div>
+                        </div>
+                        <Pill tone={stTone}>{iss.status}</Pill>
+                        <div className="flex items-center gap-1">
+                          {iss.status === 'Open' && (
+                            <button type="button" title="Mark as Fixed"
+                              onClick={() => updateSnag(school.id, iss.id, { status: 'Fixed' }, currentUser)}
+                              className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-emerald-600">
+                              <Icon name="check" size={13} />
+                            </button>
+                          )}
+                          {iss.status === 'Fixed' && (
+                            <button type="button" title="Verify (close)"
+                              onClick={() => updateSnag(school.id, iss.id, { status: 'Verified' }, currentUser)}
+                              className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-emerald-700">
+                              <Icon name="check-circle" size={13} />
+                            </button>
+                          )}
+                          {iss.status !== 'Verified' && (
+                            <button type="button" title="Edit"
+                              onClick={() => setSnagModal({ open: true, initial: iss })}
+                              className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-ink-900">
+                              <Icon name="pencil" size={13} />
+                            </button>
+                          )}
+                          <button type="button" title="Delete"
+                            onClick={() => { if (confirm('Delete this snag? This cannot be undone.')) deleteSnag(school.id, iss.id, currentUser); }}
+                            className="p-1 rounded hover:bg-ink-100 text-ink-500 hover:text-red-600">
+                            <Icon name="trash-2" size={13} />
+                          </button>
+                        </div>
                       </div>
-                      <Pill tone={iss.status === 'Open' ? 'warn' : 'ok'}>{iss.status}</Pill>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -346,7 +399,83 @@ function PageSchoolDetail({ schoolId, onBack, onAddTask, currentUser, onEscalate
           onClose={() => setEditCoordsOpen(false)}
           onSave={handleSaveCoords} />
       )}
+
+      {/* R33 — Snag add/edit modal */}
+      <SnagModal
+        open={snagModal.open}
+        initial={snagModal.initial}
+        schoolId={school.id}
+        onClose={() => setSnagModal({ open: false, initial: null })}
+        onSave={(data) => {
+          if (snagModal.initial) {
+            updateSnag(school.id, snagModal.initial.id, data, currentUser);
+          } else {
+            addSnag(school.id, data, currentUser);
+          }
+          setSnagModal({ open: false, initial: null });
+        }} />
     </div>
+  );
+}
+
+// R33 — Snag form modal
+function SnagModal({ open, initial, schoolId, onClose, onSave }) {
+  const [severity, setSeverity] = React.useState('Medium');
+  const [text, setText] = React.useState('');
+  const [photo, setPhoto] = React.useState(null);   // { url, path } from ImageUploader
+  React.useEffect(() => {
+    if (open) {
+      setSeverity(initial?.severity || 'Medium');
+      setText(initial?.text || '');
+      setPhoto(initial?.photoUrl ? { url: initial.photoUrl, path: initial.photoPath || 'legacy' } : null);
+    }
+  }, [open, initial]);
+
+  if (!open) return null;
+  const isEdit = !!initial;
+  const photoList = photo ? [photo] : [];
+
+  return (
+    <Modal open={open} onClose={onClose} title={isEdit ? 'Edit snag' : 'Add snag'} wide
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="accent" icon="check" onClick={() => {
+          if (!text.trim()) { alert('Please describe the snag.'); return; }
+          onSave({
+            severity, text: text.trim(),
+            photoUrl: photo?.url || null,
+            photoPath: photo?.path || null,
+          });
+        }}>{isEdit ? 'Save changes' : 'Add snag'}</Button>
+      </>}>
+      <div className="space-y-3">
+        <div>
+          <label className="text-[11px] font-medium text-ink-700 mb-1 block">Severity</label>
+          <Select value={severity} onChange={setSeverity} options={['Low','Medium','High','Critical']} className="w-full" />
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-ink-700 mb-1 block">Description <span className="text-red-600">*</span></label>
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={3}
+            placeholder="e.g. PV module on row 3 has visible crack — needs replacement"
+            className="w-full px-2.5 py-1.5 text-sm rounded-md border border-ink-200 bg-white focus:outline-none focus:ring-2 ring-accent" />
+        </div>
+        <div>
+          <label className="text-[11px] font-medium text-ink-700 mb-1 block">Photo (recommended)</label>
+          {window.ImageUploader && (
+            <window.ImageUploader
+              path={`schools/${schoolId}/snags`}
+              maxCount={1}
+              value={photoList}
+              onChange={(list) => setPhoto((list && list[0]) || null)} />
+          )}
+        </div>
+        {isEdit && (
+          <div className="text-[11px] text-ink-500 bg-sky-50 border border-sky-200 rounded-md p-2">
+            ℹ️ Status changes (Fixed / Verified) are done from the row buttons in the snag list.
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 

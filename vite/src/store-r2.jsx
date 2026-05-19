@@ -1063,6 +1063,92 @@ function useStoreR2(base) {
     return id;
   };
 
+  // R33 — Snag/issue log CRUD. Persists to schools.issues JSONB array.
+  // Each issue: { id, severity, text, opened, status, fixedAt, photoUrl, photoPath, createdById, fixedById }
+  const addSnag = (schoolId, data, actor) => {
+    const id = 'snag-' + Date.now();
+    const issue = {
+      id,
+      severity: data.severity || 'Medium',          // Low / Medium / High / Critical
+      text: data.text || '',
+      opened: new Date().toISOString().slice(0, 10),
+      status: 'Open',                                // Open / Fixed / Verified
+      photoUrl: data.photoUrl || null,
+      photoPath: data.photoPath || null,
+      createdById: actor?.id || null,
+      fixedAt: null,
+      fixedById: null,
+      verifiedAt: null,
+      verifiedById: null,
+    };
+    base._setSchools(ss => ss.map(sc =>
+      sc.id !== schoolId ? sc : { ...sc, issues: [...(sc.issues || []), issue] }));
+    if (window.bgUpdate) {
+      // Update only the issues array on this school row
+      const current = base.schools.find(x => x.id === schoolId);
+      const nextIssues = [...((current && current.issues) || []), issue];
+      window.bgUpdate('schools', schoolId, { issues: nextIssues }, 'school snag add');
+    }
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'CREATE', entityType: 'snag', entityId: id, entityLabel: schoolId,
+      after: issue.text, summary: `Added snag on ${schoolId}: "${issue.text}" (${issue.severity})`,
+    }), 0);
+    return issue;
+  };
+  const updateSnag = (schoolId, snagId, patch, actor) => {
+    let beforeText = null;
+    let nextIssues = null;
+    base._setSchools(ss => ss.map(sc => {
+      if (sc.id !== schoolId) return sc;
+      const updated = (sc.issues || []).map(iss => {
+        if (iss.id !== snagId) return iss;
+        beforeText = iss.text;
+        const merged = { ...iss, ...patch };
+        // Auto-stamp transitions
+        if (patch.status === 'Fixed' && !iss.fixedAt) {
+          merged.fixedAt = new Date().toISOString().slice(0, 10);
+          merged.fixedById = actor?.id || null;
+        }
+        if (patch.status === 'Verified' && !iss.verifiedAt) {
+          merged.verifiedAt = new Date().toISOString().slice(0, 10);
+          merged.verifiedById = actor?.id || null;
+        }
+        return merged;
+      });
+      nextIssues = updated;
+      return { ...sc, issues: updated };
+    }));
+    if (window.bgUpdate && nextIssues) {
+      window.bgUpdate('schools', schoolId, { issues: nextIssues }, 'school snag update');
+    }
+    if (actor && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'UPDATE', entityType: 'snag', entityId: snagId, entityLabel: schoolId,
+      before: beforeText, after: patch.text || patch.status,
+      summary: `Updated snag ${snagId} on ${schoolId}`,
+    }), 0);
+  };
+  const deleteSnag = (schoolId, snagId, actor) => {
+    let target = null;
+    let nextIssues = null;
+    base._setSchools(ss => ss.map(sc => {
+      if (sc.id !== schoolId) return sc;
+      target = (sc.issues || []).find(i => i.id === snagId);
+      const updated = (sc.issues || []).filter(i => i.id !== snagId);
+      nextIssues = updated;
+      return { ...sc, issues: updated };
+    }));
+    if (window.bgUpdate && nextIssues != null) {
+      window.bgUpdate('schools', schoolId, { issues: nextIssues }, 'school snag delete');
+    }
+    if (actor && target && typeof logAudit === 'function') setTimeout(() => logAudit({
+      actorId: actor.id, actorName: actor.name, actorRole: actor.role,
+      action: 'DELETE', entityType: 'snag', entityId: snagId, entityLabel: schoolId,
+      before: target.text, summary: `Deleted snag "${target.text}" from ${schoolId}`,
+    }), 0);
+  };
+
   const deleteMaterialUsage = (id) => {
     setMaterialUsage(mu => mu.filter(x => x.id !== id));
     // R30.31 — DB-sourced ids look like 'mu-db-<bigserial>'. Persist delete for those.
@@ -1086,6 +1172,8 @@ function useStoreR2(base) {
     financialEntries, addFinancialEntry, updateFinancialEntry, deleteFinancialEntry, finRollup,
     materials, addMaterial, updateMaterial, deleteMaterial,
     materialsCatalog, materialUsage, logMaterialUsage, deleteMaterialUsage,
+    // R33 — Snag CRUD
+    addSnag, updateSnag, deleteSnag,
     validateSchool, addSchool, updateSchool, deleteSchool,
     contractorsLocal, addContractor, updateContractor, deleteContractor,
     auditLog, logAudit,
