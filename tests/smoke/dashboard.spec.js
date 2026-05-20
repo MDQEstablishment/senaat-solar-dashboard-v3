@@ -14,7 +14,7 @@ const TEST_PASSWORD = process.env.SMOKE_PASSWORD || 'Senaat2026!';
 const SUPABASE_URL  = process.env.SUPABASE_URL  || 'https://bhesznqfrcyikfupdgkx.supabase.co';
 // Anon key is public (it's already in the live bundle). Safe to hardcode as default.
 const ANON_KEY      = process.env.SUPABASE_ANON_KEY ||
-  'sb_publishable_KUh3cPKxVNV7KrwC8QBHsA_dp3Ah-9U';
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZXN6bnFmcmN5aWtmdXBkZ2t4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU2NTc3OTUsImV4cCI6MjA5MTIzMzc5NX0.uUSm0mcc64es2VfinAzCUP4iidUkhR8GHnQkketsqsM';
 
 test.describe('Production smoke', () => {
   let consoleErrors = [];
