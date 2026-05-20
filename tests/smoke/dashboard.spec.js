@@ -45,9 +45,20 @@ test.describe('Production smoke', () => {
 
   test('supabase auth works (catches DB outage + auth misconfig)', async ({ request }) => {
     const authRes = await request.post(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
-      headers: { 'apikey': ANON_KEY, 'Content-Type': 'application/json' },
+      headers: {
+        'apikey': ANON_KEY,
+        'Authorization': `Bearer ${ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
       data: { email: TEST_EMAIL, password: TEST_PASSWORD },
     });
+    if (!authRes.ok()) {
+      const text = await authRes.text();
+      console.log('AUTH FAILED', authRes.status(), text);
+      console.log('Email used:', TEST_EMAIL);
+      console.log('Password length:', TEST_PASSWORD?.length);
+      console.log('Apikey first 20:', ANON_KEY.slice(0, 20));
+    }
     expect(authRes.ok(), `auth status ${authRes.status()}`).toBeTruthy();
     const body = await authRes.json();
     expect(body.access_token).toBeTruthy();
