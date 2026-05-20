@@ -915,13 +915,22 @@ function useStoreR2(base) {
     setFinancialEntries(fe => [{ id, archived: false, document: null, ...entry }, ...fe]);
     if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
       const createdByUuid = window.userUuid && actor ? window.userUuid(actor.id) : null;
+      // R33.2 — map UI camelCase to DB snake_case. Previously dropped: type, notes, contractorId, relatedMilestone.
       window.supabase.from('financial_entries').insert({
-        id, project_id: entry.projectId || null, date: entry.date || null,
-        kind: entry.kind || 'other', category: entry.category || null,
-        amount: Number(entry.amount) || 0, currency: entry.currency || 'SAR',
-        description: entry.description || null, vendor: entry.vendor || null,
-        document_path: entry.document?.path || entry.documentPath || null,
-        created_by_id: createdByUuid, archived: false,
+        id,
+        project_id:        entry.projectId || null,
+        contractor_id:     entry.contractorId || null,                        // R33.2 — was dropped
+        date:              entry.date || null,
+        kind:              entry.kind || entry.type || 'other',               // R33.2 — UI form sends `type`, not `kind`
+        category:          entry.category || null,
+        amount:            Number(entry.amount) || 0,
+        currency:          entry.currency || 'SAR',
+        description:       entry.description || entry.notes || null,          // R33.2 — UI form sends `notes`
+        related_milestone: entry.relatedMilestone || null,                    // R33.2 — was dropped
+        vendor:            entry.vendor || null,
+        document_path:     entry.document?.path || entry.documentPath || null,
+        created_by_id:     createdByUuid,
+        archived:          false,
       }).then(({ error }) => {
         if (error) {
           console.error('[supabase insert financial_entry]', error);
@@ -935,15 +944,22 @@ function useStoreR2(base) {
     setFinancialEntries(fe => fe.map(e => e.id === id ? { ...e, ...patch } : e));
     if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
       const dbPatch = {};
-      if ('projectId'   in patch) dbPatch.project_id  = patch.projectId;
-      if ('date'        in patch) dbPatch.date        = patch.date;
-      if ('kind'        in patch) dbPatch.kind        = patch.kind;
-      if ('category'    in patch) dbPatch.category    = patch.category;
-      if ('amount'      in patch) dbPatch.amount      = Number(patch.amount) || 0;
-      if ('currency'    in patch) dbPatch.currency    = patch.currency;
-      if ('description' in patch) dbPatch.description = patch.description;
-      if ('vendor'      in patch) dbPatch.vendor      = patch.vendor;
-      if ('archived'    in patch) dbPatch.archived    = !!patch.archived;
+      // R33.2 — full UI-to-DB field mapping. Previously: type/notes/contractorId/relatedMilestone all dropped on edit.
+      if ('projectId'        in patch) dbPatch.project_id        = patch.projectId;
+      if ('contractorId'     in patch) dbPatch.contractor_id     = patch.contractorId || null;
+      if ('date'             in patch) dbPatch.date              = patch.date;
+      if ('type'             in patch) dbPatch.kind              = patch.type;       // UI form field is `type`
+      if ('kind'             in patch) dbPatch.kind              = patch.kind;
+      if ('category'         in patch) dbPatch.category          = patch.category;
+      if ('amount'           in patch) dbPatch.amount            = Number(patch.amount) || 0;
+      if ('currency'         in patch) dbPatch.currency          = patch.currency;
+      if ('description'      in patch) dbPatch.description       = patch.description;
+      if ('notes'            in patch) dbPatch.description       = patch.notes;      // UI form field is `notes`
+      if ('relatedMilestone' in patch) dbPatch.related_milestone = patch.relatedMilestone || null;
+      if ('vendor'           in patch) dbPatch.vendor            = patch.vendor;
+      if ('archived'         in patch) dbPatch.archived          = !!patch.archived;
+      if ('document'         in patch) dbPatch.document_path     = patch.document?.path || null;
+      if ('documentPath'     in patch) dbPatch.document_path     = patch.documentPath;
       if (Object.keys(dbPatch).length) {
         window.supabase.from('financial_entries').update(dbPatch).eq('id', id).then(({ error }) => {
           if (error) console.error('[supabase update financial_entry]', error);

@@ -806,6 +806,7 @@ export function fromDbFinancialEntry(row) {
   return {
     id: row.id,
     projectId: row.project_id,
+    contractorId: row.contractor_id || null,                              // R33.2 — restored
     date: row.date,
     kind: row.kind,
     type: row.kind,    // R30.32.2 — store-r2.finRollup filters by e.type, not e.kind
@@ -813,6 +814,8 @@ export function fromDbFinancialEntry(row) {
     amount: Number(row.amount) || 0,
     currency: row.currency || 'SAR',
     description: row.description,
+    notes: row.description,                                                // R33.2 — UI reads `notes`
+    relatedMilestone: row.related_milestone || '',                         // R33.2 — restored
     vendor: row.vendor,
     documentPath: row.document_path,
     archived: !!row.archived,
