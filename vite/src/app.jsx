@@ -227,6 +227,17 @@ function AppInner() {
       setBootStatus('loaded');
     } catch (e) {
       console.error('[R30.2 boot] failed', e);
+      // R35 — surface boot failures to Sentry so we know the red banner appeared
+      // for someone, even if they don't tell us. Tagged so we can filter in Sentry.
+      try {
+        const captureException = window.Sentry && window.Sentry.captureException;
+        if (captureException) {
+          window.Sentry.captureException(e, {
+            tags: { boundary: 'boot', source: 'app.jsx', severity: 'high' },
+            extra: { phase: 'bgFetch + translate' },
+          });
+        }
+      } catch (_) {}
       setBootStatus('error');
     }
   }, [store]);
