@@ -67,19 +67,32 @@ function useStoreR2(base) {
   // Audit-logged by caller via `currentUser` argument.
   const toggleProjectLifecycleStage = (projectId, stageId, currentUser) => {
     let before = 'not-started', after = 'done';
+    let nextDate = null;
     setProjectLifecycleState(state => {
       const list = (state[projectId] || []).slice();
       const idx = list.findIndex(x => x.stageId === stageId);
       if (idx < 0) {
-        list.push({ stageId, status: 'done', date: new Date().toISOString().slice(0, 10) });
+        nextDate = new Date().toISOString().slice(0, 10);
+        list.push({ stageId, status: 'done', date: nextDate });
         after = 'done';
       } else {
         before = list[idx].status;
         after = list[idx].status === 'done' ? 'not-started' : 'done';
-        list[idx] = { ...list[idx], status: after, date: after === 'done' ? new Date().toISOString().slice(0, 10) : null };
+        nextDate = after === 'done' ? new Date().toISOString().slice(0, 10) : null;
+        list[idx] = { ...list[idx], status: after, date: nextDate };
       }
       return { ...state, [projectId]: list };
     });
+    // R33.3 — persist to project_lifecycle_state table (upsert by composite PK)
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      const updatedByUuid = window.userUuid && currentUser ? window.userUuid(currentUser.id) : null;
+      window.supabase.from('project_lifecycle_state').upsert({
+        project_id: projectId, stage_id: stageId, status: after, date: nextDate,
+        updated_by_id: updatedByUuid, updated_at: new Date().toISOString(),
+      }, { onConflict: 'project_id,stage_id' }).then(({ error }) => {
+        if (error) console.error('[supabase upsert project_lifecycle_state]', error);
+      });
+    }
     // Audit
     if (currentUser) {
       const proj = PROJECTS.find(p => p.id === projectId);
@@ -1244,6 +1257,7 @@ function useStoreR2(base) {
     _setRolePermissions: setRolePermissions,
     // R30.29 — realtime app_settings refresh writes to these
     _setLifecycleStages: setLifecycleStages,
+    _setProjectLifecycleState: setProjectLifecycleState,   // R33.3
     _setStageStatuses:   setStageStatuses,
     _setMaterialUsage:   setMaterialUsage,
     _setFinancialEntries: setFinancialEntries,

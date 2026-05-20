@@ -828,6 +828,38 @@ export async function bgFetchFinancialEntries() {
   return (res && res.data) || [];
 }
 
+// R33.3 — Chat messages fetcher (per school chat history)
+export async function bgFetchChatMessages() {
+  const res = await _safeFetch('chat_messages', () => supabase.from('chat_messages').select('*').order('created_at', { ascending: true }).limit(5000));
+  return (res && res.data) || [];
+}
+export function fromDbChatMessage(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    schoolId: row.school_id,
+    userId: row.user_label || legacyUserId(row.user_id),
+    text: row.text,
+    when: row.created_at,
+    mentions: Array.isArray(row.mentions) ? row.mentions : [],
+  };
+}
+
+// R33.3 — Project lifecycle state fetcher
+export async function bgFetchProjectLifecycleState() {
+  const res = await _safeFetch('project_lifecycle_state', () => supabase.from('project_lifecycle_state').select('*'));
+  return (res && res.data) || [];
+}
+export function fromDbProjectLifecycleRow(row) {
+  if (!row) return null;
+  return {
+    projectId: row.project_id,
+    stageId: row.stage_id,
+    status: row.status || 'not-started',
+    date: row.date || null,
+  };
+}
+
 export async function bgFetchAppSettings() {
   const res = await _safeFetch('app_settings', () => supabase.from('app_settings').select('*'));
   return (res && res.data) || [];
@@ -859,6 +891,8 @@ if (typeof window !== 'undefined') {
     bgFetchProfiles, bgFetchProjects, bgFetchSchools, bgFetchContractors,
     bgFetchTasks, bgFetchEscalations, bgFetchDeliveryNotes, bgFetchAppSettings,
     bgFetchMaterialUsage, fromDbMaterialUsage,
+    bgFetchChatMessages, fromDbChatMessage,
+    bgFetchProjectLifecycleState, fromDbProjectLifecycleRow,
     bgFetchFinancialEntries, fromDbFinancialEntry,
     bgFetchAuditLog, bgFetchCurrentProfile,
   });

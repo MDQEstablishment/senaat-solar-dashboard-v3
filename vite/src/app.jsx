@@ -181,6 +181,26 @@ function AppInner() {
       if (Array.isArray(rawFinancialEntries) && rawFinancialEntries.length > 0 && store._setFinancialEntries && window.fromDbFinancialEntry) {
         store._setFinancialEntries(rawFinancialEntries.map(window.fromDbFinancialEntry));
       }
+      // R33.3 — seed school chat history from chat_messages table
+      if (Array.isArray(rawChatMessages) && rawChatMessages.length > 0 && store._setChats && window.fromDbChatMessage) {
+        const byChannel = {};
+        for (const row of rawChatMessages) {
+          const m = window.fromDbChatMessage(row);
+          if (!m || !m.schoolId) continue;
+          (byChannel[m.schoolId] = byChannel[m.schoolId] || []).push(m);
+        }
+        store._setChats(byChannel);
+      }
+      // R33.3 — seed project lifecycle state map (projectId → array of {stageId,status,date})
+      if (Array.isArray(rawLifecycleState) && rawLifecycleState.length > 0 && store._setProjectLifecycleState && window.fromDbProjectLifecycleRow) {
+        const byProject = {};
+        for (const row of rawLifecycleState) {
+          const r = window.fromDbProjectLifecycleRow(row);
+          if (!r || !r.projectId) continue;
+          (byProject[r.projectId] = byProject[r.projectId] || []).push({ stageId: r.stageId, status: r.status, date: r.date });
+        }
+        store._setProjectLifecycleState(byProject);
+      }
       if (tasksTranslated.length && store._setTasks)       store._setTasks(tasksTranslated);
       if (escalationsTranslated.length && store._setEscalations) store._setEscalations(escalationsTranslated);
       if (dnTranslated.length && store._setDeliveryNotes)  store._setDeliveryNotes(dnTranslated);

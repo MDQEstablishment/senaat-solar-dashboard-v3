@@ -137,16 +137,22 @@ function StoreProvider({ children }) {
 
   // ----- Chats -----
   const sendChatMessage = (schoolId, msg) => {
-    setChats(c => ({
-      ...c,
-      [schoolId]: [...(c[schoolId] || []), {
-        id: `m${Date.now()}`,
-        userId: msg.userId,
-        text: msg.text,
-        when: new Date().toISOString(),
-        mentions: msg.mentions || [],
-      }],
-    }));
+    const id = `m${Date.now()}`;
+    const entry = {
+      id, userId: msg.userId, text: msg.text,
+      when: new Date().toISOString(), mentions: msg.mentions || [],
+    };
+    setChats(c => ({ ...c, [schoolId]: [...(c[schoolId] || []), entry] }));
+    // R33.3 — persist to chat_messages table
+    if (typeof window !== 'undefined' && window.supabase && window.USE_SUPABASE) {
+      const userUuid = (typeof window.userUuid === 'function') ? window.userUuid(msg.userId) : null;
+      window.supabase.from('chat_messages').insert({
+        id, school_id: schoolId, user_id: userUuid, user_label: msg.userId,
+        text: msg.text, mentions: msg.mentions || [],
+      }).then(({ error }) => {
+        if (error) console.error('[supabase insert chat_message]', error);
+      });
+    }
     // Mention notifications
     (msg.mentions || []).forEach(uid => {
       const sender = people.find(p => p.id === msg.userId);
@@ -233,6 +239,8 @@ function StoreProvider({ children }) {
     _setProjects:(rows) => { _syncArray(typeof window !== 'undefined' && window.PROJECTS,    rows); setProjects(rows); },
     _setPeople:  (rows) => { _syncArray(typeof window !== 'undefined' && window.PEOPLE,      rows); setPeople(rows); },
     _setNotifs:  setNotifs,  // notifs has no window-level legacy array
+    _setChats:   setChats,   // R33.3 — boot orchestrator seeds school chat history
+    setChats,                // R33.3 — also exposed for realtime refresher
   };
   const r2 = (typeof useStoreR2 === 'function') ? useStoreR2(baseValue) : {};
   const value = { ...baseValue, ...r2 };

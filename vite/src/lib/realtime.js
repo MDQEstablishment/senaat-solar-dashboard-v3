@@ -145,6 +145,34 @@ const refreshers = {
     // Just emit a hint; per-contractor reads happen on demand
     window.dispatchEvent(new CustomEvent('realtime-milestone-entries'));
   },
+  // R33.3 — school chat live sync
+  chat_messages: (store) => {
+    if (!window.bgFetchChatMessages || !window.fromDbChatMessage || !store._setChats) return;
+    window.bgFetchChatMessages().then(rows => {
+      if (!Array.isArray(rows)) return;
+      const byChannel = {};
+      for (const row of rows) {
+        const m = window.fromDbChatMessage(row);
+        if (!m || !m.schoolId) continue;
+        (byChannel[m.schoolId] = byChannel[m.schoolId] || []).push(m);
+      }
+      store._setChats(byChannel);
+    }).catch(() => {});
+  },
+  // R33.3 — project lifecycle state live sync
+  project_lifecycle_state: (store) => {
+    if (!window.bgFetchProjectLifecycleState || !window.fromDbProjectLifecycleRow || !store._setProjectLifecycleState) return;
+    window.bgFetchProjectLifecycleState().then(rows => {
+      if (!Array.isArray(rows)) return;
+      const byProject = {};
+      for (const row of rows) {
+        const r = window.fromDbProjectLifecycleRow(row);
+        if (!r || !r.projectId) continue;
+        (byProject[r.projectId] = byProject[r.projectId] || []).push({ stageId: r.stageId, status: r.status, date: r.date });
+      }
+      store._setProjectLifecycleState(byProject);
+    }).catch(() => {});
+  },
 };
 
 const TABLES = Object.keys(refreshers);
