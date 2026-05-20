@@ -1,0 +1,49 @@
+name: Production Smoke Test
+
+# Runs the Playwright smoke test against the live URL after every push to main,
+# and on a daily schedule so we catch regressions even when nobody pushed.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '15 4 * * *'   # 04:15 UTC = 07:15 Riyadh daily
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for GitHub Pages to rebuild (push only)
+        if: github.event_name == 'push'
+        run: sleep 90
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Playwright
+        run: |
+          npm init -y
+          npm install -D @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Run smoke test
+        env:
+          SITE_URL: https://zamildashboard.com
+          SMOKE_EMAIL: ${{ secrets.SMOKE_EMAIL || 'qa.admin@coolcare.com.sa' }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD || 'Senaat2026!' }}
+          SUPABASE_URL: https://bhesznqfrcyikfupdgkx.supabase.co
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: npx playwright test
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
