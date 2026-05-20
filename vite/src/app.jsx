@@ -93,7 +93,8 @@ function AppInner() {
     try {
       const [rawProfiles, rawProjects, rawSchools, rawContractors,
              rawTasks, rawEscalations, rawDeliveryNotes, rawAppSettings,
-             rawMaterialUsage, rawFinancialEntries] = await Promise.all([
+             rawMaterialUsage, rawFinancialEntries,
+             rawChatMessages, rawLifecycleState] = await Promise.all([     // R33.3
         window.bgFetchProfiles(),
         window.bgFetchProjects(),
         window.bgFetchSchools(),
@@ -104,6 +105,8 @@ function AppInner() {
         window.bgFetchAppSettings(),
         window.bgFetchMaterialUsage ? window.bgFetchMaterialUsage() : Promise.resolve([]),
         window.bgFetchFinancialEntries ? window.bgFetchFinancialEntries() : Promise.resolve([]),
+        window.bgFetchChatMessages ? window.bgFetchChatMessages() : Promise.resolve([]),                       // R33.3
+        window.bgFetchProjectLifecycleState ? window.bgFetchProjectLifecycleState() : Promise.resolve([]),     // R33.3
       ]);
 
       // Build PM-uuid → legacy-project-id[] map from raw projects rows.
